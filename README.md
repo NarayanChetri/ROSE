@@ -39,9 +39,15 @@ More features are actively being added — see [Roadmap](#roadmap).
 ## Screenshots
 
 <!-- Add screenshots here -->
-| Home | File Browser | Recycle Bin |
-|---|---|---|
-| _coming soon_ | _coming soon_ | _coming soon_ |
+<p align="centre">
+<img  alt="IMG_20260712_202142" src="https://github.com/user-attachments/assets/44510e7d-3e73-4d37-a1e0-4a2fcd5fb8b9" width="200"/>
+ <img " alt="Screenshot_2026-07-12-20-22-09-57_363e1672d8efa930ebbf90bb4f40c25c" src="https://github.com/user-attachments/assets/f39d7209-4ae3-48be-87a2-feb8e179dbe7" width="200" />
+<img  alt="IMG_20260712_202131" src="https://github.com/user-attachments/assets/17f673e3-0e1a-403a-bcc1-dfc7042fd23c" width="200"/>
+<img   alt="IMG_20260712_202122" src="https://github.com/user-attachments/assets/4011b923-6c9d-4877-ac24-871d37d3deb3" width="200"/>
+<img   alt="IMG_20260712_202111" src="https://github.com/user-attachments/assets/db7bb1ca-a0f0-4657-882a-2f22de0d78a4" width="200"/>
+<img alt="IMG_20260712_202101" src="https://github.com/user-attachments/assets/b1d723a6-a7d4-4ea4-ab73-e914d75a95ed" width="200"/>
+
+</p>
 
 ---
 
