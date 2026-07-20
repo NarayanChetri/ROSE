@@ -176,7 +176,6 @@ fun HomeScreen(
     // Dialog states for recent file actions
     var fileForRename by remember { mutableStateOf<FileItem?>(null) }
     var fileForDelete by remember { mutableStateOf<FileItem?>(null) }
-    var fileForExtract by remember { mutableStateOf<FileItem?>(null) }
 
     val context = androidx.compose.ui.platform.LocalContext.current
     Scaffold(
@@ -439,7 +438,10 @@ fun HomeScreen(
                                 searchQuery = ""
                                 viewModel.searchFiles("")
                             },
-                            onExtract = { fileForExtract = item },
+                            onExtract = {
+                                viewModel.prepareExtraction(item.file)
+                                android.widget.Toast.makeText(context, "Archive ready. Navigate to a folder to extract.", android.widget.Toast.LENGTH_SHORT).show()
+                            },
                             onPaste = { viewModel.navigateTo(item.file); viewModel.pasteFiles() }
                         )
                         if (viewModel.showListDividers && index != viewModel.searchResults.lastIndex) {
@@ -501,7 +503,10 @@ fun HomeScreen(
                             onShareClick = onShareClick,
                             onRenameClick = { fileForRename = it },
                             onDeleteClick = { fileForDelete = it },
-                            onExtractClick = { fileForExtract = it },
+                            onExtractClick = {
+                                viewModel.prepareExtraction(it.file)
+                                android.widget.Toast.makeText(context, "Archive ready. Navigate to a folder to extract.", android.widget.Toast.LENGTH_SHORT).show()
+                            },
                             onPropertiesClick = { viewModel.showProperties(it) }
                         )
                     }
@@ -560,26 +565,6 @@ fun HomeScreen(
             onRename = { newName ->
                 viewModel.renameFile(item, newName)
                 fileForRename = null
-            }
-        )
-    }
-
-    fileForExtract?.let { item ->
-        ExtractionDialog(
-            item = item,
-            onDismiss = { fileForExtract = null },
-            onExtractHere = {
-                viewModel.extractArchive(item.file)
-                fileForExtract = null
-            },
-            onSelectLocation = {
-                viewModel.prepareExtraction(item.file)
-                // Navigate to file explorer to allow picking location
-                onOpenPath(Environment.getExternalStorageDirectory().absolutePath, null)
-                fileForExtract = null
-                isSearching = false
-                searchQuery = ""
-                viewModel.searchFiles("")
             }
         )
     }
@@ -1595,89 +1580,6 @@ private fun FolderPickerRow(
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
         )
     }
-}
-
-@Composable
-private fun ExtractionDialog(
-    item: FileItem,
-    onDismiss: () -> Unit,
-    onExtractHere: () -> Unit,
-    onSelectLocation: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Outlined.Unarchive,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.tertiary
-                )
-            }
-        },
-        title = { Text("Extract Archive") },
-        text = {
-            Column {
-                Text(
-                    "How would you like to extract \"${item.name}\"?",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                Surface(
-                    onClick = onExtractHere,
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Folder, null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text("Extract here", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                            Text("Extract to a new folder in the same directory", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Surface(
-                    onClick = onSelectLocation,
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.FolderOpen, null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text("Select location", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                            Text("Choose a specific folder to extract to", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        },
-        shape = RoundedCornerShape(28.dp)
-    )
 }
 
 @Composable

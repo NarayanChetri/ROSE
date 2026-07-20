@@ -153,20 +153,20 @@ private suspend fun PointerInputScope.detectCheckboxDragSelect(
             if (!dragging) {
                 if (!change.pressed) break // Lifted before slop
                 if ((change.position - down.position).getDistance() < touchSlop) continue
-                
+
                 dragging = true
                 change.consume()
-                
+
                 // Initialize drag session
                 val startIdx = displayedFiles.indexOfFirst { it.file.absolutePath == originKey }
                 if (startIdx == -1) break
-                
+
                 dragSelectState.startIndex = startIdx
                 dragSelectState.lastTargetIndex = startIdx
                 dragSelectState.selectTarget = !viewModel.selectedFiles.any { it.file.absolutePath == originKey }
                 dragSelectState.initialSelectedPaths.clear()
                 viewModel.selectedFiles.forEach { dragSelectState.initialSelectedPaths.add(it.file.absolutePath) }
-                
+
                 viewModel.setSelected(displayedFiles[startIdx], dragSelectState.selectTarget)
                 dragSelectState.dragPosition = containerOrigin + change.position
                 continue
@@ -177,7 +177,7 @@ private suspend fun PointerInputScope.detectCheckboxDragSelect(
 
             val windowPos = containerOrigin + change.position
             dragSelectState.dragPosition = windowPos
-            
+
             performDragSelect(dragSelectState, displayedFiles, viewModel)
         }
 
@@ -203,7 +203,7 @@ private fun performDragSelect(
 
     // Find which item index is currently under (or nearest to) the finger.
     var targetIndex = -1
-    
+
     // 1. Direct hit-test against visible items
     val itemUnderFinger = state.itemBounds.entries.firstOrNull { it.value.contains(pos) }
     if (itemUnderFinger != null) {
@@ -214,7 +214,7 @@ private fun performDragSelect(
             val rect = state.itemBounds[item.file.absolutePath]
             if (rect != null && pos.y >= rect.top && pos.y <= rect.bottom) index to rect else null
         }
-        
+
         if (itemsInRow.isNotEmpty()) {
             // Pick the item in this row horizontally closest to the finger
             targetIndex = itemsInRow.minByOrNull { (_, rect) ->
@@ -235,7 +235,7 @@ private fun performDragSelect(
                 val lastVisible = visibleIndices.last()
                 val firstRect = state.itemBounds[files[firstVisible].file.absolutePath]!!
                 val lastRect = state.itemBounds[files[lastVisible].file.absolutePath]!!
-                
+
                 if (pos.y < firstRect.top) targetIndex = firstVisible
                 else if (pos.y > lastRect.bottom) targetIndex = lastVisible
             }
@@ -515,7 +515,7 @@ fun FileExplorerScreen(
     // on every frame - nothing about a finger moving cancels or restarts it.
     val autoScrollDensity = LocalDensity.current
     LaunchedEffect(autoScrollDensity, displayedFiles, listState, gridState, currentIsGridView) {
-        val threshold = with(autoScrollDensity) { 100.dp.toPx() } 
+        val threshold = with(autoScrollDensity) { 100.dp.toPx() }
         val maxScrollAmount = with(autoScrollDensity) { 26.dp.toPx() }
         while (true) {
             withFrameNanos { }
@@ -534,7 +534,7 @@ fun FileExplorerScreen(
                     } else {
                         listState.scrollBy(amount)
                     }
-                    
+
                     // Sync selection while scrolling even if the finger is perfectly still
                     performDragSelect(checkboxDragSelectState, displayedFiles, viewModel)
                 }
@@ -746,7 +746,7 @@ fun FileExplorerScreen(
                             enter = slideInVertically(animationSpec = tween(400, easing = FastOutSlowInEasing)) { it },
                             exit = slideOutVertically(animationSpec = tween(400, easing = FastOutSlowInEasing)) { it }
                         ) {
-                                SelectionBottomBar(
+                            SelectionBottomBar(
                                 viewModel = viewModel,
                                 currentView = currentView,
                                 onShare = { onShareClick(viewModel.selectedFiles.toList()) },
@@ -762,7 +762,16 @@ fun FileExplorerScreen(
                                     showRenameDialog = viewModel.selectedFiles.firstOrNull()
                                 },
                                 onExtractClick = {
-                                    showExtractionDialog = viewModel.selectedFiles.firstOrNull()
+                                    val fileItem = viewModel.selectedFiles.firstOrNull()
+                                    if (fileItem != null) {
+                                        if (currentView == "Category" || currentView == "Recent") {
+                                            viewModel.prepareExtraction(fileItem.file)
+                                            viewModel.exitSelectionMode()
+                                            Toast.makeText(context, "Archive ready. Navigate to a folder to extract.", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            showExtractionDialog = fileItem
+                                        }
+                                    }
                                 },
                                 isAllSelected = viewModel.selectedFiles.size == displayedFiles.size && displayedFiles.isNotEmpty(),
                                 onSelectAllClick = {
@@ -1232,7 +1241,14 @@ fun FileExplorerScreen(
                                                                 }
                                                             }
                                                         } else null,
-                                                        onExtract = { showExtractionDialog = fileItem },
+                                                        onExtract = {
+                                                            if (currentView == "Category" || currentView == "Recent") {
+                                                                viewModel.prepareExtraction(fileItem.file)
+                                                                Toast.makeText(context, "Archive ready. Navigate to a folder to extract.", Toast.LENGTH_SHORT).show()
+                                                            } else {
+                                                                showExtractionDialog = fileItem
+                                                            }
+                                                        },
                                                         onProperties = { viewModel.showProperties(fileItem) },
                                                         onPaste = { viewModel.navigateTo(fileItem.file); viewModel.pasteFiles() },
                                                         viewModel = viewModel,
@@ -1381,291 +1397,6 @@ fun DeleteConfirmationDialog(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SettingsScreen(
-    viewModel: RoseViewModel,
-    onBack: () -> Unit
-) {
-    BackHandler(onBack = onBack)
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Settings") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) }
-                }
-            )
-        }
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .padding(paddingValues)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-        ) {
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                "Appearance",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-
-            Text(
-                "Theme",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ThemeModeChip("System", viewModel.themeMode == ThemeMode.SYSTEM) { viewModel.setThemeMode(ThemeMode.SYSTEM) }
-                ThemeModeChip("Light", viewModel.themeMode == ThemeMode.LIGHT) { viewModel.setThemeMode(ThemeMode.LIGHT) }
-                ThemeModeChip("Dark", viewModel.themeMode == ThemeMode.DARK) { viewModel.setThemeMode(ThemeMode.DARK) }
-            }
-
-            SettingsSwitchRow(
-                title = "Black AMOLED mode",
-                subtitle = "Use true black backgrounds while in dark mode",
-                checked = viewModel.amoledMode,
-                onCheckedChange = { viewModel.setAmoledMode(it) }
-            )
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                SettingsSwitchRow(
-                    title = "Dynamic color",
-                    subtitle = "Use colors generated from your wallpaper (Android 12+)",
-                    checked = viewModel.dynamicColorEnabled,
-                    onCheckedChange = { viewModel.setDynamicColor(it) }
-                )
-            }
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-            Text(
-                "Browsing",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-
-            SettingsSwitchRow(
-                title = "Grid view",
-                subtitle = "Show files as a grid instead of a list",
-                checked = viewModel.isGridView,
-                onCheckedChange = { viewModel.setGridView(it) }
-            )
-            if (viewModel.isGridView) {
-                Text(
-                    "Grid item size",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    ThemeModeChip("Small", viewModel.gridItemSize == GridItemSize.SMALL) { viewModel.setGridItemSize(GridItemSize.SMALL) }
-                    ThemeModeChip("Medium", viewModel.gridItemSize == GridItemSize.MEDIUM) { viewModel.setGridItemSize(GridItemSize.MEDIUM) }
-                    ThemeModeChip("Large", viewModel.gridItemSize == GridItemSize.LARGE) { viewModel.setGridItemSize(GridItemSize.LARGE) }
-                }
-            }
-            SettingsSwitchRow(
-                title = "Folders first",
-                subtitle = "Always list folders before files",
-                checked = viewModel.foldersFirst,
-                onCheckedChange = { viewModel.setFoldersFirst(it) }
-            )
-            SettingsSwitchRow(
-                title = "Show file details",
-                subtitle = "Show size and modified date under each file",
-                checked = viewModel.showDetails,
-                onCheckedChange = { viewModel.setShowDetails(it) }
-            )
-            SettingsSwitchRow(
-                title = "Show file extensions",
-                subtitle = "Show \".mp4\", \".pdf\" etc. after the file name",
-                checked = viewModel.showFileExtensions,
-                onCheckedChange = { viewModel.setShowFileExtensions(it) }
-            )
-            SettingsSwitchRow(
-                title = "Show list dividers",
-                subtitle = "Show thin divider lines between items in Recent files, Quick access, and folder lists",
-                checked = viewModel.showListDividers,
-                onCheckedChange = { viewModel.setShowListDividers(it) }
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-            Text(
-                "Navigation",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-            Text(
-                "Start page",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ThemeModeChip("Landing page", viewModel.startPage == StartPage.HOME) { viewModel.setStartPage(StartPage.HOME) }
-                ThemeModeChip("All files", viewModel.startPage == StartPage.ALL_FILES) { viewModel.setStartPage(StartPage.ALL_FILES) }
-            }
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-            Text(
-                "Safety",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-            SettingsSwitchRow(
-                title = "Confirm before delete",
-                subtitle = "Ask for confirmation before deleting files or folders",
-                checked = viewModel.confirmBeforeDelete,
-                onCheckedChange = { viewModel.setConfirmBeforeDelete(it) }
-            )
-            SettingsSwitchRow(
-                title = "Use Recycle Bin",
-                subtitle = "Deleted files are moved to Recycle Bin and kept for 30 days",
-                checked = viewModel.useRecycleBin,
-                onCheckedChange = { viewModel.setUseRecycleBin(it) }
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-            Text(
-                "Home Screen",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-            SettingsSwitchRow(
-                title = "Show Quick Access",
-                subtitle = "Show the Quick Access section on landing page",
-                checked = viewModel.showQuickAccess,
-                onCheckedChange = { viewModel.setShowQuickAccess(it) }
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-            Text(
-                "Advanced",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-            SettingsSwitchRow(
-                title = "Show hidden files",
-                subtitle = "Show files and folders starting with a dot",
-                checked = viewModel.showHiddenFiles,
-                onCheckedChange = { viewModel.toggleHiddenFiles() }
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-            Text(
-                "Support",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-            val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { uriHandler.openUri("https://github.com/NarayanChetri/ROSE/issues") }
-                    .padding(vertical = 12.dp)
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Report an issue", fontWeight = FontWeight.Medium)
-                    Text("Found a bug? Let us know on GitHub", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Icon(Icons.Default.BugReport, null, tint = MaterialTheme.colorScheme.error)
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-            Text(
-                "Storage",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-            val context = LocalContext.current
-            val scope = rememberCoroutineScope()
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                context.imageLoader.memoryCache?.clear()
-                                context.imageLoader.diskCache?.clear()
-                            }
-                            Toast.makeText(context, "Thumbnail cache cleared", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                    .padding(vertical = 12.dp)
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Clear thumbnail cache", fontWeight = FontWeight.Medium)
-                    Text(
-                        "Free up space used by cached image and video thumbnails",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Icon(Icons.Default.CleaningServices, null, tint = MaterialTheme.colorScheme.primary)
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-        }
-    }
-}
-
-@Composable
-fun ThemeModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    FilterChip(
-        selected = selected,
-        onClick = onClick,
-        label = { Text(label) }
-    )
-}
-
-@Composable
-fun SettingsSwitchRow(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
-            .padding(vertical = 12.dp)
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.Medium)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1719,7 +1450,7 @@ fun AboutScreen(
                     }
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        "ROSE is a modern, privacy-focused file manager built with Jetpack Compose. It aims to provide a fast and beautiful experience while giving you full control over your files.",
+                        "ROSE is what happens when a developer gets tired of boring file managers and decides to build one instead. It's fast, clean, open source, privacy-friendly, and built with Jetpack Compose—all because I thought, \"How hard could it be?\" Turns out... pretty hard.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1851,19 +1582,6 @@ fun MainTopBar(
                                 )
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             }
-                            DropdownMenuItem(
-                                text = { Text("Show Hidden Files", modifier = Modifier.padding(vertical = 4.dp)) },
-                                onClick = { viewModel.toggleHiddenFiles(); showMoreMenu = false },
-                                leadingIcon = {
-                                    Checkbox(
-                                        checked = viewModel.showHiddenFiles,
-                                        onCheckedChange = null,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                },
-                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                            )
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             DropdownMenuItem(
                                 text = { Text("Refresh", modifier = Modifier.padding(vertical = 4.dp)) },
                                 onClick = { onRefreshClick(); showMoreMenu = false },
@@ -2181,23 +1899,6 @@ fun SortMenu(expanded: Boolean, viewModel: RoseViewModel, onDismiss: () -> Unit)
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         offset = androidx.compose.ui.unit.DpOffset(x = (-8).dp, y = 0.dp)
     ) {
-        val isCategory = viewModel.categoryFilterType != null
-        DropdownMenuItem(
-            text = { Text("List", modifier = Modifier.padding(vertical = 4.dp)) },
-            onClick = { if (isCategory) viewModel.setCategoryGridView(false) else viewModel.setGridView(false) },
-            trailingIcon = { RadioButton(selected = !(if (isCategory) viewModel.isCategoryGridView else viewModel.isGridView), onClick = null) },
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-        )
-        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-        DropdownMenuItem(
-            text = { Text("Grid", modifier = Modifier.padding(vertical = 4.dp)) },
-            onClick = { if (isCategory) viewModel.setCategoryGridView(true) else viewModel.setGridView(true) },
-            trailingIcon = { RadioButton(selected = if (isCategory) viewModel.isCategoryGridView else viewModel.isGridView, onClick = null) },
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-        )
-
-        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), thickness = 2.dp)
-
         SortMenuItem("Name", RoseViewModel.SortBy.NAME, viewModel)
         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
         SortMenuItem("Type", RoseViewModel.SortBy.TYPE, viewModel)
@@ -2205,22 +1906,6 @@ fun SortMenu(expanded: Boolean, viewModel: RoseViewModel, onDismiss: () -> Unit)
         SortMenuItem("Size", RoseViewModel.SortBy.SIZE, viewModel)
         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
         SortMenuItem("Last modified", RoseViewModel.SortBy.DATE, viewModel)
-
-        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), thickness = 2.dp)
-
-        DropdownMenuItem(
-            text = { Text("Folders first", modifier = Modifier.padding(vertical = 4.dp)) },
-            onClick = {
-                viewModel.setFoldersFirst(!viewModel.foldersFirst)
-            },
-            trailingIcon = {
-                Checkbox(
-                    checked = viewModel.foldersFirst,
-                    onCheckedChange = null
-                )
-            },
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-        )
     }
 }
 
@@ -2522,6 +2207,14 @@ internal fun FileListItem(
                                 leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
                                 colors = MenuDefaults.itemColors(textColor = MaterialTheme.colorScheme.error)
                             )
+                            if (fileItem.fileType == FileType.ZIP) {
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                DropdownMenuItem(
+                                    text = { Text("Extract") },
+                                    onClick = { showMenu = false; onExtract?.invoke() },
+                                    leadingIcon = { Icon(Icons.Outlined.Unarchive, null) }
+                                )
+                            }
                             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                             DropdownMenuItem(
                                 text = { Text("Properties") },
@@ -3017,7 +2710,7 @@ private fun ExtractionDialog(
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 Surface(
                     onClick = onExtractHere,
                     shape = RoundedCornerShape(12.dp),
@@ -3037,9 +2730,9 @@ private fun ExtractionDialog(
                         }
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 Surface(
                     onClick = onSelectLocation,
                     shape = RoundedCornerShape(12.dp),
@@ -3160,6 +2853,7 @@ fun displayNameFor(fileItem: FileItem, showExtension: Boolean): String {
     return if (dotIndex > 0) fileItem.name.substring(0, dotIndex) else fileItem.name
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ActiveJobsCard(activeJobs: List<FileJob>) {
     val job = activeJobs.firstOrNull() ?: return
