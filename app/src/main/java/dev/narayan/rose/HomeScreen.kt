@@ -1,7 +1,6 @@
 package dev.narayan.rose
 
 import android.os.Environment
-import android.os.StatFs
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.Animatable
@@ -271,10 +270,10 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // Extract Here FAB
-                androidx.compose.animation.AnimatedVisibility(
+                AnimatedVisibility(
                     visible = viewModel.extractionSource != null,
-                    enter = androidx.compose.animation.scaleIn(animationSpec = tween(400, easing = FastOutSlowInEasing)) + androidx.compose.animation.fadeIn(),
-                    exit = androidx.compose.animation.scaleOut(animationSpec = tween(300)) + androidx.compose.animation.fadeOut()
+                    enter = scaleIn(animationSpec = tween(400, easing = FastOutSlowInEasing)) + fadeIn(),
+                    exit = scaleOut(animationSpec = tween(300)) + fadeOut()
                 ) {
                     Surface(
                         shape = RoundedCornerShape(20.dp),
@@ -330,10 +329,10 @@ fun HomeScreen(
                     }
                 }
 
-                androidx.compose.animation.AnimatedVisibility(
+                AnimatedVisibility(
                     visible = viewModel.clipboardFiles.isNotEmpty(),
-                    enter = androidx.compose.animation.scaleIn(animationSpec = tween(400, easing = FastOutSlowInEasing)) + androidx.compose.animation.fadeIn(),
-                    exit = androidx.compose.animation.scaleOut(animationSpec = tween(300)) + androidx.compose.animation.fadeOut()
+                    enter = scaleIn(animationSpec = tween(400, easing = FastOutSlowInEasing)) + fadeIn(),
+                    exit = scaleOut(animationSpec = tween(300)) + fadeOut()
                 ) {
                     Surface(
                         shape = RoundedCornerShape(20.dp),
