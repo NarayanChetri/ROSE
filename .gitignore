@@ -1,0 +1,42 @@
+# Local configuration files (contains local SDK paths - NEVER commit)
+local.properties
+
+# Build output directories
+/build
+app/build/
+/captures
+.externalNativeBuild
+.cxx
+
+# Gradle files and caches
+.gradle/
+/build.gradle.kts.swp
+
+# Android Studio / IntelliJ IDEA specific files
+*.iml
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+.idea/shelf/
+.idea/gradle.xml
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# ----------------------------------------------------------------------
+# SECURITY & RELEASE ARTIFACTS (CRITICAL)
+# ----------------------------------------------------------------------
+# Android keystores & signing credentials
+*.jks
+*.keystore
+*.pepk
+
+# Built binaries & APK release outputs
+/app/release/
+*.apk
+*.aab
+keystore.properties

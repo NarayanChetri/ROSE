@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Rose" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#F2F2F7</item>
+        <item name="android:windowDisablePreview">true</item>
+    </style>
+</resources>
