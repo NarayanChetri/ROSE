@@ -23,8 +23,10 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
@@ -703,6 +705,8 @@ fun FileExplorerScreen(
                                             }
                                         }
 
+                                        val shouldGroupTop = currentView == "Recent" && searchQuery.isBlank()
+
                                         MainTopBar(
                                             title = when (currentView) {
                                                 "Recent" -> "Recent"
@@ -716,6 +720,7 @@ fun FileExplorerScreen(
                                             },
                                             viewModel = viewModel,
                                             currentView = currentView,
+                                            totalItems = if (shouldGroupTop) displayedFiles.size else null,
                                             sharedTransitionScope = sharedTransitionScope,
                                             animatedVisibilityScope = animatedVisibilityScope,
                                             onSearchClick = { isSearching = true },
@@ -1088,6 +1093,21 @@ fun FileExplorerScreen(
                                             viewModel.searchResults
                                         }
 
+                                        val shouldGroup = state.view == "Recent" && searchQuery.isBlank()
+
+                                        val groupedItems = remember(displayedFilesFinal, shouldGroup) {
+                                            if (!shouldGroup) emptyList<ListItemType>()
+                                            else {
+                                                val list = mutableListOf<ListItemType>()
+                                                displayedFilesFinal.groupBy { formatDateHeader(it.lastModified) }
+                                                    .forEach { (header, files) ->
+                                                        list.add(ListItemType.Header(header, files.size))
+                                                        files.forEach { list.add(ListItemType.File(it)) }
+                                                    }
+                                                list
+                                            }
+                                        }
+
                                         if (displayedFilesFinal.isEmpty() && !viewModel.isLoading && !viewModel.isRecursiveSearching) {
                                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                                 Text(if (searchQuery.isEmpty()) "No files found" else "No results for \"$searchQuery\"")
@@ -1099,59 +1119,134 @@ fun FileExplorerScreen(
                                                 modifier = Modifier.fillMaxSize(),
                                                 contentPadding = PaddingValues(8.dp)
                                             ) {
-                                                items(displayedFilesFinal, key = { it.file.absolutePath }, contentType = { "grid_item" }) { fileItem ->
-                                                    val index = displayedFilesFinal.indexOf(fileItem)
-                                                    FileGridItem(
-                                                        fileItem = fileItem,
-                                                        isSelected = viewModel.selectedFiles.contains(fileItem),
-                                                        showDetails = viewModel.showDetails,
-                                                        showExtension = viewModel.showFileExtensions,
-                                                        iconSize = viewModel.gridItemSize.iconSize,
-                                                        isVirtual = viewModel.currentZipFile != null,
-                                                        index = index, // Pass index for staggered animation
-                                                        scrollResetKey = scrollResetKey, // Pass key to restart animation on path change
-                                                        hasAnimatedBefore = skipEntranceAnimation || animatedItemKeys.contains(fileItem.file.absolutePath),
-                                                        onAnimationStart = { animatedItemKeys.add(fileItem.file.absolutePath) },
-                                                        modifier = if (skipEntranceAnimation) Modifier else Modifier.animateItem(),
-                                                        onClick = {
-                                                            if (viewModel.isSelectionMode) {
-                                                                viewModel.toggleSelection(fileItem)
-                                                            } else {
-                                                                if (fileItem.isDirectory) {
-                                                                    if (isSearching) {
-                                                                        isSearching = false
-                                                                        searchQuery = ""
-                                                                        viewModel.searchFiles("")
-                                                                    }
-                                                                    val isAlbum = (fileItem.bucketId != null || fileItem.file.path.contains("album:")) && currentView == "Category"
-                                                                    if (isAlbum) {
-                                                                        val bucketId = fileItem.bucketId ?: fileItem.file.path.substringAfter("album:")
-                                                                        viewModel.browseCategory(FileType.IMAGE, fileItem.name, bucketId)
-                                                                    } else {
-                                                                        if (viewModel.currentZipFile != null && fileItem.zipEntryPath != null) {
-                                                                            viewModel.navigateZipInto(fileItem.zipEntryPath)
-                                                                        } else {
-                                                                            viewModel.navigateTo(fileItem.file)
-                                                                        }
-                                                                        currentView = "Files"
-                                                                    }
-                                                                } else if (fileItem.fileType == FileType.ZIP) {
-                                                                    if (isSearching) {
-                                                                        isSearching = false
-                                                                        searchQuery = ""
-                                                                        viewModel.searchFiles("")
-                                                                    }
-                                                                    viewModel.openArchive(fileItem.file)
-                                                                    currentView = "Files"
-                                                                } else {
-                                                                    onFileClick(fileItem)
-                                                                }
+                                                if (shouldGroup) {
+                                                    items(
+                                                        items = groupedItems,
+                                                        key = { item ->
+                                                            when (item) {
+                                                                is ListItemType.Header -> "header_${item.title}"
+                                                                is ListItemType.File -> item.fileItem.file.absolutePath
                                                             }
                                                         },
-                                                        onLongClick = {
-                                                            viewModel.toggleSelection(fileItem)
+                                                        span = { item ->
+                                                            if (item is ListItemType.Header) GridItemSpan(maxLineSpan)
+                                                            else GridItemSpan(1)
                                                         }
-                                                    )
+                                                    ) { item ->
+                                                        when (item) {
+                                                            is ListItemType.Header -> DateHeader(item.title, item.count)
+                                                            is ListItemType.File -> {
+                                                                val fileItem = item.fileItem
+                                                                val indexInFullList = displayedFilesFinal.indexOf(fileItem)
+                                                                FileGridItem(
+                                                                    fileItem = fileItem,
+                                                                    isSelected = viewModel.selectedFiles.contains(fileItem),
+                                                                    showDetails = viewModel.showDetails,
+                                                                    showExtension = viewModel.showFileExtensions,
+                                                                    iconSize = viewModel.gridItemSize.iconSize,
+                                                                    isVirtual = viewModel.currentZipFile != null,
+                                                                    index = indexInFullList,
+                                                                    scrollResetKey = scrollResetKey,
+                                                                    hasAnimatedBefore = skipEntranceAnimation || animatedItemKeys.contains(fileItem.file.absolutePath),
+                                                                    onAnimationStart = { animatedItemKeys.add(fileItem.file.absolutePath) },
+                                                                    modifier = if (skipEntranceAnimation) Modifier else Modifier.animateItem(),
+                                                                    onClick = {
+                                                                        if (viewModel.isSelectionMode) {
+                                                                            viewModel.toggleSelection(fileItem)
+                                                                        } else {
+                                                                            if (fileItem.isDirectory) {
+                                                                                if (isSearching) {
+                                                                                    isSearching = false
+                                                                                    searchQuery = ""
+                                                                                    viewModel.searchFiles("")
+                                                                                }
+                                                                                val isAlbum = (fileItem.bucketId != null || fileItem.file.path.contains("album:")) && currentView == "Category"
+                                                                                if (isAlbum) {
+                                                                                    val bucketId = fileItem.bucketId ?: fileItem.file.path.substringAfter("album:")
+                                                                                    viewModel.browseCategory(FileType.IMAGE, fileItem.name, bucketId)
+                                                                                } else {
+                                                                                    if (viewModel.currentZipFile != null && fileItem.zipEntryPath != null) {
+                                                                                        viewModel.navigateZipInto(fileItem.zipEntryPath)
+                                                                                    } else {
+                                                                                        viewModel.navigateTo(fileItem.file)
+                                                                                    }
+                                                                                    currentView = "Files"
+                                                                                }
+                                                                            } else if (fileItem.fileType == FileType.ZIP) {
+                                                                                if (isSearching) {
+                                                                                    isSearching = false
+                                                                                    searchQuery = ""
+                                                                                    viewModel.searchFiles("")
+                                                                                }
+                                                                                viewModel.openArchive(fileItem.file)
+                                                                                currentView = "Files"
+                                                                            } else {
+                                                                                onFileClick(fileItem)
+                                                                            }
+                                                                        }
+                                                                    },
+                                                                    onLongClick = {
+                                                                        viewModel.toggleSelection(fileItem)
+                                                                    }
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                } else {
+                                                    items(displayedFilesFinal, key = { it.file.absolutePath }, contentType = { "grid_item" }) { fileItem ->
+                                                        val index = displayedFilesFinal.indexOf(fileItem)
+                                                        FileGridItem(
+                                                            fileItem = fileItem,
+                                                            isSelected = viewModel.selectedFiles.contains(fileItem),
+                                                            showDetails = viewModel.showDetails,
+                                                            showExtension = viewModel.showFileExtensions,
+                                                            iconSize = viewModel.gridItemSize.iconSize,
+                                                            isVirtual = viewModel.currentZipFile != null,
+                                                            index = index, // Pass index for staggered animation
+                                                            scrollResetKey = scrollResetKey, // Pass key to restart animation on path change
+                                                            hasAnimatedBefore = skipEntranceAnimation || animatedItemKeys.contains(fileItem.file.absolutePath),
+                                                            onAnimationStart = { animatedItemKeys.add(fileItem.file.absolutePath) },
+                                                            modifier = if (skipEntranceAnimation) Modifier else Modifier.animateItem(),
+                                                            onClick = {
+                                                                if (viewModel.isSelectionMode) {
+                                                                    viewModel.toggleSelection(fileItem)
+                                                                } else {
+                                                                    if (fileItem.isDirectory) {
+                                                                        if (isSearching) {
+                                                                            isSearching = false
+                                                                            searchQuery = ""
+                                                                            viewModel.searchFiles("")
+                                                                        }
+                                                                        val isAlbum = (fileItem.bucketId != null || fileItem.file.path.contains("album:")) && currentView == "Category"
+                                                                        if (isAlbum) {
+                                                                            val bucketId = fileItem.bucketId ?: fileItem.file.path.substringAfter("album:")
+                                                                            viewModel.browseCategory(FileType.IMAGE, fileItem.name, bucketId)
+                                                                        } else {
+                                                                            if (viewModel.currentZipFile != null && fileItem.zipEntryPath != null) {
+                                                                                viewModel.navigateZipInto(fileItem.zipEntryPath)
+                                                                            } else {
+                                                                                viewModel.navigateTo(fileItem.file)
+                                                                            }
+                                                                            currentView = "Files"
+                                                                        }
+                                                                    } else if (fileItem.fileType == FileType.ZIP) {
+                                                                        if (isSearching) {
+                                                                            isSearching = false
+                                                                            searchQuery = ""
+                                                                            viewModel.searchFiles("")
+                                                                        }
+                                                                        viewModel.openArchive(fileItem.file)
+                                                                        currentView = "Files"
+                                                                    } else {
+                                                                        onFileClick(fileItem)
+                                                                    }
+                                                                }
+                                                            },
+                                                            onLongClick = {
+                                                                viewModel.toggleSelection(fileItem)
+                                                            }
+                                                        )
+                                                    }
                                                 }
                                             }
                                         } else {
@@ -1160,101 +1255,214 @@ fun FileExplorerScreen(
                                                 state = listState,
                                                 contentPadding = PaddingValues(vertical = 8.dp)
                                             ) {
-                                                item(key = "top_spacer") { Spacer(modifier = Modifier.height(8.dp)) }
-                                                itemsIndexed(displayedFilesFinal, key = { _, item -> item.file.absolutePath }, contentType = { _, _ -> "list_item" }) { index, fileItem ->
-                                                    val isSelected = viewModel.selectedFiles.contains(fileItem)
-                                                    val isHighlighted = viewModel.highlightedFile?.file?.absolutePath == fileItem.file.absolutePath
-                                                    val isRoot = viewModel.currentPath == Environment.getExternalStorageDirectory().absolutePath
-                                                    FileListItem(
-                                                        fileItem = fileItem,
-                                                        isSelected = isSelected,
-                                                        isHighlighted = isHighlighted,
-                                                        isSelectionMode = viewModel.isSelectionMode,
-                                                        showDetails = if (fileItem.isDirectory && isRoot) false else viewModel.showDetails,
-                                                        showExtension = viewModel.showFileExtensions,
-                                                        showListDividers = viewModel.showListDividers,
-                                                        isVirtual = viewModel.currentZipFile != null,
-                                                        clipboardHasFiles = viewModel.clipboardFiles.isNotEmpty(),
-                                                        index = index, // Pass index for staggered animation
-                                                        scrollResetKey = scrollResetKey, // Pass key to restart animation on path change
-                                                        hasAnimatedBefore = skipEntranceAnimation || animatedItemKeys.contains(fileItem.file.absolutePath),
-                                                        onAnimationStart = { animatedItemKeys.add(fileItem.file.absolutePath) },
-                                                        modifier = if (skipEntranceAnimation) Modifier else Modifier.animateItem(),
-                                                        onClick = {
-                                                            if (viewModel.isSelectionMode) {
-                                                                viewModel.toggleSelection(fileItem)
-                                                            } else {
-                                                                if (fileItem.isDirectory) {
-                                                                    if (isSearching) {
-                                                                        isSearching = false
-                                                                        searchQuery = ""
-                                                                        viewModel.searchFiles("")
-                                                                    }
-                                                                    val isAlbum = (fileItem.bucketId != null || fileItem.file.path.contains("album:")) && currentView == "Category"
-                                                                    if (isAlbum) {
-                                                                        val bucketId = fileItem.bucketId ?: fileItem.file.path.substringAfter("album:")
-                                                                        viewModel.browseCategory(FileType.IMAGE, fileItem.name, bucketId)
-                                                                    } else {
-                                                                        if (viewModel.currentZipFile != null && fileItem.zipEntryPath != null) {
-                                                                            viewModel.navigateZipInto(fileItem.zipEntryPath)
+                                                if (shouldGroup) {
+                                                    items(
+                                                        groupedItems,
+                                                        key = { item ->
+                                                            when (item) {
+                                                                is ListItemType.Header -> "header_${item.title}"
+                                                                is ListItemType.File -> item.fileItem.file.absolutePath
+                                                            }
+                                                        }
+                                                    ) { item ->
+                                                        when (item) {
+                                                            is ListItemType.Header -> DateHeader(item.title, item.count)
+                                                            is ListItemType.File -> {
+                                                                val fileItem = item.fileItem
+                                                                val isSelected = viewModel.selectedFiles.contains(fileItem)
+                                                                val isHighlighted = viewModel.highlightedFile?.file?.absolutePath == fileItem.file.absolutePath
+                                                                val indexInFullList = displayedFilesFinal.indexOf(fileItem)
+                                                                val isRoot = viewModel.currentPath == Environment.getExternalStorageDirectory().absolutePath
+                                                                FileListItem(
+                                                                    fileItem = fileItem,
+                                                                    isSelected = isSelected,
+                                                                    isHighlighted = isHighlighted,
+                                                                    isSelectionMode = viewModel.isSelectionMode,
+                                                                    showDetails = if (fileItem.isDirectory && isRoot) false else viewModel.showDetails,
+                                                                    showExtension = viewModel.showFileExtensions,
+                                                                    showListDividers = viewModel.showListDividers,
+                                                                    isVirtual = viewModel.currentZipFile != null,
+                                                                    clipboardHasFiles = viewModel.clipboardFiles.isNotEmpty(),
+                                                                    index = indexInFullList,
+                                                                    scrollResetKey = scrollResetKey,
+                                                                    hasAnimatedBefore = skipEntranceAnimation || animatedItemKeys.contains(fileItem.file.absolutePath),
+                                                                    onAnimationStart = { animatedItemKeys.add(fileItem.file.absolutePath) },
+                                                                    modifier = if (skipEntranceAnimation) Modifier else Modifier.animateItem(),
+                                                                    onClick = {
+                                                                        if (viewModel.isSelectionMode) {
+                                                                            viewModel.toggleSelection(fileItem)
                                                                         } else {
-                                                                            viewModel.navigateTo(fileItem.file)
+                                                                            if (fileItem.isDirectory) {
+                                                                                if (isSearching) {
+                                                                                    isSearching = false
+                                                                                    searchQuery = ""
+                                                                                    viewModel.searchFiles("")
+                                                                                }
+                                                                                val isAlbum = (fileItem.bucketId != null || fileItem.file.path.contains("album:")) && currentView == "Category"
+                                                                                if (isAlbum) {
+                                                                                    val bucketId = fileItem.bucketId ?: fileItem.file.path.substringAfter("album:")
+                                                                                    viewModel.browseCategory(FileType.IMAGE, fileItem.name, bucketId)
+                                                                                } else {
+                                                                                    if (viewModel.currentZipFile != null && fileItem.zipEntryPath != null) {
+                                                                                        viewModel.navigateZipInto(fileItem.zipEntryPath)
+                                                                                    } else {
+                                                                                        viewModel.navigateTo(fileItem.file)
+                                                                                    }
+                                                                                    currentView = "Files"
+                                                                                }
+                                                                            } else if (fileItem.fileType == FileType.ZIP) {
+                                                                                if (isSearching) {
+                                                                                    isSearching = false
+                                                                                    searchQuery = ""
+                                                                                    viewModel.searchFiles("")
+                                                                                }
+                                                                                viewModel.openArchive(fileItem.file)
+                                                                                currentView = "Files"
+                                                                            } else {
+                                                                                onFileClick(fileItem)
+                                                                            }
                                                                         }
+                                                                    },
+                                                                    onLongClick = {
+                                                                        viewModel.toggleSelection(fileItem)
+                                                                    },
+                                                                    onDelete = {
+                                                                        if (viewModel.confirmBeforeDelete) {
+                                                                            pendingDelete = PendingDelete.Single(fileItem)
+                                                                        } else {
+                                                                            viewModel.deleteFile(fileItem)
+                                                                        }
+                                                                    },
+                                                                    onRename = { newName -> viewModel.renameFile(fileItem, newName) },
+                                                                    onRenameRequest = { showRenameDialog = fileItem },
+                                                                    onShare = { onShareClick(listOf(fileItem)) },
+                                                                    onCopy = { viewModel.toggleSelection(fileItem); viewModel.copySelected() },
+                                                                    onCut = { viewModel.toggleSelection(fileItem); viewModel.moveSelected() },
+                                                                    onOpenLocation = if (searchQuery.isNotEmpty()) {
+                                                                        {
+                                                                            val parent = fileItem.file.parentFile
+                                                                            if (parent != null) {
+                                                                                isSearching = false
+                                                                                searchQuery = ""
+                                                                                viewModel.loadFiles(parent.absolutePath)
+                                                                                viewModel.highlightedFile = fileItem
+                                                                            }
+                                                                        }
+                                                                    } else null,
+                                                                    onExtract = {
+                                                                        if (currentView == "Category" || currentView == "Recent") {
+                                                                            viewModel.prepareExtraction(fileItem.file)
+                                                                            Toast.makeText(context, "Archive ready. Navigate to a folder to extract.", Toast.LENGTH_SHORT).show()
+                                                                        } else {
+                                                                            showExtractionDialog = fileItem
+                                                                        }
+                                                                    },
+                                                                    onProperties = { viewModel.showProperties(fileItem) },
+                                                                    onPaste = { viewModel.navigateTo(fileItem.file); viewModel.pasteFiles() },
+                                                                    viewModel = viewModel,
+                                                                    dragSelectState = checkboxDragSelectState,
+                                                                    isDividerVisible = viewModel.showListDividers && indexInFullList != displayedFilesFinal.lastIndex && !isSelected && !viewModel.selectedFiles.contains(displayedFilesFinal.getOrNull(indexInFullList + 1))
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                } else {
+                                                    item(key = "top_spacer") { Spacer(modifier = Modifier.height(8.dp)) }
+                                                    itemsIndexed(displayedFilesFinal, key = { _, item -> item.file.absolutePath }, contentType = { _, _ -> "list_item" }) { index, fileItem ->
+                                                        val isSelected = viewModel.selectedFiles.contains(fileItem)
+                                                        val isHighlighted = viewModel.highlightedFile?.file?.absolutePath == fileItem.file.absolutePath
+                                                        val isRoot = viewModel.currentPath == Environment.getExternalStorageDirectory().absolutePath
+                                                        FileListItem(
+                                                            fileItem = fileItem,
+                                                            isSelected = isSelected,
+                                                            isHighlighted = isHighlighted,
+                                                            isSelectionMode = viewModel.isSelectionMode,
+                                                            showDetails = if (fileItem.isDirectory && isRoot) false else viewModel.showDetails,
+                                                            showExtension = viewModel.showFileExtensions,
+                                                            showListDividers = viewModel.showListDividers,
+                                                            isVirtual = viewModel.currentZipFile != null,
+                                                            clipboardHasFiles = viewModel.clipboardFiles.isNotEmpty(),
+                                                            index = index, // Pass index for staggered animation
+                                                            scrollResetKey = scrollResetKey, // Pass key to restart animation on path change
+                                                            hasAnimatedBefore = skipEntranceAnimation || animatedItemKeys.contains(fileItem.file.absolutePath),
+                                                            onAnimationStart = { animatedItemKeys.add(fileItem.file.absolutePath) },
+                                                            modifier = if (skipEntranceAnimation) Modifier else Modifier.animateItem(),
+                                                            onClick = {
+                                                                if (viewModel.isSelectionMode) {
+                                                                    viewModel.toggleSelection(fileItem)
+                                                                } else {
+                                                                    if (fileItem.isDirectory) {
+                                                                        if (isSearching) {
+                                                                            isSearching = false
+                                                                            searchQuery = ""
+                                                                            viewModel.searchFiles("")
+                                                                        }
+                                                                        val isAlbum = (fileItem.bucketId != null || fileItem.file.path.contains("album:")) && currentView == "Category"
+                                                                        if (isAlbum) {
+                                                                            val bucketId = fileItem.bucketId ?: fileItem.file.path.substringAfter("album:")
+                                                                            viewModel.browseCategory(FileType.IMAGE, fileItem.name, bucketId)
+                                                                        } else {
+                                                                            if (viewModel.currentZipFile != null && fileItem.zipEntryPath != null) {
+                                                                                viewModel.navigateZipInto(fileItem.zipEntryPath)
+                                                                            } else {
+                                                                                viewModel.navigateTo(fileItem.file)
+                                                                            }
+                                                                            currentView = "Files"
+                                                                        }
+                                                                    } else if (fileItem.fileType == FileType.ZIP) {
+                                                                        if (isSearching) {
+                                                                            isSearching = false
+                                                                            searchQuery = ""
+                                                                            viewModel.searchFiles("")
+                                                                        }
+                                                                        viewModel.openArchive(fileItem.file)
                                                                         currentView = "Files"
+                                                                    } else {
+                                                                        onFileClick(fileItem)
                                                                     }
-                                                                } else if (fileItem.fileType == FileType.ZIP) {
-                                                                    if (isSearching) {
+                                                                }
+                                                            },
+                                                            onLongClick = {
+                                                                viewModel.toggleSelection(fileItem)
+                                                            },
+                                                            onDelete = {
+                                                                if (viewModel.confirmBeforeDelete) {
+                                                                    pendingDelete = PendingDelete.Single(fileItem)
+                                                                } else {
+                                                                    viewModel.deleteFile(fileItem)
+                                                                }
+                                                            },
+                                                            onRename = { newName -> viewModel.renameFile(fileItem, newName) },
+                                                            onRenameRequest = { showRenameDialog = fileItem },
+                                                            onShare = { onShareClick(listOf(fileItem)) },
+                                                            onCopy = { viewModel.toggleSelection(fileItem); viewModel.copySelected() },
+                                                            onCut = { viewModel.toggleSelection(fileItem); viewModel.moveSelected() },
+                                                            onOpenLocation = if (searchQuery.isNotEmpty()) {
+                                                                {
+                                                                    val parent = fileItem.file.parentFile
+                                                                    if (parent != null) {
                                                                         isSearching = false
                                                                         searchQuery = ""
-                                                                        viewModel.searchFiles("")
+                                                                        viewModel.loadFiles(parent.absolutePath)
+                                                                        viewModel.highlightedFile = fileItem
                                                                     }
-                                                                    viewModel.openArchive(fileItem.file)
-                                                                    currentView = "Files"
+                                                                }
+                                                            } else null,
+                                                            onExtract = {
+                                                                if (currentView == "Category" || currentView == "Recent") {
+                                                                    viewModel.prepareExtraction(fileItem.file)
+                                                                    Toast.makeText(context, "Archive ready. Navigate to a folder to extract.", Toast.LENGTH_SHORT).show()
                                                                 } else {
-                                                                    onFileClick(fileItem)
+                                                                    showExtractionDialog = fileItem
                                                                 }
-                                                            }
-                                                        },
-                                                        onLongClick = {
-                                                            viewModel.toggleSelection(fileItem)
-                                                        },
-                                                        onDelete = {
-                                                            if (viewModel.confirmBeforeDelete) {
-                                                                pendingDelete = PendingDelete.Single(fileItem)
-                                                            } else {
-                                                                viewModel.deleteFile(fileItem)
-                                                            }
-                                                        },
-                                                        onRename = { newName -> viewModel.renameFile(fileItem, newName) },
-                                                        onRenameRequest = { showRenameDialog = fileItem },
-                                                        onShare = { onShareClick(listOf(fileItem)) },
-                                                        onCopy = { viewModel.toggleSelection(fileItem); viewModel.copySelected() },
-                                                        onCut = { viewModel.toggleSelection(fileItem); viewModel.moveSelected() },
-                                                        onOpenLocation = if (searchQuery.isNotEmpty()) {
-                                                            {
-                                                                val parent = fileItem.file.parentFile
-                                                                if (parent != null) {
-                                                                    isSearching = false
-                                                                    searchQuery = ""
-                                                                    viewModel.loadFiles(parent.absolutePath)
-                                                                    viewModel.highlightedFile = fileItem
-                                                                }
-                                                            }
-                                                        } else null,
-                                                        onExtract = {
-                                                            if (currentView == "Category" || currentView == "Recent") {
-                                                                viewModel.prepareExtraction(fileItem.file)
-                                                                Toast.makeText(context, "Archive ready. Navigate to a folder to extract.", Toast.LENGTH_SHORT).show()
-                                                            } else {
-                                                                showExtractionDialog = fileItem
-                                                            }
-                                                        },
-                                                        onProperties = { viewModel.showProperties(fileItem) },
-                                                        onPaste = { viewModel.navigateTo(fileItem.file); viewModel.pasteFiles() },
-                                                        viewModel = viewModel,
-                                                        dragSelectState = checkboxDragSelectState,
-                                                        isDividerVisible = viewModel.showListDividers && index != displayedFilesFinal.lastIndex && !isSelected && !viewModel.selectedFiles.contains(displayedFilesFinal.getOrNull(index + 1))
-                                                    )
+                                                            },
+                                                            onProperties = { viewModel.showProperties(fileItem) },
+                                                            onPaste = { viewModel.navigateTo(fileItem.file); viewModel.pasteFiles() },
+                                                            viewModel = viewModel,
+                                                            dragSelectState = checkboxDragSelectState,
+                                                            isDividerVisible = viewModel.showListDividers && index != displayedFilesFinal.lastIndex && !isSelected && !viewModel.selectedFiles.contains(displayedFilesFinal.getOrNull(index + 1))
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -1514,6 +1722,7 @@ fun MainTopBar(
     archiveName: String?,
     viewModel: RoseViewModel,
     currentView: String,
+    totalItems: Int? = null,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     onSearchClick: () -> Unit,
@@ -1530,29 +1739,38 @@ fun MainTopBar(
         TopAppBar(
             title = {
                 val isAlbum = viewModel.categoryBucketId != null
-                if (title == "All Files" && sharedTransitionScope != null && animatedVisibilityScope != null) {
-                    with(sharedTransitionScope) {
+                Column {
+                    if (title == "All Files" && sharedTransitionScope != null && animatedVisibilityScope != null) {
+                        with(sharedTransitionScope) {
+                            Text(
+                                title,
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                softWrap = false,
+                                maxLines = 1,
+                                modifier = Modifier.sharedBounds(
+                                    rememberSharedContentState(key = "all_files_title"),
+                                    animatedVisibilityScope = animatedVisibilityScope,
+                                    enter = fadeIn(),
+                                    exit = fadeOut(),
+                                    resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds()
+                                )
+                            )
+                        }
+                    } else {
                         Text(
                             title,
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            softWrap = false,
-                            maxLines = 1,
-                            modifier = Modifier.sharedBounds(
-                                rememberSharedContentState(key = "all_files_title"),
-                                animatedVisibilityScope = animatedVisibilityScope,
-                                enter = fadeIn(),
-                                exit = fadeOut(),
-                                resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds()
-                            )
+                            style = if (isAlbum) MaterialTheme.typography.headlineSmall.copy(fontSize = 20.sp) else MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold
                         )
                     }
-                } else {
-                    Text(
-                        title,
-                        style = if (isAlbum) MaterialTheme.typography.headlineSmall.copy(fontSize = 20.sp) else MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold
-                    )
+                    if (totalItems != null) {
+                        Text(
+                            "$totalItems items in total",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                        )
+                    }
                 }
             },
             navigationIcon = {
@@ -3005,4 +3223,66 @@ fun formatFileSize(size: Long): String {
         unitIndex++
     }
     return "%.1f %s".format(s, units[unitIndex])
+}
+
+private sealed class ListItemType {
+    data class Header(val title: String, val count: Int) : ListItemType()
+    data class File(val fileItem: FileItem) : ListItemType()
+}
+
+@Composable
+private fun DateHeader(title: String, count: Int) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        VerticalDivider(
+            modifier = Modifier.height(14.dp),
+            thickness = 1.5.dp,
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "$count items",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+private fun formatDateHeader(timestamp: Long): String {
+    val now = Calendar.getInstance()
+    val itemDate = Calendar.getInstance().apply { timeInMillis = timestamp }
+
+    val nowCalendar = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    val itemCalendar = Calendar.getInstance().apply {
+        timeInMillis = timestamp
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+
+    val actualDiffDays = ((nowCalendar.timeInMillis - itemCalendar.timeInMillis) / (24 * 60 * 60 * 1000)).toInt()
+
+    return when {
+        actualDiffDays == 0 -> "Today"
+        actualDiffDays == 1 -> "Yesterday"
+        actualDiffDays in 2..3 -> "$actualDiffDays days ago"
+        else -> SimpleDateFormat("dd-MM-yy", Locale.getDefault()).format(Date(timestamp))
+    }
 }
