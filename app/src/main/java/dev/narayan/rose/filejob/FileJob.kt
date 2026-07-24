@@ -67,9 +67,13 @@ object FileOperationRunner {
                             JobManager.updateJob(job)
 
                             val target = getNonConflictingTarget(appContext, type.targetDir, source.displayName)
-                            copyRecursive(appContext, source.path, target, job) {
+                            val success = copyRecursive(appContext, source.path, target, job) {
                                 onProgress(it)
                                 JobManager.updateJob(it)
+                            }
+                            if (!success) {
+                                if (JobManager.isCancelled(job.id)) return@Thread
+                                throw Exception("Failed to copy ${source.displayName}. Check if storage is full or access is denied.")
                             }
                             touchedPaths.add(target.toString())
                             job.processedItems++
@@ -90,9 +94,13 @@ object FileOperationRunner {
                                 return@forEach
                             }
 
-                            moveRecursive(appContext, source.path, target, job) {
+                            val success = moveRecursive(appContext, source.path, target, job) {
                                 onProgress(it)
                                 JobManager.updateJob(it)
+                            }
+                            if (!success) {
+                                if (JobManager.isCancelled(job.id)) return@Thread
+                                throw Exception("Failed to move ${source.displayName}. Make sure Shizuku is authorized and target is writable.")
                             }
                             touchedPaths.add(source.path)
                             touchedPaths.add(target.toString())
@@ -239,28 +247,66 @@ object FileOperationRunner {
 
     // -- Copy -----------------------------------------------------------
 
-    private fun copyRecursive(context: Context, sourcePath: String, target: Path, job: FileJob? = null, onProgress: ((FileJob) -> Unit)? = null) {
-        if (job != null && JobManager.isCancelled(job.id)) return
+    private fun copyRecursive(context: Context, sourcePath: String, target: Path, job: FileJob? = null, onProgress: ((FileJob) -> Unit)? = null): Boolean {
+        if (job != null && JobManager.isCancelled(job.id)) return false
 
         val targetPath = target.toString()
         val sourceRestricted = SafManager.isRestrictedPath(sourcePath)
         val targetRestricted = SafManager.isRestrictedPath(targetPath)
 
+        // Priority 1: Shizuku direct copy (Fast and reliable for restricted paths)
+        if ((sourceRestricted || targetRestricted) &&
+            dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()
+        ) {
+            val cleanSrc = dev.narayan.rose.ShizukuManager.normalize(sourcePath)
+            val cleanDest = dev.narayan.rose.ShizukuManager.normalize(targetPath)
+            
+            // Ensure target directory exists for shell cp
+            val destParent = target.parent.toString()
+            if (SafManager.isRestrictedPath(destParent)) {
+                val cleanParent = dev.narayan.rose.ShizukuManager.normalize(destParent)
+                dev.narayan.rose.ShizukuManager.runCommandSync("mkdir -p \"$cleanParent\"")
+            } else {
+                java.io.File(destParent).mkdirs()
+            }
+
+            val exitCode = dev.narayan.rose.ShizukuManager.runCommandSync("cp -r \"$cleanSrc\" \"$cleanDest\"")
+            if (exitCode == 0) return true
+            // If shell copy failed, fall through to SAF
+        }
+
         val sourceIsPath = !SafManager.isSafUri(sourcePath) && !sourceRestricted
 
         if (sourceIsPath && !targetRestricted) {
             val source = Paths.get(sourcePath)
-            if (Files.isDirectory(source)) {
-                if (!Files.exists(target)) Files.createDirectories(target)
-                Files.list(source).use { stream -> stream.forEach { copyRecursive(context, it.toString(), target.resolve(it.fileName.toString()), job, onProgress) } }
-            } else {
-                copyFileWithProgress(Files.newInputStream(source), Files.newOutputStream(target), Files.size(source), job, onProgress)
+            return try {
+                if (Files.isDirectory(source)) {
+                    if (!Files.exists(target)) Files.createDirectories(target)
+                    var allSubSuccess = true
+                    Files.list(source).use { stream ->
+                        stream.forEach {
+                            if (!copyRecursive(context, it.toString(), target.resolve(it.fileName.toString()), job, onProgress)) {
+                                allSubSuccess = false
+                            }
+                        }
+                    }
+                    allSubSuccess
+                } else {
+                    copyFileWithProgress(Files.newInputStream(source), Files.newOutputStream(target), Files.size(source), job, onProgress)
+                    true
+                }
+            } catch (e: Exception) {
+                false
             }
-            return
         }
 
         val sourceIsDir = if (sourceRestricted || SafManager.isSafUri(sourcePath)) {
-            SafManager.isDirectory(context, sourcePath)
+            val fromSaf = SafManager.isDirectory(context, sourcePath)
+            if (!fromSaf && sourceRestricted && dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()) {
+                // If SAF fails, check via Shizuku
+                val cleanSource = dev.narayan.rose.ShizukuManager.normalize(sourcePath)
+                dev.narayan.rose.ShizukuManager.runCommandSync("[ -d \"$cleanSource\" ]") == 0
+            } else fromSaf
         } else {
             Files.isDirectory(Paths.get(sourcePath))
         }
@@ -273,22 +319,44 @@ object FileOperationRunner {
             }
 
             val childPaths: List<String> = if (sourceRestricted || SafManager.isSafUri(sourcePath)) {
-                SafManager.listChildPaths(context, sourcePath)
+                val fromSaf = SafManager.listChildPaths(context, sourcePath)
+                if (fromSaf.isEmpty() && sourceRestricted && dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()) {
+                    // Fallback to Shizuku for listing
+                    val results = mutableListOf<String>()
+                    val cleanSource = dev.narayan.rose.ShizukuManager.normalize(sourcePath)
+                    val cmd = "for f in \"$cleanSource\"/* \"$cleanSource\"/.*; do [ -e \"\$f\" ] && [ \"\${f##*/}\" != \".\" ] && [ \"\${f##*/}\" != \"..\" ] && echo \"\$f\"; done"
+                    val process = dev.narayan.rose.ShizukuManager.newProcess(arrayOf("sh", "-c", cmd), null, null)
+                    process.inputStream.bufferedReader().useLines { lines ->
+                        lines.forEach { results.add(it) }
+                    }
+                    process.waitFor()
+                    results
+                } else fromSaf
             } else {
                 Files.list(Paths.get(sourcePath)).use { stream -> stream.map { it.toString() }.toList() }
             }
 
+            var allChildrenSuccess = true
             childPaths.forEach { childPath ->
                 val name = if (SafManager.isSafUri(childPath) || SafManager.isRestrictedPath(childPath)) {
-                    SafManager.getDocumentFile(context, childPath)?.name ?: childPath.substringAfterLast('/')
+                    val doc = SafManager.getDocumentFile(context, childPath)
+                    doc?.name ?: childPath.substringAfterLast('/')
                 } else {
                     Paths.get(childPath).fileName.toString()
                 }
-                copyRecursive(context, childPath, target.resolve(name), job, onProgress)
+                if (!copyRecursive(context, childPath, target.resolve(name), job, onProgress)) {
+                    allChildrenSuccess = false
+                }
             }
+            return allChildrenSuccess
         } else {
             val input = if (sourceRestricted || SafManager.isSafUri(sourcePath)) {
-                SafManager.openInputStream(context, sourcePath)
+                val safInput = SafManager.openInputStream(context, sourcePath)
+                if (safInput == null && sourceRestricted && dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()) {
+                    val cleanSrc = dev.narayan.rose.ShizukuManager.normalize(sourcePath)
+                    val process = dev.narayan.rose.ShizukuManager.newProcess(arrayOf("sh", "-c", "cat \"$cleanSrc\""), null, null)
+                    process.inputStream
+                } else safInput
             } else {
                 Files.newInputStream(Paths.get(sourcePath))
             }
@@ -300,16 +368,27 @@ object FileOperationRunner {
             }
 
             val size = if (sourceRestricted || SafManager.isSafUri(sourcePath)) {
-                SafManager.getReliableSize(context, sourcePath)
+                val safSize = SafManager.getReliableSize(context, sourcePath)
+                if (safSize <= 0 && sourceRestricted && dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()) {
+                    val cleanSrc = dev.narayan.rose.ShizukuManager.normalize(sourcePath)
+                    val process = dev.narayan.rose.ShizukuManager.newProcess(arrayOf("sh", "-c", "stat -c %s \"$cleanSrc\""), null, null)
+                    val sizeStr = process.inputStream.bufferedReader().readText().trim()
+                    process.waitFor()
+                    sizeStr.toLongOrNull() ?: 0L
+                } else safSize
             } else {
                 Files.size(Paths.get(sourcePath))
             }
 
-            input?.use { inp ->
-                output?.use { out ->
-                    copyFileWithProgress(inp, out, size, job, onProgress)
+            if (input != null && output != null) {
+                input.use { inp ->
+                    output.use { out ->
+                        copyFileWithProgress(inp, out, size, job, onProgress)
+                    }
                 }
+                return true
             }
+            return false
         }
     }
 
@@ -365,18 +444,47 @@ object FileOperationRunner {
 
     // -- Move -------------------------------------------------------------
 
-    private fun moveRecursive(context: Context, sourcePath: String, target: Path, job: FileJob? = null, onProgress: ((FileJob) -> Unit)? = null) {
+    private fun moveRecursive(context: Context, sourcePath: String, target: Path, job: FileJob? = null, onProgress: ((FileJob) -> Unit)? = null): Boolean {
         val targetPath = target.toString()
         val sourceRestricted = SafManager.isRestrictedPath(sourcePath)
         val targetRestricted = SafManager.isRestrictedPath(targetPath)
 
-        if (!sourceRestricted && !targetRestricted && !SafManager.isSafUri(sourcePath)) {
-            Files.move(Paths.get(sourcePath), target, StandardCopyOption.REPLACE_EXISTING)
-            return
+        // Priority 1: Shizuku direct move (Fast and atomic for restricted paths)
+        if ((sourceRestricted || targetRestricted) &&
+            dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()
+        ) {
+            val cleanSrc = dev.narayan.rose.ShizukuManager.normalize(sourcePath)
+            val cleanDest = dev.narayan.rose.ShizukuManager.normalize(targetPath)
+            
+            // Ensure target directory exists for shell mv
+            val destParent = target.parent.toString()
+            if (SafManager.isRestrictedPath(destParent)) {
+                val cleanParent = dev.narayan.rose.ShizukuManager.normalize(destParent)
+                dev.narayan.rose.ShizukuManager.runCommandSync("mkdir -p \"$cleanParent\"")
+            } else {
+                java.io.File(destParent).mkdirs()
+            }
+
+            val exitCode = dev.narayan.rose.ShizukuManager.runCommandSync("mv \"$cleanSrc\" \"$cleanDest\"")
+            if (exitCode == 0) return true
+            // If shell move failed, maybe it's across volumes, fall through to copy+delete
         }
 
-        copyRecursive(context, sourcePath, target, job, onProgress)
-        deleteRecursive(context, Paths.get(sourcePath))
+        if (!sourceRestricted && !targetRestricted && !SafManager.isSafUri(sourcePath)) {
+            return try {
+                Files.move(Paths.get(sourcePath), target, StandardCopyOption.REPLACE_EXISTING)
+                true
+            } catch (e: Exception) {
+                false
+            }
+        }
+
+        // Check if copy works before deleting source (Avoid file loss)
+        if (copyRecursive(context, sourcePath, target, job, onProgress)) {
+            deleteRecursive(context, Paths.get(sourcePath), job, onProgress)
+            return true
+        }
+        return false
     }
 
     // -- Delete -----------------------------------------------------------
@@ -386,7 +494,13 @@ object FileOperationRunner {
 
         val pathStr = path.toString()
         if (SafManager.isRestrictedPath(pathStr)) {
-            SafManager.delete(context, pathStr)
+            if (SafManager.hasPermission(context, pathStr)) {
+                SafManager.delete(context, pathStr)
+            } else if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()) {
+                val clean = dev.narayan.rose.ShizukuManager.normalize(pathStr)
+                val process = dev.narayan.rose.ShizukuManager.newProcess(arrayOf("sh", "-c", "rm -rf \"$clean\""), null, null)
+                process.waitFor()
+            }
             return
         }
 

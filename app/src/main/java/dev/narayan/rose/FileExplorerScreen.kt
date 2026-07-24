@@ -953,67 +953,30 @@ fun FileExplorerScreen(
                             } else Modifier
                         )) {
                             val isRestricted = (viewModel.currentPath.contains("/Android/data") || viewModel.currentPath.contains("/Android/obb"))
-                            val noSafPermission = isRestricted && viewModel.files.isEmpty() && !SafManager.hasPermission(LocalContext.current, viewModel.currentPath)
+                            val hasShizuku = ShizukuManager.isAvailable() && ShizukuManager.hasPermission()
+                            val hasSaf = SafManager.hasPermission(LocalContext.current, viewModel.currentPath)
+                            
+                            // DO NOT show Restricted card if Shizuku is authorized.
+                            // SAF is disabled for OBB/Data on Android 11+, so suggesting it is a bug.
+                            val accessDenied = isRestricted && viewModel.files.isEmpty() && !hasSaf && !hasShizuku
 
-                            if (noSafPermission && !viewModel.isLoading) {
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier.padding(32.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Lock,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(64.dp),
-                                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                                        )
-                                        Spacer(modifier = Modifier.height(16.dp))
-                                        Text(
-                                            "Access Restricted",
-                                            style = MaterialTheme.typography.headlineSmall,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Text(
-                                            "Android 11+ restricts access to this folder. You can browse it using the system file manager.",
-                                            textAlign = TextAlign.Center,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Spacer(modifier = Modifier.height(24.dp))
-                                        Button(
-                                            onClick = {
-                                                viewModel.retrySaf(viewModel.currentPath)
-                                            },
-                                            shape = RoundedCornerShape(12.dp)
-                                        ) {
-                                            Text("Grant Permission")
+                            if (accessDenied && !viewModel.isLoading) {
+                                RestrictedFolderView(
+                                    path = viewModel.currentPath,
+                                    isShizukuAuthorized = hasShizuku,
+                                    onGrantShizuku = {
+                                        if (ShizukuManager.isAvailable()) {
+                                            viewModel.onShizukuResult(false, viewModel.currentPath) // Reset
+                                            viewModel.retryShizuku(viewModel.currentPath)
+                                        } else {
+                                            ShizukuManager.requestBinder(context)
+                                            Toast.makeText(context, "Shizuku not running. Please start it first.", Toast.LENGTH_LONG).show()
                                         }
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        TextButton(
-                                            onClick = {
-                                                val docId = if (viewModel.currentPath.contains("Android/data")) "primary:Android/data" else "primary:Android/obb"
-                                                val uri = DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", docId)
-                                                val intent = Intent(Intent.ACTION_VIEW).apply {
-                                                    setDataAndType(uri, "vnd.android.document/directory")
-                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                                    // Try to open in DocumentsUI
-                                                    val packageInfos = context.packageManager.queryIntentActivities(this, 0)
-                                                    packageInfos.find { it.activityInfo.packageName.endsWith(".documentsui") }?.let {
-                                                        setPackage(it.activityInfo.packageName)
-                                                    }
-                                                }
-                                                try {
-                                                    context.startActivity(intent)
-                                                } catch (e: Exception) {
-                                                    Toast.makeText(context, "System viewer not found", Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
-                                        ) {
-                                            Text("Open System Viewer")
-                                        }
+                                    },
+                                    onGrantSaf = {
+                                        viewModel.retrySaf(viewModel.currentPath)
                                     }
-                                }
+                                )
                             } else {
                                 // Material Files style: Central loading indicator that appears after a short delay
                                 // if the folder/category scan is taking a moment.
@@ -1168,7 +1131,7 @@ fun FileExplorerScreen(
                                                                                     if (viewModel.currentZipFile != null && fileItem.zipEntryPath != null) {
                                                                                         viewModel.navigateZipInto(fileItem.zipEntryPath)
                                                                                     } else {
-                                                                                        viewModel.navigateTo(fileItem.file)
+                                                                                        viewModel.navigateTo(fileItem.file, fileItem.isDirectory)
                                                                                     }
                                                                                     currentView = "Files"
                                                                                 }
@@ -1225,7 +1188,7 @@ fun FileExplorerScreen(
                                                                             if (viewModel.currentZipFile != null && fileItem.zipEntryPath != null) {
                                                                                 viewModel.navigateZipInto(fileItem.zipEntryPath)
                                                                             } else {
-                                                                                viewModel.navigateTo(fileItem.file)
+                                                                                viewModel.navigateTo(fileItem.file, fileItem.isDirectory)
                                                                             }
                                                                             currentView = "Files"
                                                                         }
@@ -1306,7 +1269,7 @@ fun FileExplorerScreen(
                                                                                     if (viewModel.currentZipFile != null && fileItem.zipEntryPath != null) {
                                                                                         viewModel.navigateZipInto(fileItem.zipEntryPath)
                                                                                     } else {
-                                                                                        viewModel.navigateTo(fileItem.file)
+                                                                                        viewModel.navigateTo(fileItem.file, fileItem.isDirectory)
                                                                                     }
                                                                                     currentView = "Files"
                                                                                 }
@@ -1358,7 +1321,7 @@ fun FileExplorerScreen(
                                                                         }
                                                                     },
                                                                     onProperties = { viewModel.showProperties(fileItem) },
-                                                                    onPaste = { viewModel.navigateTo(fileItem.file); viewModel.pasteFiles() },
+                                                                    onPaste = { viewModel.navigateTo(fileItem.file, fileItem.isDirectory); viewModel.pasteFiles() },
                                                                     viewModel = viewModel,
                                                                     dragSelectState = checkboxDragSelectState,
                                                                     isDividerVisible = viewModel.showListDividers && indexInFullList != displayedFilesFinal.lastIndex && !isSelected && !viewModel.selectedFiles.contains(displayedFilesFinal.getOrNull(indexInFullList + 1))
@@ -1405,7 +1368,7 @@ fun FileExplorerScreen(
                                                                             if (viewModel.currentZipFile != null && fileItem.zipEntryPath != null) {
                                                                                 viewModel.navigateZipInto(fileItem.zipEntryPath)
                                                                             } else {
-                                                                                viewModel.navigateTo(fileItem.file)
+                                                                                viewModel.navigateTo(fileItem.file, fileItem.isDirectory)
                                                                             }
                                                                             currentView = "Files"
                                                                         }
@@ -1457,7 +1420,7 @@ fun FileExplorerScreen(
                                                                 }
                                                             },
                                                             onProperties = { viewModel.showProperties(fileItem) },
-                                                            onPaste = { viewModel.navigateTo(fileItem.file); viewModel.pasteFiles() },
+                                                            onPaste = { viewModel.navigateTo(fileItem.file, fileItem.isDirectory); viewModel.pasteFiles() },
                                                             viewModel = viewModel,
                                                             dragSelectState = checkboxDragSelectState,
                                                             isDividerVisible = viewModel.showListDividers && index != displayedFilesFinal.lastIndex && !isSelected && !viewModel.selectedFiles.contains(displayedFilesFinal.getOrNull(index + 1))
@@ -1800,6 +1763,13 @@ fun MainTopBar(
                                 )
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             }
+                            DropdownMenuItem(
+                                text = { Text(if (viewModel.showHiddenFiles) "Hide Hidden Files" else "Show Hidden Files", modifier = Modifier.padding(vertical = 4.dp)) },
+                                onClick = { viewModel.toggleHiddenFiles(); showMoreMenu = false },
+                                leadingIcon = { Icon(if (viewModel.showHiddenFiles) Icons.Default.VisibilityOff else Icons.Default.Visibility, null) },
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             DropdownMenuItem(
                                 text = { Text("Refresh", modifier = Modifier.padding(vertical = 4.dp)) },
                                 onClick = { onRefreshClick(); showMoreMenu = false },
@@ -3284,5 +3254,139 @@ private fun formatDateHeader(timestamp: Long): String {
         actualDiffDays == 1 -> "Yesterday"
         actualDiffDays in 2..3 -> "$actualDiffDays days ago"
         else -> SimpleDateFormat("dd-MM-yy", Locale.getDefault()).format(Date(timestamp))
+    }
+}
+
+@Composable
+fun RestrictedFolderView(
+    path: String,
+    isShizukuAuthorized: Boolean = false,
+    onGrantShizuku: () -> Unit,
+    onGrantSaf: () -> Unit
+) {
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+    
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .padding(16.dp),
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .background(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                            androidx.compose.foundation.shape.CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Outlined.Lock,
+                        contentDescription = null,
+                        modifier = Modifier.size(40.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                Text(
+                    "Restricted System Folder",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    textAlign = TextAlign.Center
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Text(
+                    "Android 11+ restricts standard access to Android/data and Android/obb folders to protect app data. To view and modify these files, ROSE requires Shizuku permission.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp
+                )
+                
+                Spacer(modifier = Modifier.height(32.dp))
+                
+                Button(
+                    onClick = onGrantShizuku,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Outlined.VerifiedUser,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            "Grant Shizuku Access",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                TextButton(
+                    onClick = { uriHandler.openUri("https://shizuku.rikka.app/download/") }
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Outlined.HelpOutline,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "How to setup Shizuku?",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                // Fallback for non-Android/data/obb paths that might be restricted
+                if (!path.contains("/Android/data") && !path.contains("/Android/obb")) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(
+                        onClick = onGrantSaf,
+                        modifier = Modifier.alpha(0.7f)
+                    ) {
+                        Text(
+                            "Use system picker (Fallback)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
     }
 }

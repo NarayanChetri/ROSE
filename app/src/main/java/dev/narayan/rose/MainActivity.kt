@@ -34,6 +34,7 @@ import androidx.core.content.FileProvider
 import dev.narayan.rose.filejob.JobManager
 import dev.narayan.rose.ui.theme.RoseTheme
 import kotlinx.coroutines.launch
+import rikka.shizuku.Shizuku
 
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
@@ -123,10 +124,33 @@ class MainActivity : ComponentActivity() {
 
     private var sharedUris: List<Uri>? = null
 
+    private val SHIZUKU_PERMISSION_REQUEST_CODE = 1001
+
+    private val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
+        if (requestCode == SHIZUKU_PERMISSION_REQUEST_CODE) {
+            val path = viewModel.pendingShizukuPath ?: viewModel.currentPath
+            val granted = grantResult == PackageManager.PERMISSION_GRANTED
+            viewModel.onShizukuResult(granted, path)
+            if (!granted) {
+                // If Shizuku denied, fallback to SAF
+                viewModel.retrySaf(path)
+            }
+        }
+    }
+
+    private val shizukuBinderListener = Shizuku.OnBinderReceivedListener {
+        val currentPath = viewModel.currentPath
+        if (SafManager.isRestrictedPath(currentPath)) {
+            viewModel.loadFiles(currentPath, showLoading = false)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
+        Shizuku.addBinderReceivedListener(shizukuBinderListener)
         checkPermissions()
         handleIntent(intent)
 
@@ -251,6 +275,27 @@ class MainActivity : ComponentActivity() {
                         val intent = SafManager.requestPermission(this@MainActivity, path)
                         if (intent != null) {
                             safLauncher.launch(intent)
+                        }
+                    }
+                }
+
+                // Handle Shizuku requests
+                LaunchedEffect(viewModel.pendingShizukuPath) {
+                    viewModel.pendingShizukuPath?.let { path ->
+                        if (ShizukuManager.isAvailable()) {
+                            if (ShizukuManager.hasPermission()) {
+                                viewModel.onShizukuResult(true, path)
+                            } else {
+                                try {
+                                    Shizuku.requestPermission(SHIZUKU_PERMISSION_REQUEST_CODE)
+                                } catch (e: Exception) {
+                                    viewModel.onShizukuResult(false, path)
+                                    viewModel.retrySaf(path)
+                                }
+                            }
+                        } else {
+                            viewModel.onShizukuResult(false, path)
+                            viewModel.retrySaf(path)
                         }
                     }
                 }
@@ -690,6 +735,12 @@ class MainActivity : ComponentActivity() {
             val chooser = Intent.createChooser(intent, "Open with")
             startActivity(chooser)
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
+        Shizuku.removeBinderReceivedListener(shizukuBinderListener)
     }
 
     private fun hasStoragePermission(): Boolean {
