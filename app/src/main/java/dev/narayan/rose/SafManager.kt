@@ -45,12 +45,14 @@ object SafManager {
 
     private fun primaryStorage(): String = android.os.Environment.getExternalStorageDirectory().absolutePath
 
-    /** True if [path] is inside Android/data or Android/obb on primary storage. */
+    /** True if [path] is inside Android/data or Android/obb on any storage volume. */
     fun isRestrictedPath(path: String): Boolean {
         if (isSafUri(path)) return true
-        val primary = primaryStorage()
-        return path == "$primary/Android/data" || path.startsWith("$primary/Android/data/") ||
-                path == "$primary/Android/obb" || path.startsWith("$primary/Android/obb/")
+        val lowPath = try { File(path).canonicalPath.lowercase() } catch (e: Exception) { path.lowercase() }
+        
+        // Check for Android/data or Android/obb at the end of path or as a directory segment
+        return lowPath.endsWith("/android/data") || lowPath.contains("/android/data/") ||
+                lowPath.endsWith("/android/obb") || lowPath.contains("/android/obb/")
     }
 
     /** Splits a restricted [path] into (documentId of Android/data or Android/obb, relative path beyond it). */
@@ -85,11 +87,16 @@ object SafManager {
 
     fun hasRootPermission(context: Context): Boolean = persistedRootTreeUri(context) != null
 
-    /** Kept for call-site compatibility - any restricted path just checks the single root grant. */
     fun hasPermission(context: Context, path: String): Boolean {
-        if (isSafUri(path)) return true // Assuming we have permission if we have the URI
+        if (isSafUri(path)) return true 
         if (!isRestrictedPath(path)) return true
-        return hasRootPermission(context)
+        if (hasRootPermission(context)) return true
+        
+        // Check if we have a persisted permission for this specific folder or a parent
+        val docId = documentIdForPath(path) ?: return false
+        return context.contentResolver.persistedUriPermissions.any { 
+            it.isReadPermission && it.uri.toString().contains(docId.replace(":", "%3A"))
+        }
     }
 
     /** One-time root grant request - points the system picker straight at the storage root. */
@@ -108,16 +115,25 @@ object SafManager {
     fun requestPermission(context: Context, path: String): Intent? {
         if (isSafUri(path)) return null
         if (!isRestrictedPath(path)) return null
-        return requestRootPermission()
+        
+        // Targeted permission request for specific subfolder (like CX/NFile)
+        val docId = documentIdForPath(path) ?: return requestRootPermission()
+        val initialUri = DocumentsContract.buildDocumentUri(AUTHORITY, docId)
+        
+        return Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+            putExtra("android.provider.extra.INITIAL_URI", initialUri)
+            putExtra("android.provider.extra.SHOW_ADVANCED", true)
+        }
     }
 
     // ---------------------------------------------------------------------
     // DocumentFile resolution (core of every operation below)
     // ---------------------------------------------------------------------
 
-    /**
-     * Resolves an arbitrary Android/data or Android/obb [path] to its DocumentFile.
-     */
     fun getDocumentFile(context: Context, path: String): DocumentFile? {
         if (isSafUri(path)) {
             return try {
@@ -126,16 +142,37 @@ object SafManager {
                 null
             }
         }
-        val treeUri = persistedRootTreeUri(context) ?: return null
+        
         val (rootDocId, relativePath) = splitAndroidSubRoot(path) ?: return null
-        var doc = DocumentFile.fromSingleUri(
-            context, DocumentsContract.buildDocumentUriUsingTree(treeUri, rootDocId)
-        ) ?: return null
-        if (relativePath.isEmpty()) return doc
+        val fullDocId = if (relativePath.isEmpty()) rootDocId else "$rootDocId/$relativePath"
+        
+        // Try to find a persisted URI that can reach this path
+        val treeUri = context.contentResolver.persistedUriPermissions
+            .filter { it.isReadPermission }
+            .map { it.uri }
+            .find { uri -> 
+                val treeId = try { DocumentsContract.getTreeDocumentId(uri) } catch (e: Exception) { null }
+                treeId != null && (fullDocId == treeId || fullDocId.startsWith("$treeId/"))
+            } ?: return null
 
-        for (part in relativePath.split("/").filter { it.isNotEmpty() }) {
-            doc = doc.findFile(part) ?: return null
+        var doc = DocumentFile.fromSingleUri(
+            context, DocumentsContract.buildDocumentUriUsingTree(treeUri, fullDocId)
+        )
+        
+        if (doc == null || !doc.exists()) {
+            // Fallback: start from tree root and walk down
+            val treeId = DocumentsContract.getTreeDocumentId(treeUri)
+            doc = DocumentFile.fromSingleUri(context, DocumentsContract.buildDocumentUriUsingTree(treeUri, treeId))
+            if (doc == null) return null
+            
+            val relativeToTree = fullDocId.removePrefix(treeId).removePrefix("/")
+            if (relativeToTree.isEmpty()) return doc
+            
+            for (part in relativeToTree.split("/").filter { it.isNotEmpty() }) {
+                doc = doc!!.findFile(part) ?: return null
+            }
         }
+
         return doc
     }
 

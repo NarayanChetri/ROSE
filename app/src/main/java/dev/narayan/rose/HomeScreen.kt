@@ -442,7 +442,7 @@ fun HomeScreen(
                                 viewModel.prepareExtraction(item.file)
                                 android.widget.Toast.makeText(context, "Archive ready. Navigate to a folder to extract.", android.widget.Toast.LENGTH_SHORT).show()
                             },
-                            onPaste = { viewModel.navigateTo(item.file); viewModel.pasteFiles() }
+                            onPaste = { viewModel.navigateTo(item.file, item.isDirectory); viewModel.pasteFiles() }
                         )
                         if (viewModel.showListDividers && index != viewModel.searchResults.lastIndex) {
                             HorizontalDivider(
