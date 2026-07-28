@@ -33,6 +33,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.automirrored.outlined.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -619,6 +620,7 @@ fun FileExplorerScreen(
             }
             "About" -> {
                 AboutScreen(
+                    viewModel = viewModel,
                     onBack = { activeScreen = "Main" }
                 )
             }
@@ -1572,16 +1574,41 @@ fun DeleteConfirmationDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutScreen(
+    viewModel: RoseViewModel,
     onBack: () -> Unit
 ) {
     BackHandler(onBack = onBack)
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+    val context = LocalContext.current
+    val updateResult = viewModel.updateCheckResult
+
+    LaunchedEffect(updateResult) {
+        if (updateResult is UpdateCheckResult.UpToDate) {
+            Toast.makeText(context, "You're on the latest version", Toast.LENGTH_SHORT).show()
+            viewModel.resetUpdateCheck()
+        } else if (updateResult is UpdateCheckResult.Error) {
+            Toast.makeText(context, updateResult.message, Toast.LENGTH_SHORT).show()
+            viewModel.resetUpdateCheck()
+        }
+    }
+
+    if (updateResult is UpdateCheckResult.UpdateAvailable) {
+        UpdateDialog(
+            info = updateResult.info,
+            onDismiss = { viewModel.resetUpdateCheck() },
+            onUpdate = {
+                uriHandler.openUri(updateResult.info.downloadUrl)
+                viewModel.resetUpdateCheck()
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("About") },
+                title = { Text("About", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
                 }
             )
         }
@@ -1590,66 +1617,109 @@ fun AboutScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            // Modernized Header (Slightly smaller to fit everything)
+            Surface(
+                modifier = Modifier.size(80.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                shape = RoundedCornerShape(24.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            modifier = Modifier.size(48.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(14.dp)
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_app_logo),
-                                contentDescription = null,
-                                modifier = Modifier.padding(8.dp),
-                                tint = Color.Unspecified
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column {
-                            Text("ROSE", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                            Text("Reliable Open-Source Explorer", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        "ROSE is what happens when a developer gets tired of boring file managers and decides to build one instead. It's fast, clean, open source, privacy-friendly, and built with Jetpack Compose—all because I thought, \"How hard could it be?\" Turns out... pretty hard.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_app_logo),
+                        contentDescription = null,
+                        modifier = Modifier.size(52.dp),
+                        tint = Color.Unspecified
                     )
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    AboutItem(Icons.Default.Info, "Version", "1.0.0 (1)")
-                    AboutItem(Icons.Default.Code, "View on GitHub", null) {
-                        uriHandler.openUri("https://github.com/NarayanChetri/ROSE")
-                    }
-                    AboutItem(Icons.Default.Description, "Licenses", null)
                 }
             }
 
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                "ROSE",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                "Reliable Open-Source Explorer",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Medium
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                "Made because I wanted a secure, open-source, fast, and powerful file manager with Shizuku support. My free time disagreed. Here's ROSE.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 12.dp)
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Information Section together in one card
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                )
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Author", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    AboutItem(Icons.Default.Person, "Developer", "Narayan Chetri")
-                    AboutItem(Icons.Default.Code, "Follow on GitHub", null) {
-                        uriHandler.openUri("https://github.com/NarayanChetri/")
+                Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                    AboutItem(Icons.Default.Info, "Version", BuildConfig.VERSION_NAME)
+                    AboutItem(Icons.Default.Code, "View on GitHub", "Source Code Repository") {
+                        uriHandler.openUri("https://github.com/NarayanChetri/ROSE")
                     }
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+
+                    AboutItem(Icons.Default.Person, "Narayan Chetri", "Lead Developer")
                     AboutItem(Icons.Default.Email, "Contact", "Narayanchetri.dev@gmail.com") {
                         uriHandler.openUri("mailto:Narayanchetri.dev@gmail.com")
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            // Update Check Button
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { viewModel.checkForUpdates() },
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    if (updateResult is UpdateCheckResult.Checking) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("Checking for updates...", style = MaterialTheme.typography.labelLarge)
+                    } else {
+                        Icon(Icons.Default.Update, null, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("Check for updates", style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }
@@ -1663,18 +1733,134 @@ fun AboutItem(icon: ImageVector, title: String, subtitle: String? = null, onClic
         modifier = Modifier
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
-            .padding(vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(modifier = Modifier.width(24.dp))
-        Column {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            if (subtitle != null) {
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Surface(
+            modifier = Modifier.size(40.dp),
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
             }
         }
+        Spacer(modifier = Modifier.width(16.dp))
+        Column {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        if (onClick != null) {
+            Spacer(modifier = Modifier.weight(1f))
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+            )
+        }
     }
+}
+
+@Composable
+fun UpdateDialog(
+    info: UpdateInfo,
+    onDismiss: () -> Unit,
+    onUpdate: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .background(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                        androidx.compose.foundation.shape.CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.Update,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        },
+        title = {
+            Text(
+                "Update Available",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "A new version (${info.tagName}) is available. Do you want to update now?",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                if (info.releaseNotes.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "What's new:",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 200.dp)
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .verticalScroll(rememberScrollState())
+                            .padding(12.dp)
+                    ) {
+                        Text(
+                            info.releaseNotes,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onUpdate,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Text("Update Now")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Later")
+            }
+        },
+        shape = RoundedCornerShape(28.dp)
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
