@@ -10,12 +10,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import dev.narayan.rose.BuildConfig
 import dev.narayan.rose.filejob.JobManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.StateFlow
+import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -2581,8 +2585,94 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         settings.quickAccessCustomPaths = updated
     }
 
+    // ----- Update Check (GitHub Releases) -----
+
+    var updateCheckResult by mutableStateOf<UpdateCheckResult>(UpdateCheckResult.Idle)
+        private set
+
+    fun resetUpdateCheck() {
+        updateCheckResult = UpdateCheckResult.Idle
+    }
+
+    fun checkForUpdates() {
+        if (updateCheckResult is UpdateCheckResult.Checking) return
+        updateCheckResult = UpdateCheckResult.Checking
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val url = URL("https://api.github.com/repos/NarayanChetri/ROSE/releases/latest")
+                val connection = url.openConnection() as HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+
+                if (connection.responseCode == 200) {
+                    val response = connection.inputStream.bufferedReader().readText()
+                    val json = JSONObject(response)
+                    val tagName = json.getString("tag_name")
+                    val body = json.getString("body")
+                    val htmlUrl = json.getString("html_url")
+
+                    val currentVersion = BuildConfig.VERSION_NAME
+                    // Simple version comparison (e.g., "1.1" vs "1.0")
+                    // Note: GitHub tags often start with 'v' (v1.1)
+                    val latestVersion = tagName.removePrefix("v").trim()
+                    
+                    val isUpdateAvailable = isNewerVersion(currentVersion, latestVersion)
+
+                    withContext(Dispatchers.Main) {
+                        if (isUpdateAvailable) {
+                            updateCheckResult = UpdateCheckResult.UpdateAvailable(
+                                UpdateInfo(tagName, body, htmlUrl)
+                            )
+                        } else {
+                            updateCheckResult = UpdateCheckResult.UpToDate
+                        }
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        updateCheckResult = UpdateCheckResult.Error("Failed to check for updates (HTTP ${connection.responseCode})")
+                    }
+                }
+                connection.disconnect()
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    updateCheckResult = UpdateCheckResult.Error(e.message ?: "Unknown error occurred")
+                }
+            }
+        }
+    }
+
+    private fun isNewerVersion(current: String, latest: String): Boolean {
+        val currentParts = current.split(".").mapNotNull { it.toIntOrNull() }
+        val latestParts = latest.split(".").mapNotNull { it.toIntOrNull() }
+        
+        val length = maxOf(currentParts.size, latestParts.size)
+        for (i in 0 until length) {
+            val curr = currentParts.getOrElse(i) { 0 }
+            val late = latestParts.getOrElse(i) { 0 }
+            if (late > curr) return true
+            if (late < curr) return false
+        }
+        return false
+    }
+
     override fun onCleared() {
         super.onCleared()
         stopWatchingDirectory()
     }
 }
+
+sealed class UpdateCheckResult {
+    object Idle : UpdateCheckResult()
+    object Checking : UpdateCheckResult()
+    data class UpdateAvailable(val info: UpdateInfo) : UpdateCheckResult()
+    object UpToDate : UpdateCheckResult()
+    data class Error(val message: String) : UpdateCheckResult()
+}
+
+data class UpdateInfo(
+    val tagName: String,
+    val releaseNotes: String,
+    val downloadUrl: String
+)

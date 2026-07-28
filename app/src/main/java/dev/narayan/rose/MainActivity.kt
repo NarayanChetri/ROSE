@@ -487,6 +487,7 @@ class MainActivity : ComponentActivity() {
                                         onBack = { screen = AppScreen.Home }
                                     )
                                     AppScreen.About -> AboutScreen(
+                                        viewModel = viewModel,
                                         onBack = { screen = AppScreen.Home }
                                     )
                                 }
