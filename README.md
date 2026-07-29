@@ -2,91 +2,135 @@
 
 > **ROSE** (**R**eliable **O**pen **S**ource **E**xplorer)
 
-I just wanted a file manager that didn't annoy me... so I spent way too many late nights building one.
+A fast, modern, and open-source file manager for Android built with **Kotlin** and **Jetpack Compose**.
 
-**Rose** is an open-source Android file manager made with Kotlin + Jetpack Compose. No company, no team, just one guy, too much coffee, questionable life choices, and an unhealthy amount of vibe coding.
+Made because I wanted a file manager that was clean, privacy-friendly, and actually enjoyable to use.
 
-![Platform](https://img.shields.io/badge/platform-Android-3DDC84?logo=android&logoColor=white)
+> ## ✨ New: Shizuku Support
+>
+> ROSE now supports **Shizuku**, allowing access to normally restricted directories such as **Android/data** and **Android/obb** (on supported devices) — all without requiring root.
+
+![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-100%25-7F52FF?logo=kotlin&logoColor=white)
 ![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white)
-![License](https://img.shields.io/badge/license-GPL--3.0-blue)
-![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)
+![License](https://img.shields.io/badge/License-GPL--3.0-blue)
+![Status](https://img.shields.io/badge/Status-Active%20Development-success)
+![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-brightgreen)
+
+[![Latest Release](https://img.shields.io/github/v/release/NarayanChetri/ROSE?label=Download%20Latest&style=for-the-badge)](https://github.com/NarayanChetri/ROSE/releases/latest)
 
 ---
 
-## Why?
+## 📥 Download
 
-Honestly?
+Download the latest stable APK from the **GitHub Releases** page.
 
-I was bored with existing file managers.
-
-Some looked like they were made in 2014, some were filled with ads, and some had great ideas but were impossible to contribute to.
-
-So instead of touching grass, I opened Android Studio.
-
-Now I'm hundreds of commits deep into a file manager that probably took way more effort than it was worth.
-
-No regrets though.
+➡️ https://github.com/NarayanChetri/ROSE/releases/latest
 
 ---
 
-## Features
+## ✨ Highlights
 
-- 📁 Clean Material 3 UI built completely with Jetpack Compose
+- 🔐 Shizuku support for Android/data & Android/obb
+- ⚡ Fast and lightweight
+- 🎨 Modern Material 3 UI
+- 🔒 Privacy-first
+- ❤️ Fully open source
+- 🚫 No ads
+
+---
+
+## 📱 Features
+
+- 📁 Modern Material 3 interface
 - ⚡ Fast file browsing
-- 🕒 Recent Files
-- ♻️ Recycle Bin
-- 📦 Copy, Move, Rename, Delete
+- 🔐 Shizuku integration
+- 📂 Browse internal storage, SD cards and USB storage
+- 📦 Copy, Move, Rename & Delete
 - 🗜️ Compress & Extract archives
-- 🔍 Better search and navigation
-- 🚀 More features coming whenever motivation hits
+- 🕒 Recent Files grouped by date
+- ♻️ Recycle Bin
+- 🔍 Powerful Search
+- 🔄 Built-in Update Checker
+- 🌙 Dark Mode
+- 🚀 More features coming soon
 
 ---
 
-## Screenshots
+## 📋 Requirements
+
+- Android 8.0+
+- Shizuku (optional, for advanced file access)
+- Storage permission
+
+---
+
+## 🛠 Tech Stack
+
+- Kotlin
+- Jetpack Compose
+- Material 3
+- AndroidX
+- Shizuku API
+- Coroutines
+
+---
+
+## 📸 Screenshots
 
 <p align="center">
 
-<img width="200" alt="IMG_20260713_084251" src="https://github.com/user-attachments/assets/04eea0d5-9915-4635-a234-71cdf7d61bba" />
-<img width="200" alt="IMG_20260712_202142" src="https://github.com/user-attachments/assets/44510e7d-3e73-4d37-a1e0-4a2fcd5fb8b9"/>
-<img width="200" alt="Screenshot" src="https://github.com/user-attachments/assets/f39d7209-4ae3-48be-87a2-feb8e179dbe7"/>
-<img width="200" alt="IMG_20260712_202131" src="https://github.com/user-attachments/assets/17f673e3-0e1a-403a-bcc1-dfc7042fd23c"/>
-<img width="200" alt="IMG_20260712_202122" src="https://github.com/user-attachments/assets/4011b923-6c9d-4877-ac24-871d37d3deb3"/>
-<img width="200" alt="IMG_20260712_202111" src="https://github.com/user-attachments/assets/db7bb1ca-a0f0-4657-882a-2f22de0d78a4"/>
-<img width="200" alt="IMG_20260712_202101" src="https://github.com/user-attachments/assets/b1d723a6-a7d4-4ea4-ab73-e914d75a95ed"/>
-<img width="200" alt="IMG_20260713_084300" src="https://github.com/user-attachments/assets/4219a178-649c-4f62-a383-39bab9797585"/>
+<img width="200" src="https://github.com/user-attachments/assets/04eea0d5-9915-4635-a234-71cdf7d61bba"/>
+<img width="200" src="https://github.com/user-attachments/assets/44510e7d-3e73-4d37-a1e0-4a2fcd5fb8b9"/>
+<img width="200" src="https://github.com/user-attachments/assets/f39d7209-4ae3-48be-87a2-feb8e179dbe7"/>
+
+<img width="200" src="https://github.com/user-attachments/assets/4011b923-6c9d-4877-ac24-871d37d3deb3"/>
+
 
 </p>
 
 ---
 
-## Contributing
+## 🚀 Installation
 
-If you've got a cool idea or found a bug, feel free to contribute.
+1. Download the latest APK from the Releases page.
+2. Install the APK.
+3. (Optional) Connect Shizuku for Android/data and Android/obb access.
+4. Enjoy.
 
-Just:
+## 🤝 Contributing
 
-1. Fork it.
-2. Make something awesome.
+Contributions are welcome!
+
+1. Fork the repository.
+2. Create a feature branch.
 3. Commit your changes.
-4. Open a PR.
+4. Open a Pull Request.
 
-If your code is cleaner than mine, there's a good chance it'll get merged.
-
----
-
-## License
-
-GPL-3.0
+Whether it's fixing bugs, improving the UI, or suggesting new features—every contribution is appreciated.
 
 ---
 
-## Package
+## 📄 License
 
-`dev.narayan.rose`
+This project is licensed under the **GPL-3.0 License**.
 
 ---
 
-Made with Kotlin, Jetpack Compose, sleep deprivation, and an unreasonable amount of vibe coding.
+## 📦 Package
 
-**If you like the project, consider giving it a ⭐. It genuinely helps.**
+```
+dev.narayan.rose
+```
+
+---
+
+## ⭐ Support the Project
+
+If ROSE has been useful to you, consider giving the repository a ⭐.
+
+It helps more people discover the project and motivates future development.
+
+---
+
+Built with ❤️ using Kotlin, Jetpack Compose, and far more late nights than I'd like to admit.
