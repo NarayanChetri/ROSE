@@ -94,7 +94,7 @@ import java.util.*
 // continuous drag starting on one checkbox can toggle every other checkbox
 // it passes over, all sharing the same select/deselect direction.
 @Stable
-internal class CheckboxDragSelectState {
+class CheckboxDragSelectState {
     val itemBounds = mutableMapOf<String, Rect>()
     var lastToggledKey: String? = null // For compatibility with RecycleBinScreen
     var dragPosition by mutableStateOf<Offset?>(null)
@@ -457,6 +457,27 @@ fun FileExplorerScreen(
             pendingScrollReset = false
         }
     }
+
+    // Root cause of the "rows overlap for a moment right after scrolling
+    // then applying a sort" glitch: a sort resorts `files` (and therefore
+    // `displayedFiles`) synchronously, in the same recomposition where
+    // `scrollResetKey` changes - so on the very next frame the still-mostly
+    // -unchanged set of visible item keys gets reordered while
+    // `Modifier.animateItem()` is attached, and LazyColumn/LazyVerticalGrid
+    // start animating those keys to their new positions. A beat later the
+    // `pendingScrollReset` effect above fires `scrollToItem(...)`, an
+    // instant (non-animated) jump. If any item's own reorder animation
+    // (from a scroll offset other than 0, i.e. you'd scrolled first) is
+    // still in flight when that jump lands, its animateItem node is left
+    // targeting a now-stale offset for one frame, which paints as two rows
+    // sharing the same slot. Because it only happens while an animation is
+    // actually in flight, it never reproduces from the top of the list, and
+    // once it happens the animator's state is back in sync, so it never
+    // shows up on the very next sort tap either. Suppressing the move
+    // animation for the same window the scroll-reset jump uses avoids the
+    // collision entirely - it doesn't touch the entrance animation, the
+    // scroll-position-restore logic, or the reorder animation for any sort
+    // change that doesn't also need a scroll jump.
 
     val currentIsGridView = if (currentView == "Category") viewModel.isCategoryGridView else viewModel.isGridView
 
@@ -957,7 +978,7 @@ fun FileExplorerScreen(
                             val isRestricted = (viewModel.currentPath.contains("/Android/data") || viewModel.currentPath.contains("/Android/obb"))
                             val hasShizuku = ShizukuManager.isAvailable() && ShizukuManager.hasPermission()
                             val hasSaf = SafManager.hasPermission(LocalContext.current, viewModel.currentPath)
-                            
+
                             // DO NOT show Restricted card if Shizuku is authorized.
                             // SAF is disabled for OBB/Data on Android 11+, so suggesting it is a bug.
                             val accessDenied = isRestricted && viewModel.files.isEmpty() && !hasSaf && !hasShizuku
@@ -1114,7 +1135,7 @@ fun FileExplorerScreen(
                                                                     scrollResetKey = scrollResetKey,
                                                                     hasAnimatedBefore = skipEntranceAnimation || animatedItemKeys.contains(fileItem.file.absolutePath),
                                                                     onAnimationStart = { animatedItemKeys.add(fileItem.file.absolutePath) },
-                                                                    modifier = if (skipEntranceAnimation) Modifier else Modifier.animateItem(),
+                                                                    modifier = if (skipEntranceAnimation || pendingScrollReset) Modifier else Modifier.animateItem(),
                                                                     onClick = {
                                                                         if (viewModel.isSelectionMode) {
                                                                             viewModel.toggleSelection(fileItem)
@@ -1171,7 +1192,7 @@ fun FileExplorerScreen(
                                                             scrollResetKey = scrollResetKey, // Pass key to restart animation on path change
                                                             hasAnimatedBefore = skipEntranceAnimation || animatedItemKeys.contains(fileItem.file.absolutePath),
                                                             onAnimationStart = { animatedItemKeys.add(fileItem.file.absolutePath) },
-                                                            modifier = if (skipEntranceAnimation) Modifier else Modifier.animateItem(),
+                                                            modifier = if (skipEntranceAnimation || pendingScrollReset) Modifier else Modifier.animateItem(),
                                                             onClick = {
                                                                 if (viewModel.isSelectionMode) {
                                                                     viewModel.toggleSelection(fileItem)
@@ -1252,7 +1273,7 @@ fun FileExplorerScreen(
                                                                     scrollResetKey = scrollResetKey,
                                                                     hasAnimatedBefore = skipEntranceAnimation || animatedItemKeys.contains(fileItem.file.absolutePath),
                                                                     onAnimationStart = { animatedItemKeys.add(fileItem.file.absolutePath) },
-                                                                    modifier = if (skipEntranceAnimation) Modifier else Modifier.animateItem(),
+                                                                    modifier = if (skipEntranceAnimation || pendingScrollReset) Modifier else Modifier.animateItem(),
                                                                     onClick = {
                                                                         if (viewModel.isSelectionMode) {
                                                                             viewModel.toggleSelection(fileItem)
@@ -1351,7 +1372,7 @@ fun FileExplorerScreen(
                                                             scrollResetKey = scrollResetKey, // Pass key to restart animation on path change
                                                             hasAnimatedBefore = skipEntranceAnimation || animatedItemKeys.contains(fileItem.file.absolutePath),
                                                             onAnimationStart = { animatedItemKeys.add(fileItem.file.absolutePath) },
-                                                            modifier = if (skipEntranceAnimation) Modifier else Modifier.animateItem(),
+                                                            modifier = if (skipEntranceAnimation || pendingScrollReset) Modifier else Modifier.animateItem(),
                                                             onClick = {
                                                                 if (viewModel.isSelectionMode) {
                                                                     viewModel.toggleSelection(fileItem)
@@ -1595,11 +1616,25 @@ fun AboutScreen(
     if (updateResult is UpdateCheckResult.UpdateAvailable) {
         UpdateDialog(
             info = updateResult.info,
-            onDismiss = { viewModel.resetUpdateCheck() },
-            onUpdate = {
-                uriHandler.openUri(updateResult.info.downloadUrl)
+            downloadState = viewModel.updateDownloadState,
+            onDismiss = {
+                // A dismiss mid-download cancels it too - no silent orphaned
+                // download continuing in the background after the dialog's gone.
+                viewModel.cancelUpdateDownload()
                 viewModel.resetUpdateCheck()
-            }
+            },
+            onUpdate = {
+                if (updateResult.info.apkUrl != null) {
+                    viewModel.downloadAndInstallUpdate(updateResult.info)
+                } else {
+                    // No .apk asset on this release (e.g. a source-only tag) -
+                    // fall back to sending the user to the GitHub release page,
+                    // same as before this feature existed.
+                    uriHandler.openUri(updateResult.info.downloadUrl)
+                    viewModel.resetUpdateCheck()
+                }
+            },
+            onInstallClick = { viewModel.installDownloadedUpdate() }
         )
     }
 
@@ -1620,20 +1655,21 @@ fun AboutScreen(
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Modernized Header (Slightly smaller to fit everything)
+            // Modernized Header - logo now fills the squircle edge-to-edge.
+            // Surface clips its content to `shape` automatically, so a
+            // fillMaxSize() image gets the rounded corners for free with no
+            // extra clip() needed and no gap for the container color to
+            // show through.
             Surface(
                 modifier = Modifier.size(80.dp),
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
                 shape = RoundedCornerShape(24.dp)
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_app_logo),
-                        contentDescription = null,
-                        modifier = Modifier.size(52.dp),
-                        tint = Color.Unspecified
-                    )
-                }
+                Image(
+                    painter = painterResource(id = R.drawable.ic_launcher_foreground_base),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -1781,8 +1817,10 @@ fun AboutItem(icon: ImageVector, title: String, subtitle: String? = null, onClic
 @Composable
 fun UpdateDialog(
     info: UpdateInfo,
+    downloadState: UpdateDownloadState,
     onDismiss: () -> Unit,
-    onUpdate: () -> Unit
+    onUpdate: () -> Unit,
+    onInstallClick: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1843,20 +1881,103 @@ fun UpdateDialog(
                         )
                     }
                 }
+
+                when (downloadState) {
+                    is UpdateDownloadState.Downloading -> {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        if (downloadState.totalBytes > 0) {
+                            LinearProgressIndicator(
+                                progress = { downloadState.progress },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(4.dp)),
+                            )
+                        } else {
+                            // Server didn't send a Content-Length (some CDNs omit it for
+                            // redirected/chunked responses) - an indeterminate bar avoids
+                            // showing a progress bar frozen at 0% for the whole download.
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(4.dp)),
+                            )
+                        }
+                        Text(
+                            if (downloadState.totalBytes > 0) {
+                                "${formatFileSize(downloadState.downloadedBytes)} / ${formatFileSize(downloadState.totalBytes)} (${(downloadState.progress * 100).toInt()}%)"
+                            } else {
+                                "${formatFileSize(downloadState.downloadedBytes)} downloaded"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    is UpdateDownloadState.ReadyToInstall -> {
+                        Text(
+                            "Downloaded. If the installer didn't open automatically, tap Install below.",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    is UpdateDownloadState.Error -> {
+                        Text(
+                            downloadState.message,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    UpdateDownloadState.Idle -> {}
+                }
             }
         },
         confirmButton = {
-            Button(
-                onClick = onUpdate,
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-            ) {
-                Text("Update Now")
+            when (downloadState) {
+                is UpdateDownloadState.Downloading -> {
+                    Button(
+                        onClick = {},
+                        enabled = false,
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Downloading...")
+                    }
+                }
+                is UpdateDownloadState.ReadyToInstall -> {
+                    Button(
+                        onClick = onInstallClick,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Text("Install")
+                    }
+                }
+                is UpdateDownloadState.Error -> {
+                    Button(
+                        onClick = onUpdate,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Text("Retry")
+                    }
+                }
+                UpdateDownloadState.Idle -> {
+                    Button(
+                        onClick = onUpdate,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Text(if (info.apkUrl != null) "Download & Install" else "Update Now")
+                    }
+                }
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Later")
+                Text(if (downloadState is UpdateDownloadState.Downloading) "Cancel" else "Later")
             }
         },
         shape = RoundedCornerShape(28.dp)
@@ -2422,7 +2543,7 @@ fun FileGridItem(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun FileListItem(
+fun FileListItem(
     fileItem: FileItem,
     isSelected: Boolean,
     showDetails: Boolean,
@@ -3451,7 +3572,7 @@ fun RestrictedFolderView(
     onGrantSaf: () -> Unit
 ) {
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-    
+
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -3489,18 +3610,18 @@ fun RestrictedFolderView(
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
-                
+
                 Spacer(modifier = Modifier.height(24.dp))
-                
+
                 Text(
                     "Restricted System Folder",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.ExtraBold,
                     textAlign = TextAlign.Center
                 )
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 Text(
                     "Android 11+ restricts standard access to Android/data and Android/obb folders to protect app data. To view and modify these files, ROSE requires Shizuku permission.",
                     style = MaterialTheme.typography.bodyMedium,
@@ -3508,9 +3629,9 @@ fun RestrictedFolderView(
                     textAlign = TextAlign.Center,
                     lineHeight = 20.sp
                 )
-                
+
                 Spacer(modifier = Modifier.height(32.dp))
-                
+
                 Button(
                     onClick = onGrantShizuku,
                     modifier = Modifier
@@ -3535,9 +3656,9 @@ fun RestrictedFolderView(
                         )
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 TextButton(
                     onClick = { uriHandler.openUri("https://shizuku.rikka.app/download/") }
                 ) {

@@ -1,13 +1,17 @@
 package dev.narayan.rose
 
 import android.app.Application
+import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import android.os.StatFs
 import android.provider.MediaStore
+import android.provider.Settings
 import androidx.compose.runtime.*
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.narayan.rose.BuildConfig
@@ -193,6 +197,35 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _useRecycleBin = mutableStateOf(settings.useRecycleBin)
     val useRecycleBin: Boolean by _useRecycleBin
+
+    private val _excludedFolders = mutableStateOf(settings.excludedFolders)
+    val excludedFolders: Set<String> by _excludedFolders
+
+    fun setExcludedFolders(folders: Set<String>) {
+        val rootPath = Environment.getExternalStorageDirectory().absolutePath
+        // Filter out root storage and normalize
+        val filteredFolders = folders.filter { it != rootPath }.toMutableSet()
+
+        // Remove redundant subfolders
+        val finalFolders = mutableSetOf<String>()
+        val sorted = filteredFolders.sortedBy { it.length }
+        for (path in sorted) {
+            if (finalFolders.none { path.startsWith("$it/") }) {
+                finalFolders.add(path)
+            }
+        }
+
+        _excludedFolders.value = finalFolders
+        settings.excludedFolders = finalFolders
+        loadRecentFiles()
+        loadCategoryCounts(force = true)
+        val title = categoryTitle
+        categoryFilterType?.let { type ->
+            if (title != null) {
+                browseCategory(type, title, categoryBucketId)
+            }
+        }
+    }
 
     private val _useShizuku = mutableStateOf(settings.useShizuku)
     val useShizuku: Boolean by _useShizuku
@@ -1141,7 +1174,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     fun loadFiles(path: String, isManualRefresh: Boolean = false, showLoading: Boolean = true) {
         val normalizedPath = ShizukuManager.normalize(path)
         val archiveExtensions = listOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz")
-        
+
         // Check if it's an archive, including restricted paths
         val isArchive = if (SafManager.isRestrictedPath(normalizedPath)) {
             val ext = normalizedPath.substringAfterLast('.', "").lowercase()
@@ -1173,7 +1206,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 currentZipFile = null
                 currentZipEntryPath = ""
-                
+
                 // Android/data and Android/obb can never be reached via raw java.io.File,
                 // even with MANAGE_EXTERNAL_STORAGE, on Android 12+ - that block is
                 // hardcoded at the filesystem layer. They go through SafManager's single
@@ -1564,8 +1597,13 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
 
                 var count = 0
+                val excluded = excludedFolders.toList()
                 while (cursor.moveToNext() && count < 50) {
                     val path = cursor.getString(dataCol) ?: continue
+
+                    // Filter out excluded folders
+                    if (excluded.any { path.startsWith("$it/") || path == it }) continue
+
                     val file = File(path)
                     if (file.exists() && file.isFile) {
                         val name = cursor.getString(nameCol) ?: file.name
@@ -1616,10 +1654,10 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         val normalizedPath = ShizukuManager.normalize(directory.absolutePath)
         // If isActuallyDirectory is true, we trust the caller (e.g. from FileItem)
         // Otherwise we check normally, but also check restricted paths.
-        val shouldNavigate = isActuallyDirectory || File(normalizedPath).isDirectory || 
-                (SafManager.isRestrictedPath(normalizedPath) && 
-                (SafManager.hasPermission(getApplication(), normalizedPath) || 
-                (ShizukuManager.isAvailable() && ShizukuManager.hasPermission())))
+        val shouldNavigate = isActuallyDirectory || File(normalizedPath).isDirectory ||
+                (SafManager.isRestrictedPath(normalizedPath) &&
+                        (SafManager.hasPermission(getApplication(), normalizedPath) ||
+                                (ShizukuManager.isAvailable() && ShizukuManager.hasPermission())))
 
         if (shouldNavigate) {
             exitSelectionMode()
@@ -1643,7 +1681,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         }
         val currentFile = File(currentPath)
         val parent = currentFile.parentFile
-        if (parent != null && (parent.canRead() || SafManager.isRestrictedPath(parent.absolutePath)) && 
+        if (parent != null && (parent.canRead() || SafManager.isRestrictedPath(parent.absolutePath)) &&
             currentPath != Environment.getExternalStorageDirectory().absolutePath &&
             currentPath != ShizukuManager.normalize(Environment.getExternalStorageDirectory().absolutePath)
         ) {
@@ -2190,14 +2228,16 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
             // Helper to count by selection
             fun countSelection(selection: String, excludeWhatsappTelegram: Boolean = true): Int {
-                val excludedFolders = if (excludeWhatsappTelegram) {
+                val hardcodedExcluded = if (excludeWhatsappTelegram) {
                     listOf("WhatsApp/Media", "Telegram", ".thumbnails", "Android/data", "Android/obb")
                 } else {
                     listOf(".thumbnails", "Android/data", "Android/obb")
                 }
-                val excludeSelection = excludedFolders.joinToString(" AND ") {
-                    "${MediaStore.MediaColumns.DATA} NOT LIKE '%/$it/%'"
-                }
+
+                val userExcluded = excludedFolders.toList()
+
+                val excludeSelection = (hardcodedExcluded.map { "${MediaStore.MediaColumns.DATA} NOT LIKE '%/$it/%'" } +
+                        userExcluded.map { "(${MediaStore.MediaColumns.DATA} NOT LIKE '$it/%' AND ${MediaStore.MediaColumns.DATA} != '$it')" }).joinToString(" AND ")
 
                 // Exclude hidden files and folders
                 val noHiddenSelection = "${MediaStore.MediaColumns.DATA} NOT LIKE '%/.%' AND ${MediaStore.MediaColumns.DATA} NOT LIKE '%/..%'"
@@ -2297,14 +2337,16 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     categorySelection = "($categorySelection) AND (${MediaStore.Images.Media.BUCKET_ID} = '$bucketId')"
                 }
 
-                val excludedFolders = if (type == FileType.ZIP || type == FileType.DOCUMENT || type == FileType.PDF || type == FileType.APK) {
+                val hardcodedExcluded = if (type == FileType.ZIP || type == FileType.DOCUMENT || type == FileType.PDF || type == FileType.APK) {
                     listOf(".thumbnails", "Android/data", "Android/obb")
                 } else {
                     listOf("WhatsApp/Media", "Telegram", ".thumbnails", "Android/data", "Android/obb")
                 }
-                val excludeSelection = excludedFolders.joinToString(" AND ") {
-                    "${MediaStore.MediaColumns.DATA} NOT LIKE '%/$it/%'"
-                }
+
+                val userExcluded = excludedFolders.toList()
+
+                val excludeSelection = (hardcodedExcluded.map { "${MediaStore.MediaColumns.DATA} NOT LIKE '%/$it/%'" } +
+                        userExcluded.map { "(${MediaStore.MediaColumns.DATA} NOT LIKE '$it/%' AND ${MediaStore.MediaColumns.DATA} != '$it')" }).joinToString(" AND ")
 
                 // Exclude hidden files and folders
                 val noHiddenSelection = "${MediaStore.MediaColumns.DATA} NOT LIKE '%/.%' AND ${MediaStore.MediaColumns.DATA} NOT LIKE '%/..%'"
@@ -2613,17 +2655,46 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     val body = json.getString("body")
                     val htmlUrl = json.getString("html_url")
 
+                    // Look for a directly-downloadable .apk asset on the release so
+                    // "Download & Install" can fetch it in-app instead of just sending
+                    // the user to the GitHub release page. Falls back to htmlUrl (and
+                    // the browser) if a release was published without one attached.
+                    var apkUrl: String? = null
+                    val assets = json.optJSONArray("assets")
+                    if (assets != null) {
+                        for (i in 0 until assets.length()) {
+                            val asset = assets.optJSONObject(i) ?: continue
+                            val assetName = asset.optString("name")
+                            if (assetName.endsWith(".apk", ignoreCase = true)) {
+                                apkUrl = asset.optString("browser_download_url").takeIf { it.isNotBlank() }
+                                break
+                            }
+                        }
+                    }
+
                     val currentVersion = BuildConfig.VERSION_NAME
                     // Simple version comparison (e.g., "1.1" vs "1.0")
                     // Note: GitHub tags often start with 'v' (v1.1)
                     val latestVersion = tagName.removePrefix("v").trim()
-                    
+
                     val isUpdateAvailable = isNewerVersion(currentVersion, latestVersion)
 
                     withContext(Dispatchers.Main) {
                         if (isUpdateAvailable) {
+                            // A download/install in progress (or already completed but not
+                            // yet installed) from a PREVIOUS check only stays valid if it's
+                            // for this same release. If a newer tag just appeared - e.g. the
+                            // user backed out of installing an older download, then checked
+                            // again later and a newer release was published in the meantime -
+                            // that stale Downloading/ReadyToInstall/Error state must not be
+                            // shown against the new tag, or "Install" would silently install
+                            // the wrong version.
+                            if (updateDownloadTag != tagName) {
+                                updateDownloadTag = null
+                                updateDownloadState = UpdateDownloadState.Idle
+                            }
                             updateCheckResult = UpdateCheckResult.UpdateAvailable(
-                                UpdateInfo(tagName, body, htmlUrl)
+                                UpdateInfo(tagName, body, htmlUrl, apkUrl)
                             )
                         } else {
                             updateCheckResult = UpdateCheckResult.UpToDate
@@ -2646,7 +2717,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     private fun isNewerVersion(current: String, latest: String): Boolean {
         val currentParts = current.split(".").mapNotNull { it.toIntOrNull() }
         val latestParts = latest.split(".").mapNotNull { it.toIntOrNull() }
-        
+
         val length = maxOf(currentParts.size, latestParts.size)
         for (i in 0 until length) {
             val curr = currentParts.getOrElse(i) { 0 }
@@ -2657,9 +2728,166 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         return false
     }
 
+    // ----- Update Download + Install -----
+
+    var updateDownloadState by mutableStateOf<UpdateDownloadState>(UpdateDownloadState.Idle)
+        private set
+
+    // Which release tag `updateDownloadState` refers to - lets checkForUpdates()
+    // tell "this download is for the version we're currently offering" apart
+    // from "this is a leftover from an older check", see checkForUpdates() above.
+    private var updateDownloadTag: String? = null
+
+    private var updateDownloadJob: Job? = null
+
+    /** Downloads the release's .apk asset into the app's cache dir, reporting
+     * progress via [updateDownloadState], then immediately attempts to launch
+     * the system installer on it. Safe to call again after an [UpdateDownloadState.Error]
+     * to retry. */
+    fun downloadAndInstallUpdate(info: UpdateInfo) {
+        val apkUrl = info.apkUrl ?: return
+        if (updateDownloadState is UpdateDownloadState.Downloading) return
+
+        updateDownloadTag = info.tagName
+        updateDownloadState = UpdateDownloadState.Downloading(0L, 0L)
+        updateDownloadJob = viewModelScope.launch(Dispatchers.IO) {
+            val apkFile = File(getApplication<Application>().cacheDir, "rose-update.apk")
+            var connection: HttpURLConnection? = null
+            try {
+                connection = (URL(apkUrl).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 15000
+                    readTimeout = 15000
+                    instanceFollowRedirects = true
+                    connect()
+                }
+
+                if (connection.responseCode !in 200..299) {
+                    withContext(Dispatchers.Main) {
+                        updateDownloadState = UpdateDownloadState.Error("Download failed (HTTP ${connection.responseCode})")
+                    }
+                    return@launch
+                }
+
+                val totalBytes = connection.contentLengthLong
+                var downloadedBytes = 0L
+                var lastReportedPercent = -1
+                var lastReportedBytes = 0L
+
+                connection.inputStream.use { input ->
+                    FileOutputStream(apkFile).use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (isActive) {
+                            val read = input.read(buffer)
+                            if (read == -1) break
+                            output.write(buffer, 0, read)
+                            downloadedBytes += read
+                            // When totalBytes is known, only push a state update once the
+                            // displayed percent actually moves. When it's unknown (some
+                            // CDNs omit Content-Length on redirected responses), percent
+                            // is always -1 and would never "move" by that rule, so fall
+                            // back to updating roughly every 256KB instead - either way
+                            // this avoids recomposing the dialog on every 64KB chunk.
+                            val percent = if (totalBytes > 0) ((downloadedBytes * 100) / totalBytes).toInt() else -1
+                            val shouldReport = if (totalBytes > 0) {
+                                percent != lastReportedPercent
+                            } else {
+                                downloadedBytes - lastReportedBytes >= 256 * 1024
+                            }
+                            if (shouldReport) {
+                                lastReportedPercent = percent
+                                lastReportedBytes = downloadedBytes
+                                val bytesSoFar = downloadedBytes
+                                withContext(Dispatchers.Main) {
+                                    updateDownloadState = UpdateDownloadState.Downloading(bytesSoFar, totalBytes)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (!isActive) {
+                    apkFile.delete()
+                    return@launch
+                }
+
+                withContext(Dispatchers.Main) {
+                    updateDownloadState = UpdateDownloadState.ReadyToInstall(apkFile)
+                    installApk(apkFile)
+                }
+            } catch (e: CancellationException) {
+                apkFile.delete()
+                throw e
+            } catch (e: Exception) {
+                apkFile.delete()
+                withContext(Dispatchers.Main) {
+                    updateDownloadState = UpdateDownloadState.Error(e.message ?: "Download failed")
+                }
+            } finally {
+                connection?.disconnect()
+            }
+        }
+    }
+
+    /** Re-launches the installer for an already-downloaded update - used when
+     * the user comes back from the "allow installs from this source" settings
+     * screen, or dismissed the installer without confirming the first time. */
+    fun installDownloadedUpdate() {
+        val state = updateDownloadState
+        if (state is UpdateDownloadState.ReadyToInstall) {
+            installApk(state.file)
+        }
+    }
+
+    /** Cancels an in-flight update download (e.g. the dialog was dismissed
+     * mid-download) and discards the partial file. No-op otherwise. */
+    fun cancelUpdateDownload() {
+        updateDownloadJob?.cancel()
+        updateDownloadJob = null
+        if (updateDownloadState is UpdateDownloadState.Downloading) {
+            updateDownloadState = UpdateDownloadState.Idle
+            updateDownloadTag = null
+        }
+    }
+
+    private fun installApk(file: File) {
+        val context = getApplication<Application>()
+
+        // Same "allow installs from this source" gate the app already uses when
+        // opening a local .apk from the file list - required on API 26+ before
+        // ACTION_VIEW on a package-archive will actually work.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
+            val settingsIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                data = Uri.parse("package:${context.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                context.startActivity(settingsIntent)
+            } catch (e: Exception) {
+                updateDownloadState = UpdateDownloadState.Error("Couldn't open install-permission settings")
+            }
+            // Deliberately leave updateDownloadState as ReadyToInstall - the UI
+            // keeps showing "Install" so the user can tap it again once they're
+            // back from Settings, without re-downloading anything.
+            return
+        }
+
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+        val installIntent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            context.startActivity(installIntent)
+        } catch (e: Exception) {
+            updateDownloadState = UpdateDownloadState.Error("No installer app found")
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         stopWatchingDirectory()
+        updateDownloadJob?.cancel()
     }
 }
 
@@ -2674,5 +2902,15 @@ sealed class UpdateCheckResult {
 data class UpdateInfo(
     val tagName: String,
     val releaseNotes: String,
-    val downloadUrl: String
+    val downloadUrl: String, // GitHub release page - fallback when no .apk asset is attached
+    val apkUrl: String? // Direct .apk asset URL, when the release has one; enables in-app download+install
 )
+
+sealed class UpdateDownloadState {
+    object Idle : UpdateDownloadState()
+    data class Downloading(val downloadedBytes: Long, val totalBytes: Long) : UpdateDownloadState() {
+        val progress: Float get() = if (totalBytes > 0) (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f) else 0f
+    }
+    data class ReadyToInstall(val file: File) : UpdateDownloadState()
+    data class Error(val message: String) : UpdateDownloadState()
+}

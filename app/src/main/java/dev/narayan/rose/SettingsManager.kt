@@ -146,6 +146,10 @@ class SettingsManager(context: Context) {
         get() = prefs.getBoolean(KEY_USE_RECYCLE_BIN, true)
         set(value) = prefs.edit { putBoolean(KEY_USE_RECYCLE_BIN, value) }
 
+    var excludedFolders: Set<String>
+        get() = prefs.getStringSet(KEY_EXCLUDED_FOLDERS, emptySet()) ?: emptySet()
+        set(value) = prefs.edit { putStringSet(KEY_EXCLUDED_FOLDERS, value) }
+
     // Whether the contextual notification-permission primer (shown the first
     // time a background file operation starts) has already been presented once.
     // We only ever ask this way once - if the user dismisses it, we respect
@@ -177,6 +181,7 @@ class SettingsManager(context: Context) {
         private const val KEY_EXTERNAL_STORAGES = "external_storages"
         private const val KEY_OFFLINE_FILES = "offline_files"
         private const val KEY_USE_RECYCLE_BIN = "use_recycle_bin"
+        private const val KEY_EXCLUDED_FOLDERS = "excluded_folders"
         private const val KEY_NOTIFICATION_PRIMER_SHOWN = "notification_primer_shown"
         private const val KEY_SHOW_QUICK_ACCESS = "show_quick_access"
         private const val KEY_SHOW_EXTERNAL_STORAGE = "show_external_storage"
