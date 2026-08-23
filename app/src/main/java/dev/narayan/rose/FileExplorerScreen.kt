@@ -297,6 +297,7 @@ fun FileExplorerScreen(
 
     // Screens: "Main", "Settings", "About"
     var activeScreen by remember { mutableStateOf("Main") }
+    var lastNonZipView by remember { mutableStateOf(currentView) }
 
     val lifecycleOwner: androidx.lifecycle.LifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -369,14 +370,27 @@ fun FileExplorerScreen(
                 onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
             }
         } else if (viewModel.currentZipFile != null) {
-            // If we came from Home/Recent and just opened this zip, go back to Home/Recent
-            // instead of the zip's parent folder.
+            // If we are deep inside a zip, go up one level.
+            // If we are at the root of the zip, exit the zip view.
             if (viewModel.currentZipEntryPath.isNotEmpty()) {
                 viewModel.navigateZipUp()
-            } else if (fromHome && viewModel.currentZipFile?.absolutePath == startPath) {
-                onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
             } else {
-                viewModel.loadFiles(viewModel.currentPath)
+                // At zip root. Decide whether to exit to Home or return to parent folder.
+                if (fromHome || (viewModel.currentZipSourcePath != null && SafManager.isSafUri(viewModel.currentZipSourcePath!!))) {
+                    onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
+                } else if (lastNonZipView != "Files") {
+                    currentView = lastNonZipView
+                    if (currentView == "Recent") viewModel.loadRecentFiles()
+                    else if (currentView == "Category") {
+                        val type = viewModel.categoryFilterType
+                        val title = viewModel.categoryTitle
+                        if (type != null && title != null) viewModel.browseCategory(type, title)
+                    }
+                    viewModel.closeArchive()
+                } else {
+                    viewModel.closeArchive()
+                    viewModel.loadFiles(viewModel.currentPath)
+                }
             }
         } else if (currentView == "Category") {
             if (viewModel.categoryBucketId != null) {
@@ -701,15 +715,25 @@ fun FileExplorerScreen(
                                                 isSearching = false
                                                 searchQuery = ""
                                                 viewModel.searchFiles("")
-                                                if (fromHome) {
+                                                if (fromHome || currentView == "Recent" || currentView == "Category") {
                                                     onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
                                                 }
                                             } else if (viewModel.currentZipFile != null) {
                                                 if (viewModel.currentZipEntryPath.isNotEmpty()) {
                                                     viewModel.navigateZipUp()
-                                                } else if (fromHome && viewModel.currentZipFile?.absolutePath == startPath) {
+                                                } else if (fromHome && (viewModel.currentZipFile?.absolutePath == startPath || viewModel.currentZipSourcePath == startPath)) {
                                                     onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
+                                                } else if (lastNonZipView != "Files") {
+                                                    currentView = lastNonZipView
+                                                    if (currentView == "Recent") viewModel.loadRecentFiles()
+                                                    else if (currentView == "Category") {
+                                                        val type = viewModel.categoryFilterType
+                                                        val title = viewModel.categoryTitle
+                                                        if (type != null && title != null) viewModel.browseCategory(type, title)
+                                                    }
+                                                    viewModel.closeArchive()
                                                 } else {
+                                                    viewModel.closeArchive()
                                                     viewModel.loadFiles(viewModel.currentPath)
                                                 }
                                             } else if (currentView == "Category") {
@@ -722,7 +746,9 @@ fun FileExplorerScreen(
                                             } else if (currentView == "Recent") {
                                                 onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
                                             } else {
-                                                if (!viewModel.navigateUp()) {
+                                                if (fromHome && viewModel.currentPath == startPath) {
+                                                    onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
+                                                } else if (!viewModel.navigateUp()) {
                                                     onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
                                                 }
                                             }
@@ -853,13 +879,15 @@ fun FileExplorerScreen(
                                         Row(
                                             modifier = Modifier
                                                 .clip(RoundedCornerShape(16.dp))
-                                                .clickable {
-                                                    if (currentView == "Category" || currentView == "Recent") {
-                                                        Toast.makeText(context, "Cannot extract in ${currentView.lowercase()} view. Open a folder first.", Toast.LENGTH_SHORT).show()
+                                                .then(
+                                                    if (currentView == "Category" || currentView == "Recent" || viewModel.currentZipFile != null) {
+                                                        Modifier.alpha(0.5f)
                                                     } else {
-                                                        viewModel.extractArchive(viewModel.extractionSource!!, File(viewModel.currentPath))
+                                                        Modifier.clickable {
+                                                            viewModel.extractArchive(viewModel.extractionSource!!, File(viewModel.currentPath))
+                                                        }
                                                     }
-                                                }
+                                                )
                                                 .padding(horizontal = 8.dp, vertical = 8.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
@@ -916,13 +944,15 @@ fun FileExplorerScreen(
                                         Row(
                                             modifier = Modifier
                                                 .clip(RoundedCornerShape(16.dp))
-                                                .clickable {
-                                                    if (currentView == "Category" || currentView == "Recent") {
-                                                        Toast.makeText(context, "Cannot paste in ${currentView.lowercase()} view. Open a folder first.", Toast.LENGTH_SHORT).show()
+                                                .then(
+                                                    if (currentView == "Category" || currentView == "Recent" || viewModel.currentZipFile != null) {
+                                                        Modifier.alpha(0.5f)
                                                     } else {
-                                                        viewModel.pasteFiles()
+                                                        Modifier.clickable {
+                                                            viewModel.pasteFiles()
+                                                        }
                                                     }
-                                                }
+                                                )
                                                 .padding(horizontal = 8.dp, vertical = 8.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
@@ -1164,6 +1194,7 @@ fun FileExplorerScreen(
                                                                                     searchQuery = ""
                                                                                     viewModel.searchFiles("")
                                                                                 }
+                                                                                lastNonZipView = currentView
                                                                                 viewModel.openArchive(fileItem.file)
                                                                                 currentView = "Files"
                                                                             } else {
@@ -1221,6 +1252,7 @@ fun FileExplorerScreen(
                                                                             searchQuery = ""
                                                                             viewModel.searchFiles("")
                                                                         }
+                                                                        lastNonZipView = currentView
                                                                         viewModel.openArchive(fileItem.file)
                                                                         currentView = "Files"
                                                                     } else {
@@ -1302,6 +1334,7 @@ fun FileExplorerScreen(
                                                                                     searchQuery = ""
                                                                                     viewModel.searchFiles("")
                                                                                 }
+                                                                                lastNonZipView = currentView
                                                                                 viewModel.openArchive(fileItem.file)
                                                                                 currentView = "Files"
                                                                             } else {
@@ -1336,15 +1369,19 @@ fun FileExplorerScreen(
                                                                         }
                                                                     } else null,
                                                                     onExtract = {
+                                                                        val entries = if (fileItem.zipEntryPath != null) listOf(fileItem.zipEntryPath) else null
                                                                         if (currentView == "Category" || currentView == "Recent") {
-                                                                            viewModel.prepareExtraction(fileItem.file)
+                                                                            viewModel.prepareExtraction(fileItem.file, entries)
                                                                             Toast.makeText(context, "Archive ready. Navigate to a folder to extract.", Toast.LENGTH_SHORT).show()
                                                                         } else {
+                                                                            // If inside a zip, we want to extract the selected entry
+                                                                            if (entries != null) {
+                                                                                viewModel.prepareExtraction(fileItem.file, entries)
+                                                                            }
                                                                             showExtractionDialog = fileItem
                                                                         }
                                                                     },
                                                                     onProperties = { viewModel.showProperties(fileItem) },
-                                                                    onPaste = { viewModel.navigateTo(fileItem.file, fileItem.isDirectory); viewModel.pasteFiles() },
                                                                     viewModel = viewModel,
                                                                     dragSelectState = checkboxDragSelectState,
                                                                     isDividerVisible = viewModel.showListDividers && indexInFullList != displayedFilesFinal.lastIndex && !isSelected && !viewModel.selectedFiles.contains(displayedFilesFinal.getOrNull(indexInFullList + 1))
@@ -1401,6 +1438,7 @@ fun FileExplorerScreen(
                                                                             searchQuery = ""
                                                                             viewModel.searchFiles("")
                                                                         }
+                                                                        lastNonZipView = currentView
                                                                         viewModel.openArchive(fileItem.file)
                                                                         currentView = "Files"
                                                                     } else {
@@ -1443,7 +1481,6 @@ fun FileExplorerScreen(
                                                                 }
                                                             },
                                                             onProperties = { viewModel.showProperties(fileItem) },
-                                                            onPaste = { viewModel.navigateTo(fileItem.file, fileItem.isDirectory); viewModel.pasteFiles() },
                                                             viewModel = viewModel,
                                                             dragSelectState = checkboxDragSelectState,
                                                             isDividerVisible = viewModel.showListDividers && index != displayedFilesFinal.lastIndex && !isSelected && !viewModel.selectedFiles.contains(displayedFilesFinal.getOrNull(index + 1))
@@ -1481,12 +1518,18 @@ fun FileExplorerScreen(
                                         item = fileItem,
                                         onDismiss = { showExtractionDialog = null },
                                         onExtractHere = {
-                                            viewModel.extractArchive(fileItem.file)
+                                            if (viewModel.currentZipFile != null || fileItem.zipEntryPath != null) {
+                                                // Extracting from within a zip or a virtual entry
+                                                viewModel.extractArchive(fileItem.file, File(viewModel.currentPath))
+                                            } else {
+                                                viewModel.extractArchive(fileItem.file)
+                                            }
                                             showExtractionDialog = null
                                             viewModel.exitSelectionMode()
                                         },
                                         onSelectLocation = {
-                                            viewModel.prepareExtraction(fileItem.file)
+                                            val entries = if (fileItem.zipEntryPath != null) listOf(fileItem.zipEntryPath) else null
+                                            viewModel.prepareExtraction(fileItem.file, entries)
                                             showExtractionDialog = null
                                             viewModel.exitSelectionMode()
                                         }
@@ -2229,13 +2272,15 @@ fun SelectionBottomBar(
                 icon = Icons.AutoMirrored.Outlined.DriveFileMove,
                 label = "Move",
                 onClick = { viewModel.moveSelected() },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                enabled = viewModel.currentZipFile == null
             )
             SelectionBottomBarItem(
                 icon = Icons.Outlined.Delete,
                 label = "Delete",
                 onClick = onDeleteClick,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                enabled = viewModel.currentZipFile == null
             )
 
             var showMoreMenu by remember { mutableStateOf(false) }
@@ -2261,7 +2306,7 @@ fun SelectionBottomBar(
                         },
                         leadingIcon = { Icon(if (isAllSelected) Icons.Default.Deselect else Icons.Default.SelectAll, null) }
                     )
-                    if (currentView != "Recent") {
+                    if (currentView != "Recent" && viewModel.currentZipFile == null) {
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                         DropdownMenuItem(
                             text = { Text("Compress") },
@@ -2274,16 +2319,18 @@ fun SelectionBottomBar(
                     }
                     if (viewModel.selectedFiles.size == 1) {
                         val fileItem = viewModel.selectedFiles.first()
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                        DropdownMenuItem(
-                            text = { Text("Rename") },
-                            onClick = {
-                                onRenameClick()
-                                showMoreMenu = false
-                            },
-                            leadingIcon = { Icon(Icons.Default.Edit, null) }
-                        )
-                        if (fileItem.isDirectory) {
+                        if (viewModel.currentZipFile == null) {
+                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                            DropdownMenuItem(
+                                text = { Text("Rename") },
+                                onClick = {
+                                    onRenameClick()
+                                    showMoreMenu = false
+                                },
+                                leadingIcon = { Icon(Icons.Default.Edit, null) }
+                            )
+                        }
+                        if (fileItem.isDirectory && viewModel.currentZipFile == null) {
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             DropdownMenuItem(
                                 text = { Text("Add to Quick access") },
@@ -2296,7 +2343,7 @@ fun SelectionBottomBar(
                                 leadingIcon = { Icon(Icons.Default.Add, null) }
                             )
                         }
-                        if (fileItem.fileType == FileType.ZIP) {
+                        if (fileItem.fileType == FileType.ZIP && viewModel.currentZipFile == null) {
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             DropdownMenuItem(
                                 text = { Text("Extract") },
@@ -2330,22 +2377,24 @@ fun SelectionBottomBarItem(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    enabled: Boolean = true
 ) {
+    val finalTint = if (enabled) tint else tint.copy(alpha = 0.38f)
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .clickable { onClick() }
+            .clickable(enabled = enabled) { onClick() }
             .padding(vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(24.dp))
+        Icon(icon, contentDescription = null, tint = finalTint, modifier = Modifier.size(24.dp))
         Spacer(modifier = Modifier.height(6.dp))
         Text(
             label,
             style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Medium),
-            color = tint
+            color = finalTint
         )
     }
 }
@@ -2565,7 +2614,6 @@ fun FileListItem(
     isSelectionMode: Boolean = false,
     isHighlighted: Boolean = false,
     onOpenLocation: (() -> Unit)? = null, // New parameter
-    onPaste: (() -> Unit)? = null,
     onExtract: (() -> Unit)? = null,
     index: Int = 0,
     scrollResetKey: Any = Unit,
@@ -2700,32 +2748,36 @@ fun FileListItem(
                                 onClick = { showMenu = false; onShare() },
                                 leadingIcon = { Icon(Icons.Default.Share, null) }
                             )
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                            DropdownMenuItem(
-                                text = { Text("Rename") },
-                                onClick = { showMenu = false; onRenameRequest() },
-                                leadingIcon = { Icon(Icons.Default.Edit, null) }
-                            )
+                            if (!isVirtual) {
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                DropdownMenuItem(
+                                    text = { Text("Rename") },
+                                    onClick = { showMenu = false; onRenameRequest() },
+                                    leadingIcon = { Icon(Icons.Default.Edit, null) }
+                                )
+                            }
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             DropdownMenuItem(
                                 text = { Text("Copy") },
                                 onClick = { showMenu = false; onCopy() },
                                 leadingIcon = { Icon(Icons.Default.ContentCopy, null) }
                             )
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                            DropdownMenuItem(
-                                text = { Text("Move") },
-                                onClick = { showMenu = false; onCut() },
-                                leadingIcon = { Icon(Icons.Default.ContentCut, null) }
-                            )
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                            DropdownMenuItem(
-                                text = { Text("Delete") },
-                                onClick = { showMenu = false; onDelete() },
-                                leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-                                colors = MenuDefaults.itemColors(textColor = MaterialTheme.colorScheme.error)
-                            )
-                            if (fileItem.fileType == FileType.ZIP) {
+                            if (!isVirtual) {
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                DropdownMenuItem(
+                                    text = { Text("Move") },
+                                    onClick = { showMenu = false; onCut() },
+                                    leadingIcon = { Icon(Icons.Default.ContentCut, null) }
+                                )
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                DropdownMenuItem(
+                                    text = { Text("Delete") },
+                                    onClick = { showMenu = false; onDelete() },
+                                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                                    colors = MenuDefaults.itemColors(textColor = MaterialTheme.colorScheme.error)
+                                )
+                            }
+                            if ((fileItem.fileType == FileType.ZIP || isVirtual) && !isVirtual) {
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                 DropdownMenuItem(
                                     text = { Text("Extract") },
@@ -2808,11 +2860,39 @@ fun FileIcon(
                             try {
                                 java.util.zip.ZipFile(fileItem.virtualZipSource).use { zip ->
                                     val entry = zip.getEntry(fileItem.zipEntryPath ?: fileItem.name)
-                                    if (entry != null && entry.size < 10 * 1024 * 1024) { // Only for files < 10MB
-                                        zip.getInputStream(entry).use { input ->
-                                            android.graphics.BitmapFactory.decodeStream(input)
+                                    if (entry == null || entry.size >= 10 * 1024 * 1024) { // Only for files < 10MB
+                                        null
+                                    } else {
+                                        // Decoding at full resolution for a small grid
+                                        // thumbnail is how a zip full of camera-resolution
+                                        // photos OOMs while scrolling: a 3MB JPEG can easily
+                                        // decode to a 4000x3000 ARGB_8888 bitmap (~48MB) even
+                                        // though the 10MB cap above only bounds the compressed
+                                        // size. Pass 1 reads bounds only (no pixel allocation),
+                                        // then pass 2 decodes downsampled to roughly thumbnail
+                                        // size via inSampleSize.
+                                        val bounds = android.graphics.BitmapFactory.Options().apply {
+                                            inJustDecodeBounds = true
                                         }
-                                    } else null
+                                        zip.getInputStream(entry).use { input ->
+                                            android.graphics.BitmapFactory.decodeStream(input, null, bounds)
+                                        }
+
+                                        val targetPx = 200 // roughly the on-screen thumbnail size in px
+                                        var sampleSize = 1
+                                        while (bounds.outWidth / sampleSize > targetPx * 2 ||
+                                            bounds.outHeight / sampleSize > targetPx * 2
+                                        ) {
+                                            sampleSize *= 2
+                                        }
+
+                                        val opts = android.graphics.BitmapFactory.Options().apply {
+                                            inSampleSize = sampleSize
+                                        }
+                                        zip.getInputStream(entry).use { input ->
+                                            android.graphics.BitmapFactory.decodeStream(input, null, opts)
+                                        }
+                                    }
                                 }
                             } catch (e: Exception) { null }
                         }
@@ -3424,6 +3504,8 @@ fun ActiveJobsCard(activeJobs: List<FileJob>) {
                     is FileJobType.Download -> "Saving offline..."
                     is FileJobType.Delete -> "Deleting files..."
                     is FileJobType.Recycle -> "Moving to Bin..."
+                    is FileJobType.Restore -> "Restoring files..."
+                    is FileJobType.Extract -> "Extracting archive..."
                     else -> "Processing..."
                 }
                 Text(

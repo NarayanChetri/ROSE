@@ -300,9 +300,7 @@ fun HomeScreen(
                             Row(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(16.dp))
-                                    .clickable {
-                                        android.widget.Toast.makeText(context, "Cannot extract on Home screen. Open a folder first.", android.widget.Toast.LENGTH_SHORT).show()
-                                    }
+                                    .alpha(0.5f)
                                     .padding(horizontal = 8.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -359,9 +357,7 @@ fun HomeScreen(
                             Row(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(16.dp))
-                                    .clickable {
-                                        android.widget.Toast.makeText(context, "Cannot paste on Home screen. Open a folder first.", android.widget.Toast.LENGTH_SHORT).show()
-                                    }
+                                    .alpha(0.5f)
                                     .padding(horizontal = 8.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -406,7 +402,6 @@ fun HomeScreen(
                     itemsIndexed(viewModel.searchResults, key = { _, item -> item.file.absolutePath }) { index, item ->
                         SearchResultItem(
                             item = item,
-                            clipboardHasFiles = viewModel.clipboardFiles.isNotEmpty(),
                             modifier = Modifier.animateItem(),
                             onClick = {
                                 if (item.isDirectory || item.fileType == FileType.ZIP) {
@@ -437,8 +432,7 @@ fun HomeScreen(
                             onExtract = {
                                 viewModel.prepareExtraction(item.file)
                                 android.widget.Toast.makeText(context, "Archive ready. Navigate to a folder to extract.", android.widget.Toast.LENGTH_SHORT).show()
-                            },
-                            onPaste = { viewModel.navigateTo(item.file, item.isDirectory); viewModel.pasteFiles() }
+                            }
                         )
                         if (viewModel.showListDividers && index != viewModel.searchResults.lastIndex) {
                             HorizontalDivider(
@@ -597,14 +591,12 @@ fun HomeScreen(
 @Composable
 private fun SearchResultItem(
     item: FileItem,
-    clipboardHasFiles: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onOpenLocation: () -> Unit,
     onCopy: () -> Unit,
     onCut: () -> Unit,
-    onExtract: () -> Unit = {},
-    onPaste: () -> Unit
+    onExtract: () -> Unit = {}
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
@@ -645,15 +637,6 @@ private fun SearchResultItem(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     offset = androidx.compose.ui.unit.DpOffset(x = (-8).dp, y = 0.dp)
                 ) {
-                    if (item.isDirectory && clipboardHasFiles) {
-                        DropdownMenuItem(
-                            text = { Text("Paste here", modifier = Modifier.padding(vertical = 4.dp)) },
-                            onClick = { showMenu = false; onPaste() },
-                            leadingIcon = { Icon(Icons.Default.ContentPaste, null) },
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                        )
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                    }
                     DropdownMenuItem(
                         text = { Text("Open location", modifier = Modifier.padding(vertical = 4.dp)) },
                         onClick = { showMenu = false; onOpenLocation() },
@@ -1434,15 +1417,26 @@ private fun StorageDeviceItem(
 private fun FolderPickerDialog(onDismiss: () -> Unit, onFolderSelected: (String) -> Unit) {
     val rootDir = remember { Environment.getExternalStorageDirectory() }
     var currentDir by remember { mutableStateOf(rootDir) }
-    val subDirs = remember(currentDir) {
-        currentDir.listFiles { f -> f.isDirectory && !f.name.startsWith(".") }
-            ?.sortedBy { it.name.lowercase() }
-            ?: emptyList()
-    }
+    
     val vm = (androidx.compose.ui.platform.LocalContext.current as? androidx.activity.ComponentActivity)?.let { (it as? MainActivity)?.viewModel }
 
+    // Use FileItems to match the main listing and provide item counts
+    val subDirs = remember(currentDir) {
+        currentDir.listFiles { f -> f.isDirectory && !f.name.startsWith(".") }
+            ?.map { dir ->
+                FileItem(
+                    file = dir,
+                    isDirectory = true,
+                    name = dir.name,
+                    size = 0,
+                    lastModified = dir.lastModified(),
+                    extension = "",
+                    itemCount = dir.list { _, name -> !name.startsWith(".") }?.size ?: 0
+                )
+            }?.sortedBy { it.name.lowercase() } ?: emptyList()
+    }
+
     // Full-screen immersive browser (matches the app's own file listing screen)
-    // instead of a small popup window/dialog.
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(
@@ -1469,28 +1463,35 @@ private fun FolderPickerDialog(onDismiss: () -> Unit, onFolderSelected: (String)
                             if (currentDir != rootDir) currentDir.parentFile?.let { currentDir = it } else onDismiss()
                         }) {
                             Icon(
-                                if (currentDir != rootDir) Icons.Default.ArrowUpward else Icons.AutoMirrored.Filled.ArrowBack,
+                                if (currentDir != rootDir) Icons.AutoMirrored.Filled.ArrowBack else Icons.Default.Close,
                                 contentDescription = "Back"
                             )
                         }
                     },
                     actions = {
-                        IconButton(onClick = onDismiss) {
-                            Icon(Icons.Default.Close, contentDescription = "Cancel")
+                        if (currentDir != rootDir) {
+                            IconButton(onClick = { currentDir = rootDir }) {
+                                Icon(Icons.Default.Home, contentDescription = "Go to Root")
+                            }
                         }
                     }
                 )
             },
             bottomBar = {
-                BottomAppBar {
-                    Button(
-                        onClick = { onFolderSelected(currentDir.absolutePath) },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Default.Check, null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Select this folder")
+                Surface(
+                    tonalElevation = 3.dp,
+                    shadowElevation = 8.dp
+                ) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp).navigationBarsPadding()) {
+                        Button(
+                            onClick = { onFolderSelected(currentDir.absolutePath) },
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Icon(Icons.Default.Check, null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Select this folder", style = MaterialTheme.typography.titleMedium)
+                        }
                     }
                 }
             }
@@ -1504,23 +1505,22 @@ private fun FolderPickerDialog(onDismiss: () -> Unit, onFolderSelected: (String)
                     )
                 }
             } else {
-                // Staggered fade + slide-in entrance, restarted every time the
-                // browsed folder changes - matching the main file listing screen.
                 val animatedItemKeys = remember(currentDir) { androidx.compose.runtime.mutableStateSetOf<String>() }
                 LazyColumn(
                     modifier = Modifier.fillMaxSize().padding(padding),
-                    contentPadding = PaddingValues(vertical = 8.dp)
+                    contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
-                    itemsIndexed(subDirs, key = { _, dir -> dir.absolutePath }) { index, dir ->
+                    itemsIndexed(subDirs, key = { _, item -> item.file.absolutePath }) { index, item ->
                         FolderPickerRow(
-                            dir = dir,
+                            item = item,
                             index = index,
                             scrollResetKey = currentDir,
-                            hasAnimatedBefore = animatedItemKeys.contains(dir.absolutePath),
-                            onAnimationStart = { animatedItemKeys.add(dir.absolutePath) },
+                            hasAnimatedBefore = animatedItemKeys.contains(item.file.absolutePath),
+                            onAnimationStart = { animatedItemKeys.add(item.file.absolutePath) },
                             viewModel = vm,
-                            onClick = { currentDir = dir }
+                            onClick = { currentDir = item.file }
                         )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 8.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     }
                 }
             }
@@ -1530,7 +1530,7 @@ private fun FolderPickerDialog(onDismiss: () -> Unit, onFolderSelected: (String)
 
 @Composable
 private fun FolderPickerRow(
-    dir: File,
+    item: FileItem,
     index: Int,
     scrollResetKey: Any,
     hasAnimatedBefore: Boolean,
@@ -1538,44 +1538,55 @@ private fun FolderPickerRow(
     viewModel: RoseViewModel?,
     onClick: () -> Unit
 ) {
-    val animatedProgress = remember(scrollResetKey, dir.absolutePath) {
+    val animatedProgress = remember(scrollResetKey, item.file.absolutePath) {
         Animatable(if (hasAnimatedBefore) 1f else 0f)
     }
     val density = LocalDensity.current
-    LaunchedEffect(scrollResetKey, dir.absolutePath) {
+    LaunchedEffect(scrollResetKey, item.file.absolutePath) {
         if (!hasAnimatedBefore) {
             onAnimationStart()
             kotlinx.coroutines.delay((index % 8 * 12).toLong())
             animatedProgress.animateTo(1f, tween(durationMillis = 200, easing = LinearOutSlowInEasing))
         }
     }
-    Row(
+    
+    ListItem(
+        headlineContent = {
+            Text(
+                item.name,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.bodyLarge
+            )
+        },
+        supportingContent = {
+            val count = item.itemCount ?: 0
+            val dateStr = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault()).format(java.util.Date(item.lastModified))
+            Text("$count items | $dateStr")
+        },
+        leadingContent = {
+            FileIcon(
+                fileItem = item,
+                iconSize = 40.dp,
+                folderTint = MaterialTheme.colorScheme.primary,
+                viewModel = viewModel
+            )
+        },
+        trailingContent = {
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+            )
+        },
         modifier = Modifier
-            .fillMaxWidth()
             .graphicsLayer {
                 alpha = animatedProgress.value
                 translationY = (1f - animatedProgress.value) * with(density) { 40.dp.toPx() }
             }
             .clickable { onClick() }
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        FileIcon(fileItem = FileItem(dir), iconSize = 40.dp, folderTint = MaterialTheme.colorScheme.primary, viewModel = viewModel)
-        Spacer(modifier = Modifier.width(20.dp))
-        Text(
-            dir.name,
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.weight(1f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Icon(
-            Icons.Default.ChevronRight,
-            contentDescription = null,
-            modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-        )
-    }
+    )
 }
 
 @Composable

@@ -56,12 +56,36 @@ object ShizukuManager {
     }
 
     /**
+     * Single-quotes a shell argument so it is always treated as one opaque
+     * literal by `sh -c`, regardless of what characters it contains
+     * (spaces, ", `, $, ;, backticks, newlines, etc). Every path/name that
+     * gets interpolated into a command string built for [runShizukuCommand]
+     * MUST go through this first - Android file/folder names are free-form
+     * and can legally contain shell metacharacters, so building commands
+     * with raw string interpolation (e.g. "rm -rf \"$path\"") is a command
+     * injection vulnerability: a file named `foo"; rm -rf /; echo "` would
+     * execute arbitrary shell commands with Shizuku's elevated privileges.
+     *
+     * Standard POSIX single-quote escaping: wrap in single quotes, and for
+     * every literal single quote in the input, close the quote, emit an
+     * escaped quote, and reopen the quote (' -> '\'').
+     */
+    fun shellEscape(arg: String): String {
+        return "'" + arg.replace("'", "'\\''") + "'"
+    }
+
+    /**
      * Normalizes paths to canonical /storage/emulated/0 form, matching NFile Manager logic.
+     * Skips normalization for URIs to prevent breaking them.
      */
     fun normalize(path: String): String {
+        if (path.startsWith("content://") || path.startsWith("file://") || path.startsWith("/content:/")) {
+            return path
+        }
+
         var normalized = path.replace(Regex("/+"), "/")
         if (normalized.isEmpty()) normalized = "/"
-        
+
         if (normalized.startsWith("/sdcard")) {
             normalized = normalized.replaceFirst("/sdcard", "/storage/emulated/0")
         } else if (normalized.startsWith("/mnt/sdcard")) {
@@ -77,7 +101,7 @@ object ShizukuManager {
     suspend fun listFiles(path: String, showHiddenFiles: Boolean = true): List<FileItem> = withContext(Dispatchers.IO) {
         val results = mutableListOf<FileItem>()
         val normalizedPath = normalize(path)
-        
+
         val cleanPath = if (normalizedPath == "/" || !normalizedPath.endsWith("/")) {
             normalizedPath
         } else {
@@ -86,11 +110,14 @@ object ShizukuManager {
 
         // If cleanPath is "/", use empty string prefix to prevent search pattern from becoming //* and //.*
         val searchPrefix = if (cleanPath == "/") "" else cleanPath
-        
+
         try {
             // NFile's listing command: efficient and handles hidden files correctly.
             // Modified to also include child count for directories.
-            val cmd = "for f in \"$searchPrefix\"/* \"$searchPrefix\"/.*; do [ -e \"\$f\" ] && [ \"\${f##*/}\" != \".\" ] && [ \"\${f##*/}\" != \"..\" ] && { count=0; [ -d \"\$f\" ] && count=$(ls -1A \"\$f\" 2>/dev/null | wc -l); (stat -L -c \"%F|%s|%Y|\$count|%n\" \"\$f\" 2>/dev/null || stat -c \"%F|%s|%Y|\$count|%n\" \"\$f\"); }; done"
+            // searchPrefix is escaped since it's a real filesystem path that can
+            // contain shell metacharacters - see shellEscape() for why this matters.
+            val escapedPrefix = shellEscape(searchPrefix)
+            val cmd = "for f in $escapedPrefix/* $escapedPrefix/.*; do [ -e \"\$f\" ] && [ \"\${f##*/}\" != \".\" ] && [ \"\${f##*/}\" != \"..\" ] && { count=0; [ -d \"\$f\" ] && count=$(ls -1A \"\$f\" 2>/dev/null | wc -l); (stat -L -c \"%F|%s|%Y|\$count|%n\" \"\$f\" 2>/dev/null || stat -c \"%F|%s|%Y|\$count|%n\" \"\$f\"); }; done"
 
             val process = runShizukuCommand(cmd)
             val reader = BufferedReader(InputStreamReader(process.inputStream))
@@ -110,7 +137,7 @@ object ShizukuManager {
 
                     val file = File(fullPath)
                     val name = file.name
-                    
+
                     if (!showHiddenFiles && name.startsWith(".") && name != "." && name != "..") {
                         return@forEach
                     }
@@ -176,37 +203,37 @@ object ShizukuManager {
 
     suspend fun delete(path: String): Boolean {
         val clean = normalize(path)
-        return runCommand("rm -rf \"$clean\"")
+        return runCommand("rm -rf ${shellEscape(clean)}")
     }
 
     suspend fun rename(oldPath: String, newName: String): Boolean {
         val cleanOld = normalize(oldPath)
         val parent = File(cleanOld).parent ?: return false
         val cleanNew = normalize("$parent/$newName")
-        return runCommand("mv \"$cleanOld\" \"$cleanNew\"")
+        return runCommand("mv ${shellEscape(cleanOld)} ${shellEscape(cleanNew)}")
     }
 
     suspend fun createFolder(parentPath: String, name: String): Boolean {
         val cleanParent = normalize(parentPath)
         val cleanPath = normalize("$cleanParent/$name")
-        return runCommand("mkdir -p \"$cleanPath\"")
+        return runCommand("mkdir -p ${shellEscape(cleanPath)}")
     }
 
     suspend fun createFile(parentPath: String, name: String): Boolean {
         val cleanParent = normalize(parentPath)
         val cleanPath = normalize("$cleanParent/$name")
-        return runCommand("touch \"$cleanPath\"")
+        return runCommand("touch ${shellEscape(cleanPath)}")
     }
 
     suspend fun copy(srcPath: String, destPath: String): Boolean {
         val cleanSrc = normalize(srcPath)
         val cleanDest = normalize(destPath)
-        return runCommand("cp -r \"$cleanSrc\" \"$cleanDest\"")
+        return runCommand("cp -r ${shellEscape(cleanSrc)} ${shellEscape(cleanDest)}")
     }
 
     suspend fun move(srcPath: String, destPath: String): Boolean {
         val cleanSrc = normalize(srcPath)
         val cleanDest = normalize(destPath)
-        return runCommand("mv \"$cleanSrc\" \"$cleanDest\"")
+        return runCommand("mv ${shellEscape(cleanSrc)} ${shellEscape(cleanDest)}")
     }
 }

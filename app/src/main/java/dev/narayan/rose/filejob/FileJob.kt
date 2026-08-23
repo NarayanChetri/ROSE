@@ -16,6 +16,7 @@ sealed class FileJobType {
     data class Download(val source: SourcePath, val targetFile: Path) : FileJobType()
     data class Recycle(val sources: List<SourcePath>) : FileJobType()
     data class Restore(val sources: List<SourcePath>) : FileJobType()
+    data class Extract(val source: Path, val targetDir: Path, val entries: List<String>? = null) : FileJobType()
 }
 
 data class SourcePath(
@@ -26,7 +27,7 @@ data class SourcePath(
 data class FileJob(
     val id: String = UUID.randomUUID().toString(),
     val type: FileJobType,
-    val totalItems: Int,
+    var totalItems: Int,
     var processedItems: Int = 0,
     var currentFileName: String = "",
     val completedPaths: MutableSet<String> = mutableSetOf(),
@@ -108,16 +109,90 @@ object FileOperationRunner {
                         }
                     }
                     is FileJobType.Delete -> {
+                        // Priority 1: Shizuku bulk delete (Super fast, bypasses recursive walk)
+                        if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()) {
+                            // Track failures instead of assuming every `rm -rf` succeeded -
+                            // a discarded non-zero exit code here used to mean the job was
+                            // always reported as a full success even when a target survived
+                            // (read-only mount, a locked file, a permission edge case).
+                            val failedTargets = mutableListOf<String>()
+                            type.targets.forEach { target ->
+                                if (JobManager.isCancelled(job.id)) return@Thread
+                                job.currentFileName = target.fileName?.toString() ?: target.toString()
+                                val clean = dev.narayan.rose.ShizukuManager.normalize(target.toString())
+                                val exitCode = dev.narayan.rose.ShizukuManager.runCommandSync(
+                                    "rm -rf ${dev.narayan.rose.ShizukuManager.shellEscape(clean)}"
+                                )
+                                if (exitCode == 0) {
+                                    job.completedPaths.add(target.toString())
+                                    touchedPaths.add(target.toString())
+                                } else {
+                                    failedTargets.add(target.toString())
+                                }
+                                job.processedItems++
+                                job.progress = if (job.totalItems > 0) {
+                                    (job.processedItems.toFloat() / job.totalItems).coerceIn(0f, 1f)
+                                } else 1f
+                                onProgress(job)
+                                JobManager.updateJob(job)
+                            }
+
+                            if (touchedPaths.isNotEmpty()) {
+                                try {
+                                    android.media.MediaScannerConnection.scanFile(appContext, touchedPaths.toTypedArray(), null, null)
+                                } catch (e: Exception) { /* best-effort */ }
+                            }
+
+                            if (failedTargets.isNotEmpty()) {
+                                // Surface the failure instead of silently reporting success -
+                                // caught below and turned into a proper Error state.
+                                throw Exception(
+                                    "Failed to delete ${failedTargets.size} item(s): " +
+                                            failedTargets.joinToString(", ") { java.io.File(it).name }
+                                )
+                            }
+
+                            job.progress = 1f
+                            onProgress(job)
+                            JobManager.completeJob(job, success = true)
+                            onFinished(true)
+                            return@Thread
+                        }
+
+                        // Fast pre-calculation using java.io.File
+                        var totalBytes = 0L
+                        var totalItems = 0
+
+                        // For very large deletions, skip the pre-scan to make it feel "instant" start
+                        val firstTarget = type.targets.firstOrNull()?.toFile()
+                        val shouldPreScan = type.targets.size < 5 && (firstTarget?.listFiles()?.size ?: 0) < 100
+
+                        if (shouldPreScan) {
+                            fun fastScan(file: java.io.File) {
+                                totalItems++
+                                if (file.isFile) {
+                                    totalBytes += file.length()
+                                } else {
+                                    file.listFiles()?.forEach { fastScan(it) }
+                                }
+                            }
+
+                            type.targets.forEach { target ->
+                                fastScan(target.toFile())
+                            }
+                        }
+
+                        job.totalItems = totalItems
+                        job.totalBytes = totalBytes
+                        job.processedItems = 0
+                        job.processedBytes = 0L
+                        job.isIndeterminate = !shouldPreScan
+
                         type.targets.forEach { target ->
                             if (JobManager.isCancelled(job.id)) return@Thread
-                            job.currentFileName = target.fileName.toString()
-                            job.progress = (job.processedItems.toFloat() / job.totalItems).coerceIn(0f, 1f)
-                            onProgress(job)
-                            JobManager.updateJob(job)
                             deleteRecursive(appContext, target, job, onProgress)
                             job.completedPaths.add(target.toString())
                             touchedPaths.add(target.toString())
-                            job.processedItems++
                         }
                         job.progress = 1f
                         onProgress(job)
@@ -169,7 +244,7 @@ object FileOperationRunner {
                             JobManager.updateJob(job)
                             val item = metadata.find { it.id == source.path } // In Restore, path is the ID in bin
                             if (item != null) {
-                                dev.narayan.rose.RecycleBinManager.restore(appContext, item) { processed, total ->
+                                val success = dev.narayan.rose.RecycleBinManager.restore(appContext, item) { processed, total ->
                                     if (total > 0) {
                                         val itemWeight = 1f / job.totalItems
                                         val itemProgress = processed.toFloat() / total
@@ -178,19 +253,32 @@ object FileOperationRunner {
                                         JobManager.updateJob(job)
                                     }
                                 }
-                                touchedPaths.add(item.originalPath)
+                                if (success) {
+                                    touchedPaths.add(item.originalPath)
+                                    job.completedPaths.add(source.path)
+                                }
                             }
-                            // Recorded AFTER the restore call actually returns, so a
-                            // listener watching completedPaths only ever sees an id
-                            // once that file has truly been moved out of the bin -
-                            // this is what lets the UI remove each row in step with
-                            // real disk state instead of a fixed timer that can drift
-                            // ahead of (or behind) what's actually happened.
-                            job.completedPaths.add(source.path)
                             job.processedItems++
                             onProgress(job)
                             JobManager.updateJob(job)
                         }
+                    }
+                    is FileJobType.Extract -> {
+                        if (JobManager.isCancelled(job.id)) return@Thread
+                        job.currentFileName = type.source.fileName.toString()
+                        onProgress(job)
+                        JobManager.updateJob(job)
+
+                        val success = extractRecursive(type.source, type.targetDir, job) {
+                            onProgress(it)
+                            JobManager.updateJob(it)
+                        }
+                        if (!success) {
+                            if (JobManager.isCancelled(job.id)) return@Thread
+                            throw Exception("Failed to extract archive. Check if storage is full or archive is corrupted.")
+                        }
+                        touchedPaths.add(type.targetDir.toString())
+                        job.processedItems++
                     }
                 }
                 if (touchedPaths.isNotEmpty()) {
@@ -260,17 +348,21 @@ object FileOperationRunner {
         ) {
             val cleanSrc = dev.narayan.rose.ShizukuManager.normalize(sourcePath)
             val cleanDest = dev.narayan.rose.ShizukuManager.normalize(targetPath)
-            
+
             // Ensure target directory exists for shell cp
             val destParent = target.parent.toString()
             if (SafManager.isRestrictedPath(destParent)) {
                 val cleanParent = dev.narayan.rose.ShizukuManager.normalize(destParent)
-                dev.narayan.rose.ShizukuManager.runCommandSync("mkdir -p \"$cleanParent\"")
+                dev.narayan.rose.ShizukuManager.runCommandSync(
+                    "mkdir -p ${dev.narayan.rose.ShizukuManager.shellEscape(cleanParent)}"
+                )
             } else {
                 java.io.File(destParent).mkdirs()
             }
 
-            val exitCode = dev.narayan.rose.ShizukuManager.runCommandSync("cp -r \"$cleanSrc\" \"$cleanDest\"")
+            val exitCode = dev.narayan.rose.ShizukuManager.runCommandSync(
+                "cp -r ${dev.narayan.rose.ShizukuManager.shellEscape(cleanSrc)} ${dev.narayan.rose.ShizukuManager.shellEscape(cleanDest)}"
+            )
             if (exitCode == 0) return true
             // If shell copy failed, fall through to SAF
         }
@@ -305,7 +397,9 @@ object FileOperationRunner {
             if (!fromSaf && sourceRestricted && dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()) {
                 // If SAF fails, check via Shizuku
                 val cleanSource = dev.narayan.rose.ShizukuManager.normalize(sourcePath)
-                dev.narayan.rose.ShizukuManager.runCommandSync("[ -d \"$cleanSource\" ]") == 0
+                dev.narayan.rose.ShizukuManager.runCommandSync(
+                    "[ -d ${dev.narayan.rose.ShizukuManager.shellEscape(cleanSource)} ]"
+                ) == 0
             } else fromSaf
         } else {
             Files.isDirectory(Paths.get(sourcePath))
@@ -324,7 +418,8 @@ object FileOperationRunner {
                     // Fallback to Shizuku for listing
                     val results = mutableListOf<String>()
                     val cleanSource = dev.narayan.rose.ShizukuManager.normalize(sourcePath)
-                    val cmd = "for f in \"$cleanSource\"/* \"$cleanSource\"/.*; do [ -e \"\$f\" ] && [ \"\${f##*/}\" != \".\" ] && [ \"\${f##*/}\" != \"..\" ] && echo \"\$f\"; done"
+                    val escapedSource = dev.narayan.rose.ShizukuManager.shellEscape(cleanSource)
+                    val cmd = "for f in $escapedSource/* $escapedSource/.*; do [ -e \"\$f\" ] && [ \"\${f##*/}\" != \".\" ] && [ \"\${f##*/}\" != \"..\" ] && echo \"\$f\"; done"
                     val process = dev.narayan.rose.ShizukuManager.newProcess(arrayOf("sh", "-c", cmd), null, null)
                     process.inputStream.bufferedReader().useLines { lines ->
                         lines.forEach { results.add(it) }
@@ -354,7 +449,8 @@ object FileOperationRunner {
                 val safInput = SafManager.openInputStream(context, sourcePath)
                 if (safInput == null && sourceRestricted && dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()) {
                     val cleanSrc = dev.narayan.rose.ShizukuManager.normalize(sourcePath)
-                    val process = dev.narayan.rose.ShizukuManager.newProcess(arrayOf("sh", "-c", "cat \"$cleanSrc\""), null, null)
+                    val escapedSrc = dev.narayan.rose.ShizukuManager.shellEscape(cleanSrc)
+                    val process = dev.narayan.rose.ShizukuManager.newProcess(arrayOf("sh", "-c", "cat $escapedSrc"), null, null)
                     process.inputStream
                 } else safInput
             } else {
@@ -371,7 +467,8 @@ object FileOperationRunner {
                 val safSize = SafManager.getReliableSize(context, sourcePath)
                 if (safSize <= 0 && sourceRestricted && dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()) {
                     val cleanSrc = dev.narayan.rose.ShizukuManager.normalize(sourcePath)
-                    val process = dev.narayan.rose.ShizukuManager.newProcess(arrayOf("sh", "-c", "stat -c %s \"$cleanSrc\""), null, null)
+                    val escapedSrc = dev.narayan.rose.ShizukuManager.shellEscape(cleanSrc)
+                    val process = dev.narayan.rose.ShizukuManager.newProcess(arrayOf("sh", "-c", "stat -c %s $escapedSrc"), null, null)
                     val sizeStr = process.inputStream.bufferedReader().readText().trim()
                     process.waitFor()
                     sizeStr.toLongOrNull() ?: 0L
@@ -381,64 +478,87 @@ object FileOperationRunner {
             }
 
             if (input != null && output != null) {
-                input.use { inp ->
-                    output.use { out ->
-                        copyFileWithProgress(inp, out, size, job, onProgress)
-                    }
+                // copyFileWithProgress now closes both streams itself and can throw
+                // (IOException from the write side, or on cancellation) - catch here
+                // so both cases cleanly return false, same as the plain-path branch
+                // above, instead of propagating past the caller's `if (!success)`
+                // cancellation check and surfacing as a spurious failure toast.
+                return try {
+                    copyFileWithProgress(input, output, size, job, onProgress)
+                    true
+                } catch (e: Exception) {
+                    false
                 }
-                return true
             }
             return false
         }
     }
 
+    // Both streams are opened by the caller and handed in already-open, so this
+    // function is responsible for closing them - previously it wasn't, which
+    // leaked 2 file descriptors on every cancelled copy AND on every IOException
+    // (most importantly ENOSPC when storage fills up mid-transfer). A batch copy
+    // onto a full/slow SD card hitting that repeatedly could exhaust the
+    // process's FD limit and start breaking unrelated I/O app-wide. Wrapping
+    // both in `.use{}` guarantees they close on every exit path: normal
+    // completion, thrown IOException, or cancellation.
     private fun copyFileWithProgress(input: java.io.InputStream, output: java.io.OutputStream, totalSize: Long, job: FileJob? = null, onProgress: ((FileJob) -> Unit)? = null) {
-        val buffer = ByteArray(128 * 1024)
-        var bytesRead: Int
-        var totalRead = 0L
-        var lastUpdate = 0L
-        val knownSize = totalSize > 0
+        input.use { inp ->
+            output.use { out ->
+                val buffer = ByteArray(128 * 1024)
+                var bytesRead: Int
+                var totalRead = 0L
+                var lastUpdate = 0L
+                val knownSize = totalSize > 0
 
-        // Report the starting state immediately (0% or spinner) instead of
-        // waiting for the first 200ms tick - this is what makes the
-        // notification actually appear with progress right away.
-        if (job != null && onProgress != null) {
-            job.totalBytes = totalSize
-            job.processedBytes = 0L
-            job.progress = 0f
-            job.isIndeterminate = !knownSize
-            onProgress(job)
-        }
-
-        while (input.read(buffer).also { bytesRead = it } != -1) {
-            if (job != null && JobManager.isCancelled(job.id)) return
-            output.write(buffer, 0, bytesRead)
-            totalRead += bytesRead
-
-            val now = System.currentTimeMillis()
-            // Update at least every 150ms AND at least every 512KB, so short
-            // transfers still show intermediate steps instead of jumping 0 -> 100.
-            if (job != null && onProgress != null &&
-                (now - lastUpdate > 150 || totalRead - job.processedBytes > 512 * 1024 || bytesRead < buffer.size)
-            ) {
-                if (knownSize) {
-                    job.progress = (totalRead.toFloat() / totalSize).coerceIn(0f, 1f)
+                // Report the starting state immediately (0% or spinner) instead of
+                // waiting for the first 200ms tick - this is what makes the
+                // notification actually appear with progress right away.
+                if (job != null && onProgress != null) {
+                    job.totalBytes = totalSize
+                    job.processedBytes = 0L
+                    job.progress = 0f
+                    job.isIndeterminate = !knownSize
+                    onProgress(job)
                 }
-                job.processedBytes = totalRead
-                job.totalBytes = totalSize
-                job.isIndeterminate = !knownSize
-                onProgress(job)
-                lastUpdate = now
-            }
-        }
-        output.flush()
 
-        if (job != null && onProgress != null) {
-            job.progress = 1f
-            job.processedBytes = totalRead
-            job.totalBytes = if (knownSize) totalSize else totalRead
-            job.isIndeterminate = false
-            onProgress(job)
+                while (inp.read(buffer).also { bytesRead = it } != -1) {
+                    if (job != null && JobManager.isCancelled(job.id)) {
+                        // Throw (instead of returning) so both `use` blocks still
+                        // run and close their streams. Callers already treat any
+                        // exception from this function as "this file failed", so
+                        // behavior for the caller is unchanged.
+                        throw java.io.InterruptedIOException("Copy cancelled")
+                    }
+                    out.write(buffer, 0, bytesRead)
+                    totalRead += bytesRead
+
+                    val now = System.currentTimeMillis()
+                    // Update at least every 150ms AND at least every 512KB, so short
+                    // transfers still show intermediate steps instead of jumping 0 -> 100.
+                    if (job != null && onProgress != null &&
+                        (now - lastUpdate > 150 || totalRead - job.processedBytes > 512 * 1024 || bytesRead < buffer.size)
+                    ) {
+                        if (knownSize) {
+                            job.progress = (totalRead.toFloat() / totalSize).coerceIn(0f, 1f)
+                        }
+                        job.processedBytes = totalRead
+                        job.totalBytes = totalSize
+                        job.isIndeterminate = !knownSize
+                        onProgress(job)
+                        lastUpdate = now
+                    }
+                }
+                out.flush()
+
+                if (job != null && onProgress != null) {
+                    job.progress = 1f
+                    job.processedBytes = totalRead
+                    job.totalBytes = if (knownSize) totalSize else totalRead
+                    job.isIndeterminate = false
+                    onProgress(job)
+                }
+            }
         }
     }
 
@@ -455,17 +575,21 @@ object FileOperationRunner {
         ) {
             val cleanSrc = dev.narayan.rose.ShizukuManager.normalize(sourcePath)
             val cleanDest = dev.narayan.rose.ShizukuManager.normalize(targetPath)
-            
+
             // Ensure target directory exists for shell mv
             val destParent = target.parent.toString()
             if (SafManager.isRestrictedPath(destParent)) {
                 val cleanParent = dev.narayan.rose.ShizukuManager.normalize(destParent)
-                dev.narayan.rose.ShizukuManager.runCommandSync("mkdir -p \"$cleanParent\"")
+                dev.narayan.rose.ShizukuManager.runCommandSync(
+                    "mkdir -p ${dev.narayan.rose.ShizukuManager.shellEscape(cleanParent)}"
+                )
             } else {
                 java.io.File(destParent).mkdirs()
             }
 
-            val exitCode = dev.narayan.rose.ShizukuManager.runCommandSync("mv \"$cleanSrc\" \"$cleanDest\"")
+            val exitCode = dev.narayan.rose.ShizukuManager.runCommandSync(
+                "mv ${dev.narayan.rose.ShizukuManager.shellEscape(cleanSrc)} ${dev.narayan.rose.ShizukuManager.shellEscape(cleanDest)}"
+            )
             if (exitCode == 0) return true
             // If shell move failed, maybe it's across volumes, fall through to copy+delete
         }
@@ -493,35 +617,145 @@ object FileOperationRunner {
         if (job != null && JobManager.isCancelled(job.id)) return
 
         val pathStr = path.toString()
+        val file = path.toFile()
+        val size = if (file.isFile) file.length() else 0L
+
         if (SafManager.isRestrictedPath(pathStr)) {
             if (SafManager.hasPermission(context, pathStr)) {
                 SafManager.delete(context, pathStr)
             } else if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()) {
                 val clean = dev.narayan.rose.ShizukuManager.normalize(pathStr)
-                val process = dev.narayan.rose.ShizukuManager.newProcess(arrayOf("sh", "-c", "rm -rf \"$clean\""), null, null)
-                process.waitFor()
+                dev.narayan.rose.ShizukuManager.runCommandSync(
+                    "rm -rf ${dev.narayan.rose.ShizukuManager.shellEscape(clean)}"
+                )
+            }
+            if (job != null && onProgress != null) {
+                job.processedBytes += size
+                job.processedItems++
+                if (!job.isIndeterminate) {
+                    if (job.totalBytes > 0) {
+                        job.progress = (job.processedBytes.toFloat() / job.totalBytes).coerceIn(0f, 1f)
+                    } else if (job.totalItems > 0) {
+                        job.progress = (job.processedItems.toFloat() / job.totalItems).coerceIn(0f, 1f)
+                    }
+                }
+                onProgress(job)
+                JobManager.updateJob(job)
             }
             return
         }
 
-        if (Files.isDirectory(path)) {
-            Files.list(path).use { stream ->
-                stream.forEach {
-                    deleteRecursive(context, it, job, onProgress)
+        if (file.isDirectory) {
+            file.listFiles()?.forEach {
+                deleteRecursive(context, it.toPath(), job, onProgress)
+            }
+        }
+
+        try {
+            Files.delete(path)
+        } catch (e: Exception) {
+            file.delete()
+        }
+
+        if (job != null && onProgress != null) {
+            job.processedBytes += size
+            job.processedItems++
+
+            // Only update UI occasionally for large deletions to keep it super fast.
+            // Pushing StateFlow updates for every file in a 10,000 file folder
+            // is what makes the app feel laggy during deletion.
+            val shouldUpdate = if (job.processedItems < 10) true
+            else if (job.processedItems < 100) job.processedItems % 10 == 0
+            else job.processedItems % 50 == 0 || job.processedItems == job.totalItems
+
+            if (shouldUpdate) {
+                job.currentFileName = path.fileName.toString()
+                if (!job.isIndeterminate) {
+                    if (job.totalBytes > 0) {
+                        job.progress = (job.processedBytes.toFloat() / job.totalBytes).coerceIn(0f, 1f)
+                    } else if (job.totalItems > 0) {
+                        job.progress = (job.processedItems.toFloat() / job.totalItems).coerceIn(0f, 1f)
+                    }
+                }
+                onProgress(job)
+                JobManager.updateJob(job)
+            }
+        }
+    }
+
+    private fun extractRecursive(sourceZip: Path, targetDir: Path, job: FileJob, onProgress: (FileJob) -> Unit): Boolean {
+        try {
+            val file = sourceZip.toFile()
+            if (!Files.exists(targetDir)) Files.createDirectories(targetDir)
+
+            val entriesToExtract = (job.type as? FileJobType.Extract)?.entries
+
+            java.util.zip.ZipFile(file).use { zip ->
+                val allEntries = zip.entries().asSequence().toList()
+                val targetEntries = if (entriesToExtract != null) {
+                    allEntries.filter { entry ->
+                        entriesToExtract.any { target ->
+                            entry.name == target || entry.name.startsWith("$target/")
+                        }
+                    }
+                } else {
+                    allEntries
+                }
+
+                val totalEntries = targetEntries.size
+                job.totalItems = totalEntries
+                job.totalBytes = targetEntries.filter { !it.isDirectory }.sumOf { it.size }
+                job.processedItems = 0
+                job.processedBytes = 0L
+
+                targetEntries.forEach { entry ->
+                    if (JobManager.isCancelled(job.id)) return false
+
+                    // If extracting specific entries, we might want to strip the prefix
+                    // to avoid creating deep folder structures if only one subfolder was picked.
+                    // But standard behavior is to keep the relative path from the zip root or selection.
+                    // Here we keep the entry name as is, which is safest.
+                    val entryFile = targetDir.resolve(entry.name).normalize()
+
+                    // Security check: ensure entry is within targetDir
+                    if (!entryFile.startsWith(targetDir)) {
+                        return@forEach
+                    }
+
+                    if (entry.isDirectory) {
+                        Files.createDirectories(entryFile)
+                    } else {
+                        if (!Files.exists(entryFile.parent)) {
+                            Files.createDirectories(entryFile.parent)
+                        }
+                        zip.getInputStream(entry).use { input ->
+                            Files.newOutputStream(entryFile).use { output ->
+                                val buffer = ByteArray(8192 * 4)
+                                var bytesRead: Int
+                                while (input.read(buffer).also { bytesRead = it } >= 0) {
+                                    output.write(buffer, 0, bytesRead)
+                                    job.processedBytes += bytesRead
+                                    if (job.totalBytes > 0 && System.currentTimeMillis() % 10 == 0L) {
+                                        job.progress = (job.processedBytes.toFloat() / job.totalBytes).coerceIn(0f, 1f)
+                                        onProgress(job)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    job.processedItems++
+                    if (job.totalBytes <= 0) {
+                        job.progress = job.processedItems.toFloat() / totalEntries
+                    } else {
+                        job.progress = (job.processedBytes.toFloat() / job.totalBytes).coerceIn(0f, 1f)
+                    }
+                    job.currentFileName = entry.name.substringAfterLast('/')
+                    onProgress(job)
                 }
             }
+            return true
+        } catch (e: Exception) {
+            return false
         }
-
-        // For very large folders, update the UI occasionally with what's being deleted
-        if (job != null && onProgress != null) {
-            val now = System.currentTimeMillis()
-            // Report every ~10th file to avoid spamming the main thread/notifications too much
-            if (now % 10 == 0L) {
-                job.currentFileName = path.fileName.toString()
-                onProgress(job)
-            }
-        }
-
-        Files.delete(path)
     }
 }

@@ -4,11 +4,13 @@ import android.os.Build
 import android.os.Environment
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -19,8 +21,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -545,149 +550,181 @@ private fun FolderPickerDialog(
     onDismiss: () -> Unit,
     onFolderSelected: (File) -> Unit
 ) {
-    var currentPath by remember { mutableStateOf(Environment.getExternalStorageDirectory()) }
-    val folders = remember(currentPath) {
-        currentPath.listFiles { file -> file.isDirectory && !file.name.startsWith(".") }
-            ?.toList()?.sortedBy { it.name.lowercase() } ?: emptyList()
-    }
-    val rootPath = Environment.getExternalStorageDirectory()
-    val isRoot = currentPath.absolutePath == rootPath.absolutePath
+    val rootDir = remember { Environment.getExternalStorageDirectory() }
+    var currentDir by remember { mutableStateOf(rootDir) }
+    
+    val vm = (LocalContext.current as? androidx.activity.ComponentActivity)?.let { (it as? MainActivity)?.viewModel }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        dragHandle = { BottomSheetDefaults.DragHandle() }
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.85f)
-                .padding(horizontal = 16.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-            ) {
-                Text(
-                    "Select Folder",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
+    // Use FileItems to match the main listing and provide item counts
+    val subDirs = remember(currentDir) {
+        currentDir.listFiles { f -> f.isDirectory && !f.name.startsWith(".") }
+            ?.map { dir ->
+                FileItem(
+                    file = dir,
+                    isDirectory = true,
+                    name = dir.name,
+                    size = 0,
+                    lastModified = dir.lastModified(),
+                    extension = "",
+                    itemCount = dir.list { _, name -> !name.startsWith(".") }?.size ?: 0
                 )
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close")
-                }
-            }
+            }?.sortedBy { it.name.lowercase() } ?: emptyList()
+    }
 
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
-                ) {
-                    Icon(
-                        Icons.Default.FolderOpen,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        currentPath.absolutePath.replace(rootPath.absolutePath, "Internal Storage"),
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(bottom = 16.dp)
-            ) {
-                if (!isRoot) {
-                    item {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { currentPath = currentPath.parentFile ?: currentPath }
-                                .padding(vertical = 12.dp, horizontal = 8.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(20.dp))
+    // Full-screen immersive browser (matches the app's own file listing screen)
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        BackHandler {
+            if (currentDir != rootDir) currentDir.parentFile?.let { currentDir = it } else onDismiss()
+        }
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text(
+                            if (currentDir == rootDir) "Internal storage" else currentDir.name,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = {
+                            if (currentDir != rootDir) {
+                                currentDir.parentFile?.let { currentDir = it }
+                            } else {
+                                onDismiss()
                             }
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text(".. (Go Up)", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                        }) {
+                            Icon(
+                                if (currentDir != rootDir) Icons.AutoMirrored.Filled.ArrowBack else Icons.Default.Close,
+                                contentDescription = "Back"
+                            )
                         }
+                    },
+                    actions = {
+                        if (currentDir != rootDir) {
+                            IconButton(onClick = { currentDir = rootDir }) {
+                                Icon(Icons.Default.Home, contentDescription = "Go to Root")
+                            }
+                        }
+                    }
+                )
+            },
+            bottomBar = {
+                Surface(
+                    tonalElevation = 3.dp,
+                    shadowElevation = 8.dp
+                ) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp).navigationBarsPadding()) {
+                        Button(
+                            onClick = { onFolderSelected(currentDir) },
+                            enabled = currentDir != rootDir,
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Icon(Icons.Default.Check, null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Exclude Current Folder", style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
+                }
+            }
+        ) { padding ->
+            if (subDirs.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                    Text(
+                        "No subfolders here",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            } else {
+                val animatedItemKeys = remember(currentDir) { mutableStateSetOf<String>() }
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(padding),
+                    contentPadding = PaddingValues(bottom = 16.dp)
+                ) {
+                    itemsIndexed(subDirs, key = { _, item -> item.file.absolutePath }) { index, item ->
+                        FolderPickerRow(
+                            item = item,
+                            index = index,
+                            scrollResetKey = currentDir,
+                            hasAnimatedBefore = animatedItemKeys.contains(item.file.absolutePath),
+                            onAnimationStart = { animatedItemKeys.add(item.file.absolutePath) },
+                            viewModel = vm,
+                            onClick = { currentDir = item.file }
+                        )
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 8.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     }
                 }
-
-                items(folders) { folder ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { currentPath = folder }
-                            .padding(vertical = 12.dp, horizontal = 8.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Default.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text(
-                            folder.name,
-                            modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-                    }
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 8.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                }
-                
-                if (folders.isEmpty()) {
-                    item {
-                        Box(modifier = Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.Center) {
-                            Text("No subfolders found", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-            }
-
-            Button(
-                onClick = { onFolderSelected(currentPath) },
-                enabled = !isRoot,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 16.dp)
-                    .height(56.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                )
-            ) {
-                Text("Exclude Current Folder", style = MaterialTheme.typography.titleMedium)
             }
         }
     }
+}
+
+@Composable
+private fun FolderPickerRow(
+    item: FileItem,
+    index: Int,
+    scrollResetKey: Any,
+    hasAnimatedBefore: Boolean,
+    onAnimationStart: () -> Unit,
+    viewModel: RoseViewModel?,
+    onClick: () -> Unit
+) {
+    val animatedProgress = remember(scrollResetKey, item.file.absolutePath) {
+        Animatable(if (hasAnimatedBefore) 1f else 0f)
+    }
+    val density = LocalDensity.current
+    LaunchedEffect(scrollResetKey, item.file.absolutePath) {
+        if (!hasAnimatedBefore) {
+            onAnimationStart()
+            kotlinx.coroutines.delay((index % 8 * 12).toLong())
+            animatedProgress.animateTo(1f, tween(durationMillis = 200, easing = LinearOutSlowInEasing))
+        }
+    }
+    
+    ListItem(
+        headlineContent = {
+            Text(
+                item.name,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.bodyLarge
+            )
+        },
+        supportingContent = {
+            val count = item.itemCount ?: 0
+            val dateStr = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault()).format(java.util.Date(item.lastModified))
+            Text("$count items | $dateStr")
+        },
+        leadingContent = {
+            FileIcon(
+                fileItem = item,
+                iconSize = 40.dp,
+                folderTint = MaterialTheme.colorScheme.primary,
+                viewModel = viewModel
+            )
+        },
+        trailingContent = {
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+            )
+        },
+        modifier = Modifier
+            .graphicsLayer {
+                alpha = animatedProgress.value
+                translationY = (1f - animatedProgress.value) * with(density) { 40.dp.toPx() }
+            }
+            .clickable { onClick() }
+    )
 }

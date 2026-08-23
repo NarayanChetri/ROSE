@@ -122,7 +122,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private var sharedUris: List<Uri>? = null
+    private var sharedUris by mutableStateOf<List<Uri>?>(null)
 
     private val SHIZUKU_PERMISSION_REQUEST_CODE = 1001
 
@@ -144,6 +144,8 @@ class MainActivity : ComponentActivity() {
             viewModel.loadFiles(currentPath, showLoading = false)
         }
     }
+
+    private var pendingArchiveUri by mutableStateOf<Uri?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -322,6 +324,33 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
+                        // Handle viewed archive
+                        LaunchedEffect(pendingArchiveUri) {
+                            pendingArchiveUri?.let { uri ->
+                                val archiveExtensions = listOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz")
+                                val extension = MimeTypeMap.getFileExtensionFromUrl(uri.toString()).lowercase()
+                                val mimeType = contentResolver.getType(uri)
+                                val isArchive = extension in archiveExtensions || 
+                                        mimeType in listOf("application/zip", "application/x-zip-compressed", "application/x-7z-compressed", "application/x-rar-compressed")
+
+                                if (isArchive) {
+                                    viewModel.resetFiles()
+                                    // For external URIs, we need to copy to a temp file because 
+                                    // java.util.zip.ZipFile requires a File object (path), not a Stream.
+                                    try {
+                                        val tempFile = File(cacheDir, "view_archive_${System.currentTimeMillis()}.${if (extension.isEmpty()) "zip" else extension}")
+                                        contentResolver.openInputStream(uri)?.use { input ->
+                                            tempFile.outputStream().use { output -> input.copyTo(output) }
+                                        }
+                                        screen = AppScreen.Files(startPath = tempFile.absolutePath, fromHome = true)
+                                    } catch (e: Exception) {
+                                        Toast.makeText(this@MainActivity, "Failed to open archive: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                                pendingArchiveUri = null
+                            }
+                        }
+
                         // Handle shared files
                         LaunchedEffect(sharedUris) {
                             sharedUris?.let { uris ->
@@ -431,12 +460,7 @@ class MainActivity : ComponentActivity() {
                                             screen = AppScreen.Files(recent = true)
                                         },
                                         onFileClick = { fileItem ->
-                                            val archiveExtensions = listOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz")
-                                            val isArchive = fileItem.fileType == FileType.ZIP ||
-                                                    fileItem.extension.lowercase() in archiveExtensions ||
-                                                    fileItem.name.lowercase().let { name -> archiveExtensions.any { name.endsWith(".$it") } }
-
-                                            if (isArchive) {
+                                            if (fileItem.fileType == FileType.ZIP) {
                                                 viewModel.resetFiles()
                                                 screen = AppScreen.Files(
                                                     startPath = fileItem.file.absolutePath,
@@ -461,7 +485,13 @@ class MainActivity : ComponentActivity() {
                                         isFromAllFiles = currentScreen.isFromAllFiles,
                                         sharedTransitionScope = this@SharedTransitionLayout,
                                         animatedVisibilityScope = this@AnimatedContent,
-                                        onExitToHome = { screen = AppScreen.Home },
+                                        onExitToHome = {
+                                            if (sharedUris != null) {
+                                                screen = AppScreen.SaveAs(sharedUris!!, true)
+                                            } else {
+                                                screen = AppScreen.Home
+                                            }
+                                        },
                                         onFileClick = { fileItem -> openFile(fileItem) },
                                         onShareClick = { fileItems -> shareFiles(fileItems) },
                                         listState = explorerListState,
@@ -480,6 +510,11 @@ class MainActivity : ComponentActivity() {
                                         onSaved = { destPath ->
                                             screen = AppScreen.Files(startPath = destPath, fromHome = true)
                                             sharedUris = null
+                                        },
+                                        onArchiveView = { uri ->
+                                            viewModel.resetFiles()
+                                            screen = AppScreen.Files(startPath = uri.toString(), fromHome = true)
+                                            // Keep sharedUris so we can come back
                                         }
                                     )
                                     AppScreen.Settings -> SettingsScreen(
@@ -511,10 +546,10 @@ class MainActivity : ComponentActivity() {
 
         when (intent.action) {
             Intent.ACTION_VIEW -> {
-                intent.data?.let { uri ->
-                    // Handle opening files
-                }
-            }
+                                intent.data?.let { uri ->
+                                    pendingArchiveUri = uri
+                                }
+                            }
             Intent.ACTION_SEND -> {
                 val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
@@ -699,7 +734,7 @@ class MainActivity : ComponentActivity() {
     }
 
     internal fun openRecycledFile(item: RecycledItem) {
-        val file = File(getExternalFilesDir(null), ".rose_recycle_bin/${item.id}")
+        val file = RecycleBinManager.getRecycledFile(this, item)
         if (!file.exists()) {
             Toast.makeText(this, "File not found in recycle bin", Toast.LENGTH_SHORT).show()
             return

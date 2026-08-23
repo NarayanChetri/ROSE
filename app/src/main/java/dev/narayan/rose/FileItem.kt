@@ -34,8 +34,8 @@ data class FileItem(
     val fileType: FileType = when {
         isDirectory -> FileType.FOLDER
         extension == "apk" || mimeType == "application/vnd.android.package-archive" -> FileType.APK
-        extension in listOf("zip", "rar", "7z", "tar", "gz", "tgz") ||
-                mimeType in listOf("application/zip", "application/x-7z-compressed", "application/x-rar-compressed", "application/x-tar", "application/gzip") -> FileType.ZIP
+        extension in listOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "iso", "7-zip") ||
+                mimeType in listOf("application/zip", "application/x-7z-compressed", "application/x-rar-compressed", "application/x-tar", "application/gzip", "application/x-bzip2", "application/x-xz", "application/x-iso9660-image") -> FileType.ZIP
         extension == "pdf" || mimeType == "application/pdf" -> FileType.PDF
         extension in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif") ||
                 mimeType?.startsWith("image/") == true -> FileType.IMAGE
