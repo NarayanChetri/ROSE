@@ -8,6 +8,7 @@ import android.os.Environment
 import android.os.StatFs
 import android.provider.MediaStore
 import android.provider.Settings
+import android.webkit.MimeTypeMap
 import androidx.compose.runtime.*
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -282,6 +283,9 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     var extractionSource by mutableStateOf<File?>(null)
         private set
 
+    var extractionEntries by mutableStateOf<List<String>?>(null)
+        private set
+
     var isCopyOperation by mutableStateOf(true) // true for copy, false for move
         private set
 
@@ -528,6 +532,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     var currentZipFile by mutableStateOf<File?>(null)
+    var currentZipSourcePath by mutableStateOf<String?>(null)
     // Virtual directory path within the open zip ("" = root). Lets folders
     // inside an archive be browsed without re-reading the zip each time.
     var currentZipEntryPath by mutableStateOf("")
@@ -770,12 +775,14 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     private var categoryGeneration = 0
     private fun getItemCount(file: File, showHiddenFiles: Boolean): Int? {
         if (!file.isDirectory) return null
-        val children = try { file.listFiles() } catch (e: Exception) { null }
-        if (children != null) {
+        // File.list() (names only) is cheaper than File.listFiles() (stats every
+        // entry into a File object) when all we need here is a count.
+        val names = try { file.list() } catch (e: Exception) { null }
+        if (names != null) {
             return if (!showHiddenFiles) {
-                children.count { !it.name.startsWith(".") }
+                names.count { !it.startsWith(".") }
             } else {
-                children.size
+                names.size
             }
         }
 
@@ -784,8 +791,13 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         if (SafManager.isRestrictedPath(path)) {
             if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
                 val cleanPath = ShizukuManager.normalize(path)
-                // Use ls -1A to count all items (respecting hidden setting)
-                val cmd = if (showHiddenFiles) "ls -1A \"$cleanPath\" | wc -l" else "ls -1 \"$cleanPath\" | wc -l"
+                // Use ls -1A to count all items (respecting hidden setting).
+                // Path MUST go through shellEscape() - it's free-form user data
+                // interpolated into a shell command, same as every other Shizuku
+                // call site (see ShizukuManager.shellEscape's doc comment for why
+                // raw interpolation here would be a command-injection vector).
+                val escapedPath = ShizukuManager.shellEscape(cleanPath)
+                val cmd = if (showHiddenFiles) "ls -1A $escapedPath | wc -l" else "ls -1 $escapedPath | wc -l"
                 return try {
                     val process = ShizukuManager.newProcess(arrayOf("sh", "-c", cmd), null, null)
                     val output = process.inputStream.bufferedReader().readText().trim()
@@ -859,6 +871,19 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         // We no longer load recent files here to prevent potential
         // startup crashes if permissions are not yet granted.
         // HomeScreen will trigger loading when it becomes visible.
+
+        // Add default excluded folders if none are set
+        if (settings.excludedFolders.isEmpty()) {
+            val root = Environment.getExternalStorageDirectory().absolutePath
+            val defaults = mutableSetOf(
+                "$root/Android/media/com.whatsapp/WhatsApp/Backups",
+                "$root/Android/media/com.whatsapp/WhatsApp/Databases",
+                "$root/Music/Recordings/Call Recordings"
+            )
+            // Filter only those that exist or are standard
+            _excludedFolders.value = defaults
+            settings.excludedFolders = defaults
+        }
 
         // Clean up expired items from recycle bin
         loadRecycleBin()
@@ -1175,8 +1200,19 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         val normalizedPath = ShizukuManager.normalize(path)
         val archiveExtensions = listOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz")
 
-        // Check if it's an archive, including restricted paths
-        val isArchive = if (SafManager.isRestrictedPath(normalizedPath)) {
+        // Check if it's an archive, including restricted paths and shared URIs
+        val isArchive = if (path.startsWith("content://")) {
+            val uri = Uri.parse(path)
+            val mime = getApplication<Application>().contentResolver.getType(uri)
+            val displayName = getFileNameFromUri(uri)?.lowercase() ?: ""
+
+            mime in listOf("application/zip", "application/x-7z-compressed", "application/x-rar-compressed", "application/x-tar", "application/gzip", "application/x-bzip2", "application/x-xz") ||
+                    archiveExtensions.any { displayName.endsWith(".$it") } ||
+                    path.lowercase().let { p -> archiveExtensions.any { p.endsWith(".$it") } }
+        } else if (path.startsWith("file://")) {
+            val extension = MimeTypeMap.getFileExtensionFromUrl(path).lowercase()
+            extension in archiveExtensions || path.lowercase().let { p -> archiveExtensions.any { p.endsWith(".$it") } }
+        } else if (SafManager.isRestrictedPath(normalizedPath)) {
             val ext = normalizedPath.substringAfterLast('.', "").lowercase()
             ext in archiveExtensions && !normalizedPath.endsWith("/")
         } else {
@@ -1186,7 +1222,11 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         if (isArchive) {
-            openArchive(File(normalizedPath))
+            if (path.startsWith("content://") || path.startsWith("file://")) {
+                openArchive(getApplication(), android.net.Uri.parse(path))
+            } else {
+                openArchive(File(normalizedPath))
+            }
             return
         }
 
@@ -1232,11 +1272,20 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                             rawFiles.toList()
                         }
 
-                        val fileList = filteredFiles.map { file ->
-                            FileItem(
-                                file = file,
-                                itemCount = getItemCount(file, showHiddenFiles)
-                            )
+                        // Per-item counts are independent of each other, so fan them
+                        // out instead of doing thousands of sequential listFiles()
+                        // calls one after another - that's what was stalling first
+                        // paint on folders with many subfolders. Already inside
+                        // withContext(Dispatchers.IO) above, so this stays on IO.
+                        val fileList = coroutineScope {
+                            filteredFiles.map { file ->
+                                async {
+                                    FileItem(
+                                        file = file,
+                                        itemCount = getItemCount(file, showHiddenFiles)
+                                    )
+                                }
+                            }.awaitAll()
                         }
 
                         val sizedFileList = if (sortBy == SortBy.SIZE) {
@@ -1411,27 +1460,66 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         stopWatchingDirectory()
         currentPath = file.parent ?: Environment.getExternalStorageDirectory().absolutePath
         currentZipFile = file
+        currentZipSourcePath = file.absolutePath
         currentZipEntryPath = initialEntryPath
         files = emptyList()
         isLoading = true
 
+        val requestGeneration = ++filesGeneration
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                if (!file.exists()) {
+                    throw Exception("Archive file no longer exists.")
+                }
                 val entries = java.util.zip.ZipFile(file).use { it.entries().asSequence().toList() }
                 zipEntriesCache = entries
                 val sorted = sortFileList(buildZipDirectoryListing(entries, initialEntryPath, file))
                 withContext(Dispatchers.Main) {
-                    if (currentZipFile == file) {
+                    if (requestGeneration == filesGeneration && currentZipFile == file) {
                         files = sorted
                     }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    errorMessage = "Failed to open archive: ${e.message}"
+                    if (requestGeneration == filesGeneration) {
+                        errorMessage = "Failed to open archive: ${e.message}"
+                        currentZipFile = null
+                        // If opening archive fails, try to load the parent folder instead
+                        loadFiles(currentPath)
+                    }
                 }
             } finally {
                 withContext(Dispatchers.Main) {
-                    isLoading = false
+                    if (requestGeneration == filesGeneration) {
+                        isLoading = false
+                    }
+                }
+            }
+        }
+    }
+
+    fun openArchive(context: android.content.Context, uri: android.net.Uri) {
+        isLoading = true
+        val requestGeneration = ++filesGeneration
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val tempFile = File(context.cacheDir, "shared_archive.zip")
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    tempFile.outputStream().use { output -> input.copyTo(output) }
+                } ?: throw Exception("Failed to open shared file.")
+
+                withContext(Dispatchers.Main) {
+                    if (requestGeneration == filesGeneration) {
+                        currentZipSourcePath = uri.toString()
+                        openArchive(tempFile)
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    if (requestGeneration == filesGeneration) {
+                        errorMessage = "Failed to open shared archive: ${e.message}"
+                        isLoading = false
+                    }
                 }
             }
         }
@@ -1533,43 +1621,20 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearExtraction() {
         extractionSource = null
+        extractionEntries = null
     }
 
-    fun prepareExtraction(file: File) {
+    fun prepareExtraction(file: File, entries: List<String>? = null) {
         extractionSource = file
+        extractionEntries = entries
+        clipboardFiles.clear()
+        clipboardSourceZip = null
+        isCopyOperation = true // Reuse the "Paste" FAB logic
     }
 
-    fun extractArchive(file: File, destDir: File = File(file.parent, file.nameWithoutExtension)) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                if (!destDir.exists()) destDir.mkdirs()
-
-                java.util.zip.ZipFile(file).use { zip ->
-                    zip.entries().asSequence().forEach { entry ->
-                        val entryFile = File(destDir, entry.name)
-                        if (!entryFile.canonicalPath.startsWith(destDir.canonicalPath + File.separator)) {
-                            return@forEach
-                        }
-                        if (entry.isDirectory) {
-                            entryFile.mkdirs()
-                        } else {
-                            entryFile.parentFile?.mkdirs()
-                            zip.getInputStream(entry).use { input ->
-                                entryFile.outputStream().use { output ->
-                                    input.copyTo(output)
-                                }
-                            }
-                        }
-                    }
-                }
-                withContext(Dispatchers.Main) {
-                    clearExtraction()
-                    loadFiles(currentPath)
-                }
-            } catch (e: Exception) {
-                // Handle error
-            }
-        }
+    fun extractArchive(file: File, destDir: File = File(file.parent ?: Environment.getExternalStorageDirectory().absolutePath, file.nameWithoutExtension)) {
+        dev.narayan.rose.filejob.FileJobService.startExtract(getApplication(), file.absolutePath, destDir.absolutePath, extractionEntries)
+        clearExtraction()
     }
 
     private fun fetchRecentFileItems(): List<FileItem> {
@@ -1583,10 +1648,14 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 MediaStore.MediaColumns.MIME_TYPE
             )
             val queryUri = MediaStore.Files.getContentUri("external")
+            
+            // Exclude hidden files and folders
+            val selection = "(${MediaStore.MediaColumns.DATA} NOT LIKE '%/.%' AND ${MediaStore.MediaColumns.DATA} NOT LIKE '.%')"
+
             getApplication<Application>().contentResolver.query(
                 queryUri,
                 projection,
-                null,
+                selection,
                 null,
                 "${MediaStore.Files.FileColumns.DATE_MODIFIED} DESC"
             )?.use { cursor ->
@@ -1681,7 +1750,11 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         }
         val currentFile = File(currentPath)
         val parent = currentFile.parentFile
-        if (parent != null && (parent.canRead() || SafManager.isRestrictedPath(parent.absolutePath)) &&
+        
+        // Relaxed permission check: if the folder exists or is a known restricted path,
+        // we attempt to navigate to it. loadFiles() handles the actual permission
+        // check (SAF/Shizuku/Normal) once we get there.
+        if (parent != null && (parent.exists() || SafManager.isRestrictedPath(parent.absolutePath)) &&
             currentPath != Environment.getExternalStorageDirectory().absolutePath &&
             currentPath != ShizukuManager.normalize(Environment.getExternalStorageDirectory().absolutePath)
         ) {
@@ -1900,6 +1973,15 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
     // Extracts a single entry, or - when entryName is a folder - every entry
     // nested under it, preserving the folder's internal structure under dest.
+    //
+    // Security note: a zip entry's name is attacker-controlled data (the zip
+    // may have been downloaded, shared, or extracted from an untrusted
+    // source) and can contain "../" segments or an absolute path. Without a
+    // containment check, a crafted entry like "../../../../data/data/dev.
+    // narayan.rose/some_file" would resolve outside `dest` and overwrite
+    // arbitrary app-writable files - a classic "zip slip" vulnerability.
+    // Every resolved path is normalized and verified to stay inside `dest`'s
+    // (for the folder case) canonical directory before anything is written.
     private fun extractEntry(zip: java.util.zip.ZipFile, entryName: String, dest: File) {
         val entry = zip.getEntry(entryName)
         if (entry != null && !entry.isDirectory) {
@@ -1912,11 +1994,22 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         // Folder (explicit entry or only implied by nested files): pull every
         // entry whose name starts with this prefix and rebuild it under dest.
         dest.mkdirs()
+        val destCanonicalPath = dest.canonicalPath
         val prefix = entryName.trimEnd('/') + "/"
         zip.entries().asSequence().forEach { child ->
             if (child.name.startsWith(prefix) && !child.isDirectory) {
                 val relative = child.name.removePrefix(prefix)
                 val childDest = File(dest, relative)
+
+                // Containment check: reject any entry whose resolved path
+                // would land outside `dest` (path traversal / zip slip).
+                val childCanonicalPath = childDest.canonicalPath
+                if (childCanonicalPath != destCanonicalPath &&
+                    !childCanonicalPath.startsWith(destCanonicalPath + File.separator)
+                ) {
+                    return@forEach
+                }
+
                 childDest.parentFile?.mkdirs()
                 zip.getInputStream(child).use { input ->
                     childDest.outputStream().use { output -> input.copyTo(output) }
@@ -1995,7 +2088,9 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         // a "blank flash" during transitions.
         categoryTitle = null
         categoryFilterType = null
+        categoryBucketId = null
         currentZipFile = null
+        currentZipSourcePath = null
         currentZipEntryPath = ""
 
         // `categoryFiles` used to be left untouched here on the (wrong)
@@ -2010,6 +2105,13 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         // category's files. Clearing it here, synchronously before the new
         // screen is even created, closes that window completely.
         categoryFiles = emptyList()
+    }
+
+    fun closeArchive() {
+        currentZipFile = null
+        currentZipSourcePath = null
+        currentZipEntryPath = ""
+        files = emptyList()
     }
 
     fun renameFile(fileItem: FileItem, newName: String) {
@@ -2240,7 +2342,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         userExcluded.map { "(${MediaStore.MediaColumns.DATA} NOT LIKE '$it/%' AND ${MediaStore.MediaColumns.DATA} != '$it')" }).joinToString(" AND ")
 
                 // Exclude hidden files and folders
-                val noHiddenSelection = "${MediaStore.MediaColumns.DATA} NOT LIKE '%/.%' AND ${MediaStore.MediaColumns.DATA} NOT LIKE '%/..%'"
+                val noHiddenSelection = "(${MediaStore.MediaColumns.DATA} NOT LIKE '%/.%' AND ${MediaStore.MediaColumns.DATA} NOT LIKE '.%')"
 
                 val finalSelection = if (selection.isNotEmpty()) {
                     "($selection) AND ($excludeSelection) AND ($noHiddenSelection)"
@@ -2349,7 +2451,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         userExcluded.map { "(${MediaStore.MediaColumns.DATA} NOT LIKE '$it/%' AND ${MediaStore.MediaColumns.DATA} != '$it')" }).joinToString(" AND ")
 
                 // Exclude hidden files and folders
-                val noHiddenSelection = "${MediaStore.MediaColumns.DATA} NOT LIKE '%/.%' AND ${MediaStore.MediaColumns.DATA} NOT LIKE '%/..%'"
+                val noHiddenSelection = "(${MediaStore.MediaColumns.DATA} NOT LIKE '%/.%' AND ${MediaStore.MediaColumns.DATA} NOT LIKE '.%')"
 
                 val selection = if (categorySelection != null) {
                     "($categorySelection) AND ($excludeSelection) AND ($noHiddenSelection)"

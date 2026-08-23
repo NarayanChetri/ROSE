@@ -135,6 +135,7 @@ fun RecycleBinScreen(
     var showBulkDeleteConfirm by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
     var propertyItem by remember { mutableStateOf<RecycledItem?>(null) }
+    var showRestoreToViewPrompt by remember { mutableStateOf<RecycledItem?>(null) }
 
     fun exitSelection() {
         selectedIds = emptySet()
@@ -318,9 +319,16 @@ fun RecycleBinScreen(
                                 selectedIds = if (isSelected) selectedIds - item.id else selectedIds + item.id
                                 if (selectedIds.isEmpty()) isSelectionMode = false
                             } else {
-                                // Try to play/open
-                                (context as? MainActivity)?.let { activity ->
-                                    activity.openRecycledFile(item)
+                                val extension = item.originalName.substringAfterLast('.', "").lowercase()
+                                val isArchive = extension in listOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "iso", "7-zip")
+                                
+                                if (item.isDirectory || isArchive) {
+                                    showRestoreToViewPrompt = item
+                                } else {
+                                    // Try to play/open
+                                    (context as? MainActivity)?.let { activity ->
+                                        activity.openRecycledFile(item)
+                                    }
                                 }
                             }
                         },
@@ -426,6 +434,33 @@ fun RecycleBinScreen(
             }
         )
     }
+
+    showRestoreToViewPrompt?.let { item ->
+        AlertDialog(
+            onDismissRequest = { showRestoreToViewPrompt = null },
+            icon = { Icon(Icons.Default.Restore, null) },
+            title = { Text(if (item.isDirectory) "Restore Folder?" else "Restore Archive?") },
+            text = {
+                Text("To view the contents of \"${item.originalName}\", you need to restore it first.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        dev.narayan.rose.filejob.FileJobService.startRestore(context, listOf(item.id), listOf(item.originalName))
+                        showRestoreToViewPrompt = null
+                    }
+                ) {
+                    Text("Restore Now")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestoreToViewPrompt = null }) {
+                    Text("Cancel")
+                }
+            },
+            shape = RoundedCornerShape(28.dp)
+        )
+    }
 }
 
 @Composable
@@ -485,7 +520,7 @@ internal fun RecycledItemView(
     }
 
     val context = LocalContext.current
-    val recycledFile = File(context.getExternalFilesDir(null), ".rose_recycle_bin/${item.id}")
+    val recycledFile = RecycleBinManager.getRecycledFile(context, item)
     var showMenu by remember { mutableStateOf(false) }
 
     Card(

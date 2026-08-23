@@ -4,13 +4,10 @@ import android.net.Uri
 import android.os.Environment
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -20,11 +17,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.io.File
 
@@ -35,21 +32,30 @@ fun SaveAsScreen(
     uris: List<Uri>,
     isZip: Boolean,
     onDismiss: () -> Unit,
-    onSaved: (String) -> Unit
+    onSaved: (String) -> Unit,
+    onArchiveView: (Uri) -> Unit = {}
 ) {
     val rootDir = remember { Environment.getExternalStorageDirectory() }
     var currentDir by remember { mutableStateOf(rootDir) }
+    val context = LocalContext.current
     
+    // Initial state: show options menu if it's a single ZIP file
+    var showOptions by remember { mutableStateOf(isZip && uris.size == 1) }
+
     val items = remember(currentDir) {
-        currentDir.listFiles { f -> !f.name.startsWith(".") }
+        currentDir.listFiles { f -> !f.name.startsWith(".") && f.isDirectory }
             ?.map { FileItem(it) }
-            ?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+            ?.sortedBy { it.name.lowercase() }
             ?: emptyList()
     }
 
     BackHandler {
-        if (currentDir != rootDir) {
+        if (showOptions) {
+            onDismiss()
+        } else if (currentDir != rootDir) {
             currentDir = currentDir.parentFile ?: rootDir
+        } else if (isZip && uris.size == 1) {
+            showOptions = true
         } else {
             onDismiss()
         }
@@ -61,7 +67,11 @@ fun SaveAsScreen(
                 Column {
                     TopAppBar(
                         title = {
-                            Text(if (isZip) "Save/Extract Archive" else "Save to...", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                            Text(
+                                if (isZip) "Save/Extract Archive" else "Save to...",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
                         },
                         navigationIcon = {
                             IconButton(onClick = onDismiss) {
@@ -73,124 +83,196 @@ fun SaveAsScreen(
                 }
             }
         },
+        floatingActionButtonPosition = FabPosition.Center,
         floatingActionButton = {
-            Column(
-                modifier = Modifier.padding(bottom = 16.dp, end = 8.dp),
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+            if (!showOptions) {
                 Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    tonalElevation = 4.dp,
-                    shadowElevation = 6.dp
+                    shape = RoundedCornerShape(32.dp),
+                    color = Color(0xFF1C1B1F),
+                    shadowElevation = 8.dp,
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 12.dp)
+                        .fillMaxWidth()
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(start = 4.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)
-                    ) {
-                        if (isZip && uris.size == 1) {
-                            Row(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .clickable {
-                                        viewModel.extractSharedZip(uris[0], currentDir.absolutePath) { success ->
-                                            if (success) onSaved(currentDir.absolutePath)
-                                        }
-                                    }
-                                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Default.Unarchive,
-                                    null,
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    "Extract Here",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
-                            
-                            VerticalDivider(
-                                modifier = Modifier
-                                    .height(24.dp)
-                                    .padding(horizontal = 4.dp),
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.1f)
-                            )
-                        }
-                        
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
-                                .clickable {
-                                    viewModel.saveSharedFiles(uris, currentDir.absolutePath) { success ->
-                                        if (success) onSaved(currentDir.absolutePath)
-                                    }
+                    SaveAsOption(
+                        icon = Icons.Default.Save,
+                        title = "Save Here",
+                        subtitle = null,
+                        onClick = {
+                            viewModel.saveSharedFiles(uris, currentDir.absolutePath) { success ->
+                                if (success) {
+                                    onSaved(currentDir.absolutePath)
+                                } else {
+                                    android.widget.Toast.makeText(context, "Failed to save file", android.widget.Toast.LENGTH_SHORT).show()
                                 }
-                                .padding(horizontal = 8.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.Save,
-                                null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                "Save Here",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
+                            }
                         }
-                    }
+                    )
                 }
             }
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
-            if (items.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No files found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // Folder List for Navigation
+            Column(modifier = Modifier.fillMaxSize()) {
+                if (items.isEmpty()) {
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Text("No folders found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        contentPadding = PaddingValues(bottom = 88.dp, top = 8.dp)
+                    ) {
+                        itemsIndexed(items, key = { _, item -> item.file.absolutePath }) { index, fileItem ->
+                            FileListItem(
+                                fileItem = fileItem,
+                                isSelected = false,
+                                showDetails = viewModel.showDetails,
+                                isVirtual = false,
+                                onClick = {
+                                    if (fileItem.isDirectory) {
+                                        currentDir = fileItem.file
+                                    }
+                                },
+                                onLongClick = { },
+                                onDelete = { },
+                                onRename = { _ -> },
+                                onShare = { },
+                                onCopy = { },
+                                onCut = { },
+                                onProperties = { },
+                                viewModel = viewModel,
+                                index = index,
+                                scrollResetKey = currentDir,
+                                hasAnimatedBefore = true,
+                                isDividerVisible = viewModel.showListDividers && index != items.lastIndex
+                            )
+                        }
+                    }
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(vertical = 8.dp)
+            }
+
+            // Choice Menu Overlay
+            AnimatedVisibility(
+                visible = showOptions,
+                enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
+                exit = fadeOut() + slideOutVertically(targetOffsetY = { it })
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .clickable(enabled = false) {}
                 ) {
-                    itemsIndexed(items, key = { _, item -> item.file.absolutePath }) { index, fileItem ->
-                        FileListItem(
-                            fileItem = fileItem,
-                            isSelected = false,
-                            showDetails = viewModel.showDetails,
-                            isVirtual = false,
-                            onClick = {
-                                if (fileItem.isDirectory) {
-                                    currentDir = fileItem.file
-                                }
-                            },
-                            onLongClick = { },
-                            onDelete = { },
-                            onRename = { _ -> },
-                            onShare = { },
-                            onCopy = { },
-                            onCut = { },
-                            onProperties = { },
-                            viewModel = viewModel,
-                            index = index,
-                            scrollResetKey = currentDir,
-                            hasAnimatedBefore = true, // Simplify for SaveAs
-                            isDividerVisible = viewModel.showListDividers && index != items.lastIndex
-                        )
+                    Surface(
+                        shape = RoundedCornerShape(32.dp),
+                        color = Color(0xFF1C1B1F),
+                        modifier = Modifier
+                            .padding(24.dp)
+                            .align(Alignment.BottomCenter)
+                            .widthIn(max = 400.dp)
+                            .fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .padding(top = 12.dp, bottom = 24.dp)
+                                .fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            // Handle
+                            Box(
+                                modifier = Modifier
+                                    .width(36.dp)
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(Color.White.copy(alpha = 0.2f))
+                            )
+                            Spacer(modifier = Modifier.height(20.dp))
+
+                            SaveAsOption(
+                                icon = Icons.Default.Search,
+                                title = "Archive viewer",
+                                subtitle = "Preview and browse archive",
+                                onClick = { onArchiveView(uris[0]) }
+                            )
+
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                                color = Color.White.copy(alpha = 0.05f),
+                                thickness = 1.dp
+                            )
+
+                            SaveAsOption(
+                                icon = Icons.Default.FileDownload,
+                                title = "Save as",
+                                subtitle = "Extract archive to a location",
+                                onClick = { showOptions = false }
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SaveAsOption(
+    icon: ImageVector,
+    title: String,
+    subtitle: String? = null,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = Color(0xFF2B2D31),
+            modifier = Modifier.size(56.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Default.Folder,
+                    contentDescription = null,
+                    tint = Color(0xFF4C8DFF).copy(alpha = 0.3f),
+                    modifier = Modifier.size(32.dp)
+                )
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = Color(0xFF4C8DFF),
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.Gray
+                )
+            }
+        }
+        Icon(
+            Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = Color.Gray.copy(alpha = 0.4f),
+            modifier = Modifier.size(20.dp)
+        )
     }
 }

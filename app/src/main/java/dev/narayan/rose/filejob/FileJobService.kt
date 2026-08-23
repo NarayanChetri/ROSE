@@ -30,6 +30,8 @@ class FileJobService : Service() {
         const val ACTION_START_DOWNLOAD = "action_start_download"
         const val ACTION_START_RECYCLE = "action_start_recycle"
         const val ACTION_START_RESTORE = "action_start_restore"
+        const val ACTION_START_EXTRACT = "action_start_extract"
+        const val EXTRA_ENTRIES = "extra_entries"
         const val EXTRA_SOURCES = "extra_sources"
         const val EXTRA_DISPLAY_NAMES = "extra_display_names"
         const val EXTRA_TARGET_DIR = "extra_target_dir"
@@ -96,6 +98,19 @@ class FileJobService : Service() {
             startService(context, intent)
         }
 
+        fun startExtract(context: Context, sourcePath: String, targetDir: String, entries: List<String>? = null) {
+            val intent = Intent(context, FileJobService::class.java).apply {
+                action = ACTION_START_EXTRACT
+                putStringArrayListExtra(EXTRA_SOURCES, arrayListOf(sourcePath))
+                putStringArrayListExtra(EXTRA_DISPLAY_NAMES, arrayListOf(sourcePath.substringAfterLast('/')))
+                putExtra(EXTRA_TARGET_DIR, targetDir)
+                if (entries != null) {
+                    putStringArrayListExtra(EXTRA_ENTRIES, ArrayList(entries))
+                }
+            }
+            startService(context, intent)
+        }
+
         private fun startService(context: Context, intent: Intent) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
@@ -149,6 +164,11 @@ class FileJobService : Service() {
             ACTION_START_DOWNLOAD -> {
                 val targetFile = intent.getStringExtra(EXTRA_TARGET_FILE) ?: return START_NOT_STICKY
                 FileJobType.Download(sourcePaths[0], java.io.File(targetFile).toPath())
+            }
+            ACTION_START_EXTRACT -> {
+                val targetDir = intent.getStringExtra(EXTRA_TARGET_DIR) ?: return START_NOT_STICKY
+                val entries = intent.getStringArrayListExtra(EXTRA_ENTRIES)
+                FileJobType.Extract(java.io.File(sourcePaths[0].path).toPath(), java.io.File(targetDir).toPath(), entries)
             }
             else -> return START_NOT_STICKY
         }
@@ -213,6 +233,7 @@ class FileJobService : Service() {
             is FileJobType.Download -> "Saving Offline"
             is FileJobType.Recycle -> "Moving to Recycle Bin"
             is FileJobType.Restore -> "Restoring Files"
+            is FileJobType.Extract -> "Extracting Archive"
         }
 
         val progressPercent = (job.progress * 100).toInt()
@@ -262,6 +283,7 @@ class FileJobService : Service() {
             is FileJobType.Download -> "Save offline"
             is FileJobType.Recycle -> "Moving to bin"
             is FileJobType.Restore -> "Restore"
+            is FileJobType.Extract -> "Extraction"
         }
         val title = if (success) {
             when (job.type) {
