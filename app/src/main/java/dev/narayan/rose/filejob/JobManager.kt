@@ -38,14 +38,32 @@ object JobManager {
     // ConcurrentHashMap-backed set gives proper cross-thread visibility.
     private val cancelledJobs = Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
 
+    // FIX: the previous version called removeJob(jobId) right after adding
+    // jobId to cancelledJobs, and removeJob() itself does
+    // cancelledJobs.remove(jobId) - so the id was added and then immediately
+    // stripped back out again in the same synchronous call. isCancelled()
+    // would go back to returning false before a background job thread ever
+    // had a realistic chance to observe true, so Cancel silently did nothing
+    // to the actual running operation - it only hid the progress card.
+    //
+    // Fix: cancelJob() only pulls the job out of the *visible* active-jobs
+    // map (so the UI reacts immediately). It leaves the id in cancelledJobs
+    // so isCancelled(jobId) keeps returning true for as long as the
+    // background thread is still alive. cancelledJobs is only cleared once
+    // that thread actually finishes and calls completeJob() -> removeJob().
     fun cancelJob(jobId: String) {
         cancelledJobs.add(jobId)
-        removeJob(jobId)
+        _activeJobs.update { current -> current - jobId }
     }
 
     fun isCancelled(jobId: String): Boolean = cancelledJobs.contains(jobId)
 
     fun updateJob(job: FileJob) {
+        // If the job was already cancelled, don't let a stray progress update
+        // from the background thread (which hasn't noticed the cancellation
+        // yet) resurrect it in the UI - the user already dismissed it.
+        if (cancelledJobs.contains(job.id)) return
+
         // Multiple job threads can call this concurrently (overlapping jobs are
         // explicitly supported - see FileJobService). `update` does an atomic
         // compare-and-set loop, so there's no read-modify-write race between

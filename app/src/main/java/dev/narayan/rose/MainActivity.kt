@@ -182,6 +182,34 @@ class MainActivity : ComponentActivity() {
                 val hasActiveDownload = activeJobs.values.any { it.type is dev.narayan.rose.filejob.FileJobType.Download }
                 var showNotificationPrimer by remember { mutableStateOf(false) }
 
+                // Delete, Recycle and Restore are near-instant (typically just a file move
+                // or metadata update), so showing the full detail dialog or mini bar
+                // (built for long transfers) just flashes them open and shut. Split them
+                // out into a tiny, cosmetic center spinner instead.
+                val fastJobs = remember(activeJobs) {
+                    activeJobs.values.filter {
+                        it.type is dev.narayan.rose.filejob.FileJobType.Delete ||
+                                it.type is dev.narayan.rose.filejob.FileJobType.Recycle ||
+                                it.type is dev.narayan.rose.filejob.FileJobType.Restore
+                    }
+                }
+                val otherJobs = remember(activeJobs) {
+                    activeJobs.values.filter {
+                        it.type !is dev.narayan.rose.filejob.FileJobType.Delete &&
+                                it.type !is dev.narayan.rose.filejob.FileJobType.Recycle &&
+                                it.type !is dev.narayan.rose.filejob.FileJobType.Restore
+                    }
+                }
+
+                // Lives at the Activity level (not inside FileExplorerScreen) so the mini
+                // progress bar keeps showing no matter which screen is on top - Home,
+                // Files, Recycle Bin, etc. - for as long as a job is running, instead of
+                // vanishing the moment the user navigates away from All Files.
+                var showJobDetailsDialog by remember { mutableStateOf(false) }
+                LaunchedEffect(otherJobs.isNotEmpty()) {
+                    if (otherJobs.isNotEmpty()) showJobDetailsDialog = true
+                }
+
                 LaunchedEffect(hasActiveDownload) {
                     if (hasActiveDownload &&
                         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -330,12 +358,12 @@ class MainActivity : ComponentActivity() {
                                 val archiveExtensions = listOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz")
                                 val extension = MimeTypeMap.getFileExtensionFromUrl(uri.toString()).lowercase()
                                 val mimeType = contentResolver.getType(uri)
-                                val isArchive = extension in archiveExtensions || 
+                                val isArchive = extension in archiveExtensions ||
                                         mimeType in listOf("application/zip", "application/x-zip-compressed", "application/x-7z-compressed", "application/x-rar-compressed")
 
                                 if (isArchive) {
                                     viewModel.resetFiles()
-                                    // For external URIs, we need to copy to a temp file because 
+                                    // For external URIs, we need to copy to a temp file because
                                     // java.util.zip.ZipFile requires a File object (path), not a Stream.
                                     try {
                                         val tempFile = File(cacheDir, "view_archive_${System.currentTimeMillis()}.${if (extension.isEmpty()) "zip" else extension}")
@@ -364,167 +392,226 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        SharedTransitionLayout {
-                            AnimatedContent(
-                                targetState = screen,
-                                transitionSpec = {
-                                    val target = targetState
-                                    when (target) {
-                                        is AppScreen.Files -> {
-                                            if (target.isFromAllFiles) {
-                                                // Snappier transition for All Files
-                                                (fadeIn(tween(250, easing = FastOutSlowInEasing)) +
-                                                        slideInVertically(tween(250, easing = FastOutSlowInEasing)) { it / 20 })
-                                                    .togetherWith(fadeOut(tween(150, easing = FastOutSlowInEasing)))
-                                                    .using(SizeTransform(clip = false))
-                                            } else {
-                                                (fadeIn(tween(200, easing = FastOutSlowInEasing)) +
-                                                        scaleIn(initialScale = 0.96f, animationSpec = tween(200, easing = FastOutSlowInEasing)))
-                                                    .togetherWith(fadeOut(tween(100, easing = FastOutSlowInEasing)))
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            SharedTransitionLayout {
+                                AnimatedContent(
+                                    targetState = screen,
+                                    transitionSpec = {
+                                        val target = targetState
+                                        when (target) {
+                                            is AppScreen.Files -> {
+                                                if (target.isFromAllFiles) {
+                                                    // Snappier transition for All Files
+                                                    (fadeIn(tween(250, easing = FastOutSlowInEasing)) +
+                                                            slideInVertically(tween(250, easing = FastOutSlowInEasing)) { it / 20 })
+                                                        .togetherWith(fadeOut(tween(150, easing = FastOutSlowInEasing)))
+                                                        .using(SizeTransform(clip = false))
+                                                } else {
+                                                    (fadeIn(tween(200, easing = FastOutSlowInEasing)) +
+                                                            scaleIn(initialScale = 0.96f, animationSpec = tween(200, easing = FastOutSlowInEasing)))
+                                                        .togetherWith(fadeOut(tween(100, easing = FastOutSlowInEasing)))
+                                                        .using(SizeTransform(clip = false))
+                                                }
+                                            }
+                                            is AppScreen.Home, is AppScreen.RecycleBin -> {
+                                                (fadeIn(tween(160, easing = FastOutSlowInEasing)) +
+                                                        scaleIn(initialScale = 0.97f, animationSpec = tween(160, easing = FastOutSlowInEasing)))
+                                                    .togetherWith(fadeOut(tween(90, easing = FastOutSlowInEasing)))
                                                     .using(SizeTransform(clip = false))
                                             }
+                                            is AppScreen.SaveAs -> {
+                                                (slideInVertically(animationSpec = tween(280, easing = FastOutSlowInEasing)) { it } + fadeIn())
+                                                    .togetherWith(slideOutVertically(animationSpec = tween(200)) { it } + fadeOut())
+                                            }
+                                            else -> fadeIn(tween(180)) togetherWith fadeOut(tween(180))
                                         }
-                                        is AppScreen.Home, is AppScreen.RecycleBin -> {
-                                            (fadeIn(tween(160, easing = FastOutSlowInEasing)) +
-                                                    scaleIn(initialScale = 0.97f, animationSpec = tween(160, easing = FastOutSlowInEasing)))
-                                                .togetherWith(fadeOut(tween(90, easing = FastOutSlowInEasing)))
-                                                .using(SizeTransform(clip = false))
-                                        }
-                                        is AppScreen.SaveAs -> {
-                                            (slideInVertically(animationSpec = tween(280, easing = FastOutSlowInEasing)) { it } + fadeIn())
-                                                .togetherWith(slideOutVertically(animationSpec = tween(200)) { it } + fadeOut())
-                                        }
-                                        else -> fadeIn(tween(180)) togetherWith fadeOut(tween(180))
-                                    }
-                                },
-                                label = "ScreenTransition",
-                                modifier = Modifier.fillMaxSize()
-                            )
-                            { currentScreen ->
-                                // Naming dialog for new external storage
-                                pendingStorageUri?.let { uri ->
-                                    val initialName = if (uri.authority?.contains("com.google.android.apps.docs") == true) {
-                                        "Google Drive"
-                                    } else {
-                                        // Try to get a meaningful name from the URI if possible
-                                        val path = uri.path ?: ""
-                                        if (path.contains(":")) {
-                                            path.substringAfterLast(":")
+                                    },
+                                    label = "ScreenTransition",
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                { currentScreen ->
+                                    // Naming dialog for new external storage
+                                    pendingStorageUri?.let { uri ->
+                                        val initialName = if (uri.authority?.contains("com.google.android.apps.docs") == true) {
+                                            "Google Drive"
                                         } else {
-                                            "External Storage"
+                                            // Try to get a meaningful name from the URI if possible
+                                            val path = uri.path ?: ""
+                                            if (path.contains(":")) {
+                                                path.substringAfterLast(":")
+                                            } else {
+                                                "External Storage"
+                                            }
                                         }
+                                        RenameDialog(
+                                            initialName = initialName,
+                                            onDismiss = { pendingStorageUri = null },
+                                            onRename = { name ->
+                                                viewModel.addExternalStorage(name, uri)
+                                                pendingStorageUri = null
+                                            }
+                                        )
                                     }
-                                    RenameDialog(
-                                        initialName = initialName,
-                                        onDismiss = { pendingStorageUri = null },
-                                        onRename = { name ->
-                                            viewModel.addExternalStorage(name, uri)
-                                            pendingStorageUri = null
-                                        }
-                                    )
-                                }
 
-                                when (currentScreen) {
-                                    is AppScreen.Home -> HomeScreen(
-                                        viewModel = viewModel,
-                                        listState = homeListState,
-                                        sharedTransitionScope = this@SharedTransitionLayout,
-                                        animatedVisibilityScope = this@AnimatedContent,
-                                        onOpenPath = { path, fileToHighlight ->
-                                            val isFromAllFiles = path == Environment.getExternalStorageDirectory().absolutePath && fileToHighlight == null
-                                            // Always reset - this only clears category/zip metadata
-                                            // (categoryTitle, categoryFilterType, currentZipFile,
-                                            // categoryFiles), never `files`/rootCache, so it can't
-                                            // cause a "blank flash" here. Skipping it for All Files
-                                            // used to leave a stale categoryFilterType set (from a
-                                            // previously-browsed category still hanging around this
-                                            // session) which made setSortOrder() silently re-sort the
-                                            // invisible categoryFiles list instead of the visible one
-                                            // - "sort does nothing in All Files" until a manual
-                                            // refresh, which reloads through a path that ignores
-                                            // categoryFilterType entirely.
-                                            viewModel.resetFiles()
-                                            screen = AppScreen.Files(
-                                                startPath = path,
-                                                fromHome = true,
-                                                highlightFile = fileToHighlight,
-                                                isFromAllFiles = isFromAllFiles
-                                            )
-                                        },
-                                        onOpenCategory = { type, title ->
-                                            viewModel.resetFiles()
-                                            screen = AppScreen.Files(category = type to title)
-                                        },
-                                        onOpenRecent = {
-                                            viewModel.resetFiles()
-                                            screen = AppScreen.Files(recent = true)
-                                        },
-                                        onFileClick = { fileItem ->
-                                            if (fileItem.fileType == FileType.ZIP) {
+                                    when (currentScreen) {
+                                        is AppScreen.Home -> HomeScreen(
+                                            viewModel = viewModel,
+                                            listState = homeListState,
+                                            sharedTransitionScope = this@SharedTransitionLayout,
+                                            animatedVisibilityScope = this@AnimatedContent,
+                                            onOpenPath = { path, fileToHighlight ->
+                                                val isFromAllFiles = path == Environment.getExternalStorageDirectory().absolutePath && fileToHighlight == null
+                                                // Always reset - this only clears category/zip metadata
+                                                // (categoryTitle, categoryFilterType, currentZipFile,
+                                                // categoryFiles), never `files`/rootCache, so it can't
+                                                // cause a "blank flash" here. Skipping it for All Files
+                                                // used to leave a stale categoryFilterType set (from a
+                                                // previously-browsed category still hanging around this
+                                                // session) which made setSortOrder() silently re-sort the
+                                                // invisible categoryFiles list instead of the visible one
+                                                // - "sort does nothing in All Files" until a manual
+                                                // refresh, which reloads through a path that ignores
+                                                // categoryFilterType entirely.
                                                 viewModel.resetFiles()
                                                 screen = AppScreen.Files(
-                                                    startPath = fileItem.file.absolutePath,
-                                                    fromHome = true
+                                                    startPath = path,
+                                                    fromHome = true,
+                                                    highlightFile = fileToHighlight,
+                                                    isFromAllFiles = isFromAllFiles
                                                 )
-                                            } else {
-                                                openFile(fileItem)
+                                            },
+                                            onOpenCategory = { type, title ->
+                                                viewModel.resetFiles()
+                                                screen = AppScreen.Files(category = type to title)
+                                            },
+                                            onOpenRecent = {
+                                                viewModel.resetFiles()
+                                                screen = AppScreen.Files(recent = true)
+                                            },
+                                            onFileClick = { fileItem ->
+                                                if (fileItem.fileType == FileType.ZIP) {
+                                                    viewModel.resetFiles()
+                                                    screen = AppScreen.Files(
+                                                        startPath = fileItem.file.absolutePath,
+                                                        fromHome = true
+                                                    )
+                                                } else {
+                                                    openFile(fileItem)
+                                                }
+                                            },
+                                            onShareClick = { fileItem -> shareFiles(listOf(fileItem)) },
+                                            onSettingsClick = { screen = AppScreen.Settings },
+                                            onAboutClick = { screen = AppScreen.About },
+                                            onRecycleBinClick = { screen = AppScreen.RecycleBin }
+                                        )
+                                        is AppScreen.Files -> FileExplorerScreen(
+                                            viewModel = viewModel,
+                                            startPath = currentScreen.startPath,
+                                            startCategory = currentScreen.category,
+                                            startRecent = currentScreen.recent,
+                                            fromHome = currentScreen.fromHome,
+                                            highlightFile = currentScreen.highlightFile,
+                                            isFromAllFiles = currentScreen.isFromAllFiles,
+                                            sharedTransitionScope = this@SharedTransitionLayout,
+                                            animatedVisibilityScope = this@AnimatedContent,
+                                            onExitToHome = {
+                                                if (sharedUris != null) {
+                                                    screen = AppScreen.SaveAs(sharedUris!!, true)
+                                                } else {
+                                                    screen = AppScreen.Home
+                                                }
+                                            },
+                                            onFileClick = { fileItem -> openFile(fileItem) },
+                                            onShareClick = { fileItems -> shareFiles(fileItems) },
+                                            listState = explorerListState,
+                                            gridState = explorerGridState
+                                        )
+                                        is AppScreen.RecycleBin -> RecycleBinScreen(
+                                            onBack = { screen = AppScreen.Home },
+                                            viewModel = viewModel,
+                                            listState = recycleBinListState
+                                        )
+                                        is AppScreen.SaveAs -> SaveAsScreen(
+                                            viewModel = viewModel,
+                                            uris = currentScreen.uris,
+                                            isZip = currentScreen.isZip,
+                                            onDismiss = { screen = AppScreen.Home; sharedUris = null },
+                                            onSaved = { destPath ->
+                                                screen = AppScreen.Files(startPath = destPath, fromHome = true)
+                                                sharedUris = null
+                                            },
+                                            onArchiveView = { uri ->
+                                                viewModel.resetFiles()
+                                                screen = AppScreen.Files(startPath = uri.toString(), fromHome = true)
+                                                // Keep sharedUris so we can come back
                                             }
-                                        },
-                                        onShareClick = { fileItem -> shareFiles(listOf(fileItem)) },
-                                        onSettingsClick = { screen = AppScreen.Settings },
-                                        onAboutClick = { screen = AppScreen.About },
-                                        onRecycleBinClick = { screen = AppScreen.RecycleBin }
+                                        )
+                                        AppScreen.Settings -> SettingsScreen(
+                                            viewModel = viewModel,
+                                            onBack = { screen = AppScreen.Home }
+                                        )
+                                        AppScreen.About -> AboutScreen(
+                                            viewModel = viewModel,
+                                            onBack = { screen = AppScreen.Home }
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Global mini bar + detailed dialog for in-flight jobs - lives
+                            // above the AnimatedContent so it survives Home <-> Files <->
+                            // Recycle Bin navigation instead of resetting per screen.
+                            // Delete jobs are handled separately below (see deleteJobs).
+                            if (otherJobs.isNotEmpty() && !showJobDetailsDialog) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .padding(16.dp)
+                                ) {
+                                    ActiveJobsCard(
+                                        activeJobs = otherJobs,
+                                        onClick = { showJobDetailsDialog = true }
                                     )
-                                    is AppScreen.Files -> FileExplorerScreen(
-                                        viewModel = viewModel,
-                                        startPath = currentScreen.startPath,
-                                        startCategory = currentScreen.category,
-                                        startRecent = currentScreen.recent,
-                                        fromHome = currentScreen.fromHome,
-                                        highlightFile = currentScreen.highlightFile,
-                                        isFromAllFiles = currentScreen.isFromAllFiles,
-                                        sharedTransitionScope = this@SharedTransitionLayout,
-                                        animatedVisibilityScope = this@AnimatedContent,
-                                        onExitToHome = {
-                                            if (sharedUris != null) {
-                                                screen = AppScreen.SaveAs(sharedUris!!, true)
-                                            } else {
-                                                screen = AppScreen.Home
-                                            }
-                                        },
-                                        onFileClick = { fileItem -> openFile(fileItem) },
-                                        onShareClick = { fileItems -> shareFiles(fileItems) },
-                                        listState = explorerListState,
-                                        gridState = explorerGridState
-                                    )
-                                    is AppScreen.RecycleBin -> RecycleBinScreen(
-                                        onBack = { screen = AppScreen.Home },
-                                        viewModel = viewModel,
-                                        listState = recycleBinListState
-                                    )
-                                    is AppScreen.SaveAs -> SaveAsScreen(
-                                        viewModel = viewModel,
-                                        uris = currentScreen.uris,
-                                        isZip = currentScreen.isZip,
-                                        onDismiss = { screen = AppScreen.Home; sharedUris = null },
-                                        onSaved = { destPath ->
-                                            screen = AppScreen.Files(startPath = destPath, fromHome = true)
-                                            sharedUris = null
-                                        },
-                                        onArchiveView = { uri ->
-                                            viewModel.resetFiles()
-                                            screen = AppScreen.Files(startPath = uri.toString(), fromHome = true)
-                                            // Keep sharedUris so we can come back
+                                }
+                            }
+                            if (showJobDetailsDialog && otherJobs.isNotEmpty()) {
+                                dev.narayan.rose.filejob.FileJobProgressDialog(
+                                    activeJobs = otherJobs,
+                                    onDismissRequest = { showJobDetailsDialog = false }
+                                )
+                            }
+
+                            // Fast jobs (Delete/Recycle/Restore): no dialog, no mini bar - just
+                            // a small centered spinner that fades in/out, since they are fast
+                            // enough that the full progress UI would only ever flash.
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = fastJobs.isNotEmpty(),
+                                enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(120)),
+                                exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200)),
+                                modifier = Modifier.align(Alignment.Center)
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    shadowElevation = 8.dp
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            strokeWidth = 2.5.dp,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        val jobText = when (fastJobs.firstOrNull()?.type) {
+                                            is dev.narayan.rose.filejob.FileJobType.Recycle -> "Moving to bin…"
+                                            is dev.narayan.rose.filejob.FileJobType.Restore -> "Restoring…"
+                                            else -> "Deleting…"
                                         }
-                                    )
-                                    AppScreen.Settings -> SettingsScreen(
-                                        viewModel = viewModel,
-                                        onBack = { screen = AppScreen.Home }
-                                    )
-                                    AppScreen.About -> AboutScreen(
-                                        viewModel = viewModel,
-                                        onBack = { screen = AppScreen.Home }
-                                    )
+                                        Text(jobText, style = MaterialTheme.typography.bodyMedium)
+                                    }
                                 }
                             }
                         }
@@ -546,10 +633,10 @@ class MainActivity : ComponentActivity() {
 
         when (intent.action) {
             Intent.ACTION_VIEW -> {
-                                intent.data?.let { uri ->
-                                    pendingArchiveUri = uri
-                                }
-                            }
+                intent.data?.let { uri ->
+                    pendingArchiveUri = uri
+                }
+            }
             Intent.ACTION_SEND -> {
                 val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
