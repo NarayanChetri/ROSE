@@ -191,8 +191,8 @@ private suspend fun PointerInputScope.detectCheckboxDragSelect(
 }
 
 /**
- * Updates the selection range based on the current drag position. This is called both from 
- * the pointer input loop and the auto-scroll loop to ensure selection stays in sync 
+ * Updates the selection range based on the current drag position. This is called both from
+ * the pointer input loop and the auto-scroll loop to ensure selection stays in sync
  * even when the finger is still but the list is scrolling.
  */
 private fun performDragSelect(
@@ -1491,19 +1491,6 @@ fun FileExplorerScreen(
                                         }
                                     }
                                 }
-
-                                // Background Jobs Progress Bar
-                                val activeJobs by viewModel.activeJobs.collectAsState()
-                                if (activeJobs.isNotEmpty()) {
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.BottomCenter)
-                                            .padding(16.dp)
-                                    ) {
-                                        ActiveJobsCard(activeJobs = activeJobs.values.toList())
-                                    }
-                                }
-
 
                                 if (viewModel.propertiesFile != null) {
                                     PropertiesDialog(
@@ -2831,24 +2818,6 @@ fun FileIcon(
     val context = LocalContext.current
     val modifier = Modifier.size(iconSize).clip(RoundedCornerShape(12.dp))
 
-    val jobs by (viewModel?.activeJobs?.collectAsState() ?: remember { mutableStateOf(emptyMap<String, FileJob>()) })
-
-    // derivedStateOf so only the one icon whose own job actually changed
-    // recomposes, instead of every visible icon re-running on every progress
-    // tick of any unrelated download/copy/move elsewhere in the app.
-    val activeJob by remember(fileItem.file.absolutePath) {
-        derivedStateOf {
-            jobs.values.find { job ->
-                when (val type = job.type) {
-                    is FileJobType.Download -> type.source.path == fileItem.file.absolutePath
-                    is FileJobType.Copy -> type.sources.any { it.path == fileItem.file.absolutePath }
-                    is FileJobType.Move -> type.sources.any { it.path == fileItem.file.absolutePath }
-                    else -> false
-                }
-            }
-        }
-    }
-
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         when (fileItem.fileType) {
             FileType.IMAGE, FileType.VIDEO -> {
@@ -3122,41 +3091,6 @@ fun FileIcon(
             FileType.AUDIO -> FileTypeBadge(Icons.Default.MusicNote, FileIconColors.audio, iconSize, Modifier.fillMaxSize())
             FileType.DOCUMENT -> FileTypeBadge(Icons.Default.Description, FileIconColors.document, iconSize, Modifier.fillMaxSize())
             else -> FileTypeBadge(Icons.Default.InsertDriveFile, MaterialTheme.colorScheme.secondary, iconSize, Modifier.fillMaxSize())
-        }
-
-        val job = activeJob
-        if (job != null) {
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                color = Color.Black.copy(alpha = 0.4f),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    if (job.isIndeterminate) {
-                        // Unknown total size (common for cloud sources like
-                        // Google Drive until the transfer is underway) - a
-                        // determinate ring bound to job.progress would just sit
-                        // frozen at 0%, so show a real spinner instead.
-                        CircularProgressIndicator(
-                            color = Color.White,
-                            strokeWidth = 3.dp,
-                            modifier = Modifier.size(iconSize * 0.6f)
-                        )
-                    } else {
-                        CircularProgressIndicator(
-                            progress = job.progress,
-                            color = Color.White,
-                            strokeWidth = 3.dp,
-                            modifier = Modifier.size(iconSize * 0.6f)
-                        )
-                        Text(
-                            "${(job.progress * 100).toInt()}%",
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
-                        )
-                    }
-                }
-            }
         }
     }
 }
@@ -3453,9 +3387,10 @@ fun displayNameFor(fileItem: FileItem, showExtension: Boolean): String {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ActiveJobsCard(activeJobs: List<FileJob>) {
+fun ActiveJobsCard(activeJobs: List<FileJob>, onClick: () -> Unit = {}) {
     val job = activeJobs.firstOrNull() ?: return
     Card(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .height(72.dp),
@@ -3545,6 +3480,16 @@ fun ActiveJobsCard(activeJobs: List<FileJob>) {
                     )
                 }
             }
+            // Signals this bar expands back into the full dialog on tap - matches
+            // the "minimise" affordance of the dialog's own close/back action.
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowUp,
+                contentDescription = "Expand",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .padding(start = 4.dp)
+                    .size(20.dp)
+            )
         }
     }
 }

@@ -36,7 +36,13 @@ data class FileJob(
     var processedBytes: Long = 0L,
     // True while we don't yet know totalBytes (e.g. a cloud provider that
     // hasn't reported a size) - UI should show a spinner, not a stuck 0%.
-    var isIndeterminate: Boolean = false
+    var isIndeterminate: Boolean = false,
+    // Wall-clock time the job was created. Only ever set once, on the
+    // original construction - job.copy() (used by JobManager on every
+    // update) carries the existing value forward instead of re-stamping
+    // "now" each time, so elapsed-time/speed math in the UI stays correct
+    // across the job's whole lifetime instead of resetting on every tick.
+    val startTime: Long = System.currentTimeMillis()
 )
 
 /**
@@ -61,8 +67,19 @@ object FileOperationRunner {
                 JobManager.updateJob(job)
                 when (val type = job.type) {
                     is FileJobType.Copy -> {
+                        // Pre-scan the WHOLE selection so the progress bar is driven by one
+                        // batch total (bytes across every source) instead of each file's own
+                        // size. Previously copyFileWithProgress overwrote job.totalBytes with
+                        // just the current file's size and reset job.processedBytes to 0 every
+                        // time a new file started - with multiple files that made the bar jump
+                        // between unrelated totals and visibly go backwards between files.
+                        val stats = calculateBatchStats(appContext, type.sources.map { it.path })
+                        job.totalBytes = stats?.first ?: 0L
+                        job.processedBytes = 0L
+                        job.isIndeterminate = stats == null
+
                         type.sources.forEach { source ->
-                            if (JobManager.isCancelled(job.id)) return@Thread
+                            if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
                             job.currentFileName = source.displayName
                             onProgress(job)
                             JobManager.updateJob(job)
@@ -73,7 +90,7 @@ object FileOperationRunner {
                                 JobManager.updateJob(it)
                             }
                             if (!success) {
-                                if (JobManager.isCancelled(job.id)) return@Thread
+                                if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
                                 throw Exception("Failed to copy ${source.displayName}. Check if storage is full or access is denied.")
                             }
                             touchedPaths.add(target.toString())
@@ -81,8 +98,15 @@ object FileOperationRunner {
                         }
                     }
                     is FileJobType.Move -> {
+                        // Same batch pre-scan as Copy above - Move ultimately funnels through
+                        // the same copyFileWithProgress for the copy half of each move.
+                        val stats = calculateBatchStats(appContext, type.sources.map { it.path })
+                        job.totalBytes = stats?.first ?: 0L
+                        job.processedBytes = 0L
+                        job.isIndeterminate = stats == null
+
                         type.sources.forEach { source ->
-                            if (JobManager.isCancelled(job.id)) return@Thread
+                            if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
                             job.currentFileName = source.displayName
                             onProgress(job)
                             JobManager.updateJob(job)
@@ -100,7 +124,7 @@ object FileOperationRunner {
                                 JobManager.updateJob(it)
                             }
                             if (!success) {
-                                if (JobManager.isCancelled(job.id)) return@Thread
+                                if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
                                 throw Exception("Failed to move ${source.displayName}. Make sure Shizuku is authorized and target is writable.")
                             }
                             touchedPaths.add(source.path)
@@ -117,7 +141,7 @@ object FileOperationRunner {
                             // (read-only mount, a locked file, a permission edge case).
                             val failedTargets = mutableListOf<String>()
                             type.targets.forEach { target ->
-                                if (JobManager.isCancelled(job.id)) return@Thread
+                                if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
                                 job.currentFileName = target.fileName?.toString() ?: target.toString()
                                 val clean = dev.narayan.rose.ShizukuManager.normalize(target.toString())
                                 val exitCode = dev.narayan.rose.ShizukuManager.runCommandSync(
@@ -189,7 +213,7 @@ object FileOperationRunner {
                         job.isIndeterminate = !shouldPreScan
 
                         type.targets.forEach { target ->
-                            if (JobManager.isCancelled(job.id)) return@Thread
+                            if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
                             deleteRecursive(appContext, target, job, onProgress)
                             job.completedPaths.add(target.toString())
                             touchedPaths.add(target.toString())
@@ -199,7 +223,14 @@ object FileOperationRunner {
                         JobManager.updateJob(job)
                     }
                     is FileJobType.Download -> {
-                        if (JobManager.isCancelled(job.id)) return@Thread
+                        if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
+                        // Same pre-scan as Copy/Move (batch of one here) - copyFileWithProgress
+                        // no longer sets job.totalBytes itself, so this is what gives Download
+                        // its size and turns on the spinner if the size can't be known upfront.
+                        val stats = calculateBatchStats(appContext, listOf(type.source.path))
+                        job.totalBytes = stats?.first ?: 0L
+                        job.processedBytes = 0L
+                        job.isIndeterminate = stats == null
                         job.currentFileName = type.source.displayName
                         onProgress(job)
                         JobManager.updateJob(job)
@@ -213,7 +244,7 @@ object FileOperationRunner {
                     }
                     is FileJobType.Recycle -> {
                         type.sources.forEach { source ->
-                            if (JobManager.isCancelled(job.id)) return@Thread
+                            if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
                             job.currentFileName = source.displayName
                             job.progress = (job.processedItems.toFloat() / job.totalItems).coerceIn(0f, 1f)
                             onProgress(job)
@@ -237,7 +268,7 @@ object FileOperationRunner {
                     is FileJobType.Restore -> {
                         val metadata = dev.narayan.rose.RecycleBinManager.listItems(appContext)
                         type.sources.forEach { source ->
-                            if (JobManager.isCancelled(job.id)) return@Thread
+                            if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
                             job.currentFileName = source.displayName
                             job.progress = (job.processedItems.toFloat() / job.totalItems).coerceIn(0f, 1f)
                             onProgress(job)
@@ -264,7 +295,7 @@ object FileOperationRunner {
                         }
                     }
                     is FileJobType.Extract -> {
-                        if (JobManager.isCancelled(job.id)) return@Thread
+                        if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
                         job.currentFileName = type.source.fileName.toString()
                         onProgress(job)
                         JobManager.updateJob(job)
@@ -274,7 +305,7 @@ object FileOperationRunner {
                             JobManager.updateJob(it)
                         }
                         if (!success) {
-                            if (JobManager.isCancelled(job.id)) return@Thread
+                            if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
                             throw Exception("Failed to extract archive. Check if storage is full or archive is corrupted.")
                         }
                         touchedPaths.add(type.targetDir.toString())
@@ -334,6 +365,56 @@ object FileOperationRunner {
     }
 
     // -- Copy -----------------------------------------------------------
+
+    // Recursively sums size+count for a batch of sources so Copy/Move can show
+    // one true total instead of restarting the progress math per file. Mirrors
+    // the Delete job's own pre-scan cap (bails out and returns null - meaning
+    // "show an indeterminate spinner instead" - rather than let a huge tree
+    // make the operation feel stuck before it even starts).
+    private fun calculateBatchStats(context: Context, paths: List<String>): Pair<Long, Int>? {
+        var totalBytes = 0L
+        var totalItems = 0
+        val scanLimit = 20_000
+
+        fun scan(path: String): Boolean {
+            totalItems++
+            if (totalItems > scanLimit) return false
+
+            val restricted = SafManager.isRestrictedPath(path) || SafManager.isSafUri(path)
+            return if (restricted) {
+                // Restricted/SAF paths can't be stat'd with plain java.io.File, but
+                // SafManager can still give us a real size for a single file, and
+                // list children for a directory - only fall back to "unknown total"
+                // (null) if even that isn't possible.
+                if (SafManager.isDirectory(context, path)) {
+                    val children = try {
+                        SafManager.listFiles(context, path)
+                    } catch (e: Exception) {
+                        null
+                    } ?: return false
+                    children.all { scan(it.file.path) }
+                } else {
+                    val size = SafManager.getReliableSize(context, path)
+                    if (size < 0) return false
+                    totalBytes += size
+                    true
+                }
+            } else {
+                val file = java.io.File(path)
+                if (file.isDirectory) {
+                    file.listFiles()?.all { scan(it.path) } ?: true
+                } else {
+                    totalBytes += file.length()
+                    true
+                }
+            }
+        }
+
+        for (path in paths) {
+            if (!scan(path)) return null
+        }
+        return totalBytes to totalItems
+    }
 
     private fun copyRecursive(context: Context, sourcePath: String, target: Path, job: FileJob? = null, onProgress: ((FileJob) -> Unit)? = null): Boolean {
         if (job != null && JobManager.isCancelled(job.id)) return false
@@ -502,23 +583,31 @@ object FileOperationRunner {
     // process's FD limit and start breaking unrelated I/O app-wide. Wrapping
     // both in `.use{}` guarantees they close on every exit path: normal
     // completion, thrown IOException, or cancellation.
+    // NOTE on totalSize: this is only this SINGLE file's size, used purely to
+    // decide the update cadence below. job.totalBytes/job.processedBytes are
+    // the BATCH-level counters set once up front by calculateBatchStats() -
+    // this function only ever *adds* the bytes it personally reads to
+    // job.processedBytes; it never overwrites job.totalBytes or resets
+    // job.processedBytes. That's what keeps the bar moving in one direction
+    // across a multi-file copy/move instead of restarting per file.
     private fun copyFileWithProgress(input: java.io.InputStream, output: java.io.OutputStream, totalSize: Long, job: FileJob? = null, onProgress: ((FileJob) -> Unit)? = null) {
         input.use { inp ->
             output.use { out ->
                 val buffer = ByteArray(128 * 1024)
                 var bytesRead: Int
-                var totalRead = 0L
+                var fileBytesRead = 0L
+                var lastReportedFileBytes = 0L
                 var lastUpdate = 0L
-                val knownSize = totalSize > 0
 
-                // Report the starting state immediately (0% or spinner) instead of
-                // waiting for the first 200ms tick - this is what makes the
-                // notification actually appear with progress right away.
-                if (job != null && onProgress != null) {
-                    job.totalBytes = totalSize
-                    job.processedBytes = 0L
-                    job.progress = 0f
-                    job.isIndeterminate = !knownSize
+                fun reportDelta() {
+                    if (job == null || onProgress == null) return
+                    val delta = fileBytesRead - lastReportedFileBytes
+                    if (delta <= 0) return
+                    job.processedBytes += delta
+                    lastReportedFileBytes = fileBytesRead
+                    if (job.totalBytes > 0) {
+                        job.progress = (job.processedBytes.toFloat() / job.totalBytes).coerceIn(0f, 1f)
+                    }
                     onProgress(job)
                 }
 
@@ -531,33 +620,18 @@ object FileOperationRunner {
                         throw java.io.InterruptedIOException("Copy cancelled")
                     }
                     out.write(buffer, 0, bytesRead)
-                    totalRead += bytesRead
+                    fileBytesRead += bytesRead
 
                     val now = System.currentTimeMillis()
                     // Update at least every 150ms AND at least every 512KB, so short
                     // transfers still show intermediate steps instead of jumping 0 -> 100.
-                    if (job != null && onProgress != null &&
-                        (now - lastUpdate > 150 || totalRead - job.processedBytes > 512 * 1024 || bytesRead < buffer.size)
-                    ) {
-                        if (knownSize) {
-                            job.progress = (totalRead.toFloat() / totalSize).coerceIn(0f, 1f)
-                        }
-                        job.processedBytes = totalRead
-                        job.totalBytes = totalSize
-                        job.isIndeterminate = !knownSize
-                        onProgress(job)
+                    if (now - lastUpdate > 150 || fileBytesRead - lastReportedFileBytes > 512 * 1024 || bytesRead < buffer.size) {
+                        reportDelta()
                         lastUpdate = now
                     }
                 }
                 out.flush()
-
-                if (job != null && onProgress != null) {
-                    job.progress = 1f
-                    job.processedBytes = totalRead
-                    job.totalBytes = if (knownSize) totalSize else totalRead
-                    job.isIndeterminate = false
-                    onProgress(job)
-                }
+                reportDelta()
             }
         }
     }
