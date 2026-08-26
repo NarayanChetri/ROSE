@@ -146,6 +146,10 @@ class SettingsManager(context: Context) {
         get() = prefs.getBoolean(KEY_USE_RECYCLE_BIN, true)
         set(value) = prefs.edit { putBoolean(KEY_USE_RECYCLE_BIN, value) }
 
+    var recentFilesLimit: Int
+        get() = prefs.getInt(KEY_RECENT_FILES_LIMIT, 50)
+        set(value) = prefs.edit { putInt(KEY_RECENT_FILES_LIMIT, value) }
+
     var excludedFolders: Set<String>
         get() = prefs.getStringSet(KEY_EXCLUDED_FOLDERS, emptySet()) ?: emptySet()
         set(value) = prefs.edit { putStringSet(KEY_EXCLUDED_FOLDERS, value) }
@@ -181,6 +185,7 @@ class SettingsManager(context: Context) {
         private const val KEY_EXTERNAL_STORAGES = "external_storages"
         private const val KEY_OFFLINE_FILES = "offline_files"
         private const val KEY_USE_RECYCLE_BIN = "use_recycle_bin"
+        private const val KEY_RECENT_FILES_LIMIT = "recent_files_limit"
         private const val KEY_EXCLUDED_FOLDERS = "excluded_folders"
         private const val KEY_NOTIFICATION_PRIMER_SHOWN = "notification_primer_shown"
         private const val KEY_SHOW_QUICK_ACCESS = "show_quick_access"

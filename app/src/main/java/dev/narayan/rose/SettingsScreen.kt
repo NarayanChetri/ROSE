@@ -133,6 +133,13 @@ fun SettingsScreen(
             // ---------- Browsing ----------
             SettingsSection(title = "Browsing", icon = Icons.Default.Folder) {
                 SettingsGroup {
+                    SettingsChoiceRow(
+                        title = "Recent files limit",
+                        options = listOf("50" to 50, "100" to 100, "150" to 150, "200" to 200),
+                        selected = viewModel.recentFilesLimit,
+                        onSelect = { viewModel.setRecentFilesLimit(it) }
+                    )
+                    SettingsDivider()
                     SettingsSwitchRow(
                         icon = Icons.Default.HorizontalRule,
                         title = "Show list dividers",
