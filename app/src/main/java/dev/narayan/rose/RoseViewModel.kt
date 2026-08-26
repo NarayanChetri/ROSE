@@ -199,6 +199,15 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     private val _useRecycleBin = mutableStateOf(settings.useRecycleBin)
     val useRecycleBin: Boolean by _useRecycleBin
 
+    private val _recentFilesLimit = mutableStateOf(settings.recentFilesLimit)
+    val recentFilesLimit: Int by _recentFilesLimit
+
+    fun setRecentFilesLimit(limit: Int) {
+        _recentFilesLimit.value = limit
+        settings.recentFilesLimit = limit
+        loadRecentFiles()
+    }
+
     private val _excludedFolders = mutableStateOf(settings.excludedFolders)
     val excludedFolders: Set<String> by _excludedFolders
 
@@ -1666,8 +1675,9 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
 
                 var count = 0
+                val limit = recentFilesLimit
                 val excluded = excludedFolders.toList()
-                while (cursor.moveToNext() && count < 50) {
+                while (cursor.moveToNext() && count < limit) {
                     val path = cursor.getString(dataCol) ?: continue
 
                     // Filter out excluded folders
@@ -2033,7 +2043,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun deleteSelected() {
+    fun deleteSelected(permanently: Boolean = false) {
         val itemsToDelete = selectedFiles.toList()
 
         val sources = itemsToDelete.map { it.file.absolutePath }
@@ -2046,7 +2056,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         // `displayedFilesFinal` in FileExplorerScreen. Stripping everything
         // out up-front made every selected file vanish at once while the
         // progress card at the bottom kept counting on its own.
-        if (useRecycleBin) {
+        if (useRecycleBin && !permanently) {
             dev.narayan.rose.filejob.FileJobService.startRecycle(getApplication(), sources, names)
         } else {
             dev.narayan.rose.filejob.FileJobService.startDelete(getApplication(), sources, names)
@@ -2054,7 +2064,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         exitSelectionMode()
     }
 
-    fun deleteFile(fileItem: FileItem) {
+    fun deleteFile(fileItem: FileItem, permanently: Boolean = false) {
         val path = fileItem.file.absolutePath
 
         if (SafManager.isRestrictedPath(path)) {
@@ -2075,7 +2085,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
         // See deleteSelected() above - no optimistic removal, so the item
         // animates out for real once the job actually completes it.
-        if (useRecycleBin && !SafManager.isRestrictedPath(path)) {
+        if (useRecycleBin && !permanently && !SafManager.isRestrictedPath(path)) {
             dev.narayan.rose.filejob.FileJobService.startRecycle(getApplication(), listOf(path), listOf(fileItem.name))
         } else {
             dev.narayan.rose.filejob.FileJobService.startDelete(getApplication(), listOf(path), listOf(fileItem.name))

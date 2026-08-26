@@ -560,6 +560,7 @@ fun HomeScreen(
     }
 
     fileForDelete?.let { item ->
+        var permanently by remember { mutableStateOf(!viewModel.useRecycleBin) }
         AlertDialog(
             onDismissRequest = { fileForDelete = null },
             title = {
@@ -569,11 +570,36 @@ fun HomeScreen(
                     Text("Delete File")
                 }
             },
-            text = { Text("Are you sure you want to delete \"${item.name}\"? This action cannot be undone.") },
+            text = {
+                Column {
+                    Text(
+                        "Delete \"${item.name}\"?" +
+                                if (viewModel.useRecycleBin && !permanently) " It will be moved to the bin." else " This action cannot be undone."
+                    )
+                    if (viewModel.useRecycleBin) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { permanently = !permanently }
+                        ) {
+                            Checkbox(
+                                checked = permanently,
+                                onCheckedChange = { permanently = it }
+                            )
+                            Text(
+                                "Delete permanently",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                }
+            },
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.deleteFile(item)
+                        viewModel.deleteFile(item, permanently)
                         fileForDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),

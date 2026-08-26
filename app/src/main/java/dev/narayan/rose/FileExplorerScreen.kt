@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.DocumentsContract
+import android.util.LruCache
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -66,12 +67,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import dev.narayan.rose.filejob.FileJob
-import dev.narayan.rose.filejob.FileJobType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.core.graphics.drawable.toBitmap
-import android.util.LruCache
+import dev.narayan.rose.filejob.FileJob
+import dev.narayan.rose.filejob.FileJobType
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.focus.FocusRequester
@@ -88,6 +92,8 @@ import androidx.compose.foundation.gestures.scrollBy
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+
+private const val LARGE_FILE_THRESHOLD = 500 * 1024 * 1024L
 
 // ColorOS-style "swipe over checkboxes to multi-select" support: tracks the
 // on-screen bounds of every currently-composed checkbox so a single
@@ -190,6 +196,7 @@ private suspend fun PointerInputScope.detectCheckboxDragSelect(
     }
 }
 
+
 /**
  * Updates the selection range based on the current drag position. This is called both from
  * the pointer input loop and the auto-scroll loop to ensure selection stays in sync
@@ -257,6 +264,7 @@ private fun performDragSelect(
         )
     }
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
@@ -805,8 +813,9 @@ fun FileExplorerScreen(
                                 currentView = currentView,
                                 onShare = { onShareClick(viewModel.selectedFiles.toList()) },
                                 onDeleteClick = {
-                                    if (viewModel.confirmBeforeDelete) {
-                                        pendingDelete = PendingDelete.Selection(viewModel.selectedFiles.size)
+                                    val totalSize = viewModel.selectedFiles.sumOf { it.size }
+                                    if (viewModel.confirmBeforeDelete || totalSize > LARGE_FILE_THRESHOLD) {
+                                        pendingDelete = PendingDelete.Selection(viewModel.selectedFiles.size, totalSize)
                                     } else {
                                         viewModel.deleteSelected()
                                     }
@@ -1034,19 +1043,13 @@ fun FileExplorerScreen(
                                 // Material Files style: Central loading indicator that appears after a short delay
                                 // if the folder/category scan is taking a moment.
                                 //
-                                // isContentLoading is computed once per recomposition (not re-derived
-                                // separately inside the effect) and reused below to gate the list/grid
-                                // itself. Previously the list branch only checked `!viewModel.isLoading`
-                                // for the EMPTY-state placeholder but still fell through to rendering a
-                                // real (zero-item) LazyColumn/LazyVerticalGrid while a category was still
-                                // loading - the crossfade had nothing to show yet, the spinner above was
-                                // still inside its 150ms debounce, and the combination painted a fully
-                                // blank frame. Compose only repainted once something unrelated (a touch
-                                // or scroll) forced another frame, by which point the data had already
-                                // arrived - exactly the "blank until I touch the screen" symptom. Category
-                                // hit this far more often than folder/archive browsing because a MediaStore
-                                // query is frequently fast enough to race the debounce.
-                                val isContentLoading = (viewModel.isLoading || viewModel.isRefreshing || viewModel.isRecursiveSearching) && displayedFiles.isEmpty()
+                                // We include a check for the initial transition state (view changed but
+                                // VM hasn't started loading yet) to prevent the "No files found" text
+                                // from flickering on screen for a single frame.
+                                val isInitialLoad = (currentView == "Category" && viewModel.categoryFilterType == null) ||
+                                        (currentView == "Recent" && viewModel.recentFiles.isEmpty() && viewModel.categoryFilterType == null)
+
+                                val isContentLoading = (viewModel.isLoading || viewModel.isRefreshing || viewModel.isRecursiveSearching || isInitialLoad) && displayedFiles.isEmpty()
 
                                 var showCenteredLoading by remember { mutableStateOf(false) }
                                 LaunchedEffect(isContentLoading) {
@@ -1346,7 +1349,7 @@ fun FileExplorerScreen(
                                                                         viewModel.toggleSelection(fileItem)
                                                                     },
                                                                     onDelete = {
-                                                                        if (viewModel.confirmBeforeDelete) {
+                                                                        if (viewModel.confirmBeforeDelete || fileItem.size > LARGE_FILE_THRESHOLD) {
                                                                             pendingDelete = PendingDelete.Single(fileItem)
                                                                         } else {
                                                                             viewModel.deleteFile(fileItem)
@@ -1450,7 +1453,7 @@ fun FileExplorerScreen(
                                                                 viewModel.toggleSelection(fileItem)
                                                             },
                                                             onDelete = {
-                                                                if (viewModel.confirmBeforeDelete) {
+                                                                if (viewModel.confirmBeforeDelete || fileItem.size > LARGE_FILE_THRESHOLD) {
                                                                     pendingDelete = PendingDelete.Single(fileItem)
                                                                 } else {
                                                                     viewModel.deleteFile(fileItem)
@@ -1564,12 +1567,13 @@ fun FileExplorerScreen(
 
     pendingDelete?.let { pending ->
         DeleteConfirmationDialog(
+            useRecycleBin = viewModel.useRecycleBin,
             pending = pending,
             onDismiss = { pendingDelete = null },
-            onConfirm = {
+            onConfirm = { permanently ->
                 when (pending) {
-                    is PendingDelete.Single -> viewModel.deleteFile(pending.fileItem)
-                    is PendingDelete.Selection -> viewModel.deleteSelected()
+                    is PendingDelete.Single -> viewModel.deleteFile(pending.fileItem, permanently)
+                    is PendingDelete.Selection -> viewModel.deleteSelected(permanently)
                 }
                 pendingDelete = null
             }
@@ -1577,37 +1581,88 @@ fun FileExplorerScreen(
     }
 }
 
+
 sealed class PendingDelete {
     data class Single(val fileItem: FileItem) : PendingDelete()
-    data class Selection(val count: Int) : PendingDelete()
+    data class Selection(val count: Int, val totalSize: Long = 0L) : PendingDelete()
 }
 
 @Composable
 fun DeleteConfirmationDialog(
+    useRecycleBin: Boolean,
     pending: PendingDelete,
     onDismiss: () -> Unit,
-    onConfirm: () -> Unit
+    onConfirm: (Boolean) -> Unit
 ) {
+    val totalSize = when (pending) {
+        is PendingDelete.Single -> pending.fileItem.size
+        is PendingDelete.Selection -> pending.totalSize
+    }
+    val isLarge = totalSize > LARGE_FILE_THRESHOLD
+    
+    // Default to permanent only if recycle bin is disabled. Large files
+    // still show the toggle but don't force it to ON by default.
+    var permanently by remember { mutableStateOf(!useRecycleBin) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                Icon(
+                    if (permanently) Icons.Default.DeleteForever else Icons.Default.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
                 Spacer(modifier = Modifier.width(12.dp))
-                Text("Delete?")
+                Text(if (isLarge) "Delete Large Item?" else "Delete?")
             }
         },
         text = {
-            Text(
-                when (pending) {
-                    is PendingDelete.Single -> "Delete \"${pending.fileItem.name}\"? This can't be undone."
-                    is PendingDelete.Selection -> "Delete ${pending.count} selected item(s)? This can't be undone."
+            Column {
+                Text(
+                    when (pending) {
+                        is PendingDelete.Single -> "Delete \"${pending.fileItem.name}\"?"
+                        is PendingDelete.Selection -> "Delete ${pending.count} selected item(s)?"
+                    } + if (useRecycleBin && !permanently) {
+                        if (pending is PendingDelete.Single) " It will be moved to the bin." else " They will be moved to the bin."
+                    } else " This can't be undone."
+                )
+
+                if (isLarge) {
+                    Text(
+                        "Total size: ${formatFileSize(totalSize)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
                 }
-            )
+
+                // Show checkbox if Recycle Bin is enabled OR if it's a large file
+                // (giving users the choice even if they normally have Bin OFF,
+                // or just making it explicit for large files).
+                if (useRecycleBin || isLarge) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { permanently = !permanently }
+                    ) {
+                        Checkbox(
+                            checked = permanently,
+                            onCheckedChange = { permanently = it }
+                        )
+                        Text(
+                            "Delete permanently",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
         },
         confirmButton = {
             Button(
-                onClick = onConfirm,
+                onClick = { onConfirm(permanently) },
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                 shape = RoundedCornerShape(12.dp)
             ) {
@@ -1793,6 +1848,7 @@ fun AboutScreen(
     }
 }
 
+
 @Composable
 fun AboutItem(icon: ImageVector, title: String, subtitle: String? = null, onClick: (() -> Unit)? = null) {
     Row(
@@ -1843,6 +1899,7 @@ fun AboutItem(icon: ImageVector, title: String, subtitle: String? = null, onClic
         }
     }
 }
+
 
 @Composable
 fun UpdateDialog(
@@ -1904,7 +1961,7 @@ fun UpdateDialog(
                             .verticalScroll(rememberScrollState())
                             .padding(12.dp)
                     ) {
-                        Text(
+                        MarkdownText(
                             info.releaseNotes,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -2133,6 +2190,7 @@ fun MainTopBar(
     }
 }
 
+
 @Composable
 fun Breadcrumbs(path: String, onNavigate: (File) -> Unit) {
     val rootPath = Environment.getExternalStorageDirectory().absolutePath
@@ -2186,6 +2244,7 @@ fun Breadcrumbs(path: String, onNavigate: (File) -> Unit) {
         scrollState.animateScrollTo(scrollState.maxValue)
     }
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -2358,6 +2417,7 @@ fun SelectionBottomBar(
     }
 }
 
+
 @Composable
 fun SelectionBottomBarItem(
     icon: ImageVector,
@@ -2385,6 +2445,7 @@ fun SelectionBottomBarItem(
         )
     }
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -2462,6 +2523,7 @@ fun SortMenu(expanded: Boolean, viewModel: RoseViewModel, currentView: String, o
         )
     }
 }
+
 
 @Composable
 fun SortMenuItem(label: String, sortBy: RoseViewModel.SortBy, viewModel: RoseViewModel) {
@@ -2576,6 +2638,7 @@ fun FileGridItem(
         }
     }
 }
+
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -2806,6 +2869,7 @@ fun FileListItem(
         }
     }
 }
+
 
 @Composable
 fun FileIcon(
@@ -3095,6 +3159,7 @@ fun FileIcon(
     }
 }
 
+
 private object FileIconColors {
     val archive = Color(0xFFC98A2E)
     val pdf = Color(0xFFC1554C)
@@ -3113,6 +3178,7 @@ private fun FileTypeBadge(icon: ImageVector, color: Color, iconSize: Dp, modifie
         Icon(icon, null, tint = color, modifier = Modifier.size(iconSize * multiplier))
     }
 }
+
 
 // In-memory cache for extracted APK icons, keyed by absolute path.
 // Extracting an icon means parsing the whole archive's manifest via
@@ -3210,6 +3276,7 @@ fun PropertyRow(label: String, value: String) {
         Text(value, style = MaterialTheme.typography.bodyMedium)
     }
 }
+
 
 @Composable
 private fun ExtractionDialog(
@@ -3494,6 +3561,7 @@ fun ActiveJobsCard(activeJobs: List<FileJob>, onClick: () -> Unit = {}) {
     }
 }
 
+
 // Identifies a genuine "screen" for the full-screen crossfade.
 data class ExplorerContext(
     val view: String,
@@ -3516,6 +3584,7 @@ fun formatItemDate(timestamp: Long): String {
         dateFormatter.format(date)
     }
 }
+
 
 fun formatFileSize(size: Long): String {
     if (size <= 0) return "0 B"
@@ -3563,6 +3632,7 @@ private fun DateHeader(title: String, count: Int) {
     }
 }
 
+
 private fun formatDateHeader(timestamp: Long): String {
     val now = Calendar.getInstance()
     val itemDate = Calendar.getInstance().apply { timeInMillis = timestamp }
@@ -3590,6 +3660,7 @@ private fun formatDateHeader(timestamp: Long): String {
         else -> SimpleDateFormat("dd-MM-yy", Locale.getDefault()).format(Date(timestamp))
     }
 }
+
 
 @Composable
 fun RestrictedFolderView(
@@ -3723,4 +3794,41 @@ fun RestrictedFolderView(
             }
         }
     }
+}
+
+@Composable
+fun MarkdownText(
+    text: String,
+    style: androidx.compose.ui.text.TextStyle,
+    color: Color
+) {
+    val annotatedString = remember(text) {
+        buildAnnotatedString {
+            val lines = text.split("\n")
+            lines.forEachIndexed { index, line ->
+                var l = line
+
+                // Bullet points
+                if (l.trim().startsWith("- ") || l.trim().startsWith("* ")) {
+                    append(" • ")
+                    l = l.trim().substring(2)
+                }
+
+                // Bold: **text**
+                val boldRegex = Regex("\\*\\*(.*?)\\*\\*")
+                var lastIdx = 0
+                boldRegex.findAll(l).forEach { match ->
+                    append(l.substring(lastIdx, match.range.first))
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                        append(match.groupValues[1])
+                    }
+                    lastIdx = match.range.last + 1
+                }
+                append(l.substring(lastIdx))
+
+                if (index < lines.size - 1) append("\n")
+            }
+        }
+    }
+    Text(annotatedString, style = style, color = color)
 }
