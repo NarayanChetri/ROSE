@@ -358,11 +358,8 @@ class MainActivity : ComponentActivity() {
                         // Handle viewed archive
                         LaunchedEffect(pendingArchiveUri) {
                             pendingArchiveUri?.let { uri ->
-                                val archiveExtensions = listOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz")
                                 val extension = MimeTypeMap.getFileExtensionFromUrl(uri.toString()).lowercase()
-                                val mimeType = contentResolver.getType(uri)
-                                val isArchive = extension in archiveExtensions ||
-                                        mimeType in listOf("application/zip", "application/x-zip-compressed", "application/x-7z-compressed", "application/x-rar-compressed")
+                                val isArchive = isArchiveUri(uri) || extension in archiveExtensions
 
                                 if (isArchive) {
                                     viewModel.resetFiles()
@@ -386,10 +383,11 @@ class MainActivity : ComponentActivity() {
                         LaunchedEffect(sharedUris) {
                             sharedUris?.let { uris ->
                                 if (uris.isNotEmpty()) {
-                                    val isZip = uris.any { uri ->
-                                        val extension = MimeTypeMap.getFileExtensionFromUrl(uri.toString())
-                                        extension.lowercase() == "zip"
-                                    }
+                                    // isZip is a legacy name kept to avoid touching the
+                                    // SaveAsScreen/AppScreen.SaveAs signatures - it really
+                                    // means "is a single archive we can preview" and now
+                                    // covers rar/7z/tar/etc, not just zip. See isArchiveUri().
+                                    val isZip = uris.size == 1 && isArchiveUri(uris[0])
                                     screen = AppScreen.SaveAs(uris, isZip)
                                 }
                             }
@@ -458,7 +456,7 @@ class MainActivity : ComponentActivity() {
 
                                     viewModel.passphrasePromptItem?.let { fileItem ->
                                         PasswordDialog(
-                                            onDismiss = { 
+                                            onDismiss = {
                                                 viewModel.passphrasePromptItem = null
                                                 viewModel.passphraseAction = null
                                             },
@@ -678,6 +676,40 @@ class MainActivity : ComponentActivity() {
                 uris?.let { sharedUris = it }
             }
         }
+    }
+
+    private val archiveExtensions = listOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz")
+    private val archiveMimeTypes = listOf(
+        "application/zip", "application/x-zip-compressed",
+        "application/x-7z-compressed", "application/x-rar-compressed", "application/vnd.rar",
+        "application/x-tar", "application/gzip", "application/x-bzip2", "application/x-xz"
+    )
+
+    // Content Uris shared from other apps (WhatsApp, Gmail, etc.) almost never have a
+    // real file extension in their path, so MimeTypeMap.getFileExtensionFromUrl(uri)
+    // alone silently returns "" for them - this was why sharing a .rar/.7z (and often
+    // even a .zip) here used to skip straight to "Save to..." instead of offering
+    // Archive viewer/Save as. Cross-check the resolver's reported MIME type and the
+    // provider's DISPLAY_NAME column, which reflect the real file name/type.
+    private fun isArchiveUri(uri: Uri): Boolean {
+        val mimeType = contentResolver.getType(uri)
+        if (mimeType in archiveMimeTypes) return true
+
+        val urlExtension = MimeTypeMap.getFileExtensionFromUrl(uri.toString()).lowercase()
+        if (urlExtension in archiveExtensions) return true
+
+        val displayName = try {
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (index >= 0) cursor.getString(index) else null
+                } else null
+            }
+        } catch (e: Exception) {
+            null
+        }
+        val nameExtension = displayName?.substringAfterLast('.', "")?.lowercase()
+        return nameExtension != null && nameExtension.isNotEmpty() && nameExtension in archiveExtensions
     }
 
     private fun shareFiles(fileItems: List<FileItem>, passphrase: String? = null) {
