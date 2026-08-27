@@ -1664,7 +1664,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 MediaStore.MediaColumns.MIME_TYPE
             )
             val queryUri = MediaStore.Files.getContentUri("external")
-            
+
             // Exclude hidden files and folders
             val selection = "(${MediaStore.MediaColumns.DATA} NOT LIKE '%/.%' AND ${MediaStore.MediaColumns.DATA} NOT LIKE '.%')"
 
@@ -1767,7 +1767,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         }
         val currentFile = File(currentPath)
         val parent = currentFile.parentFile
-        
+
         // Relaxed permission check: if the folder exists or is a known restricted path,
         // we attempt to navigate to it. loadFiles() handles the actual permission
         // check (SAF/Shizuku/Normal) once we get there.
@@ -2201,15 +2201,26 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     val destDir = File(finalDestPath)
                     if (!destDir.exists()) destDir.mkdirs()
+                    val destCanonicalPath = destDir.canonicalPath
 
+                    // Zip slip guard: an entry name is attacker-controlled data (the
+                    // archive may be from an untrusted source) and can contain "../"
+                    // segments or an absolute path. Without this check, a crafted entry
+                    // could resolve outside destDir and overwrite arbitrary app-writable
+                    // files. Same protection ArchiveManager.extractTo already applies.
                     ArchiveManager.extractAll(tempFile) { name, isDirectory, copyTask ->
                         val entryFile = File(destDir, name)
-                        if (isDirectory) {
-                            entryFile.mkdirs()
-                        } else {
-                            entryFile.parentFile?.mkdirs()
-                            entryFile.outputStream().use { output ->
-                                copyTask(output)
+                        val entryCanonicalPath = entryFile.canonicalPath
+                        if (entryCanonicalPath == destCanonicalPath ||
+                            entryCanonicalPath.startsWith(destCanonicalPath + File.separator)
+                        ) {
+                            if (isDirectory) {
+                                entryFile.mkdirs()
+                            } else {
+                                entryFile.parentFile?.mkdirs()
+                                entryFile.outputStream().use { output ->
+                                    copyTask(output)
+                                }
                             }
                         }
                     }
