@@ -416,6 +416,10 @@ private fun jobPaths(job: FileJob): JobPaths = when (val type = job.type) {
         from = type.source.toString(),
         to = type.targetDir.toString()
     )
+    is FileJobType.Compress -> JobPaths(
+        from = sourceFolderPath(type.sources.map { it.path }),
+        to = type.targetFile.toString()
+    )
 }
 
 private fun jobIconAndTitle(job: FileJob): Pair<ImageVector, String> = when (job.type) {
@@ -426,6 +430,7 @@ private fun jobIconAndTitle(job: FileJob): Pair<ImageVector, String> = when (job
     is FileJobType.Recycle -> Icons.Filled.DeleteSweep to "Moving to Recycle Bin"
     is FileJobType.Restore -> Icons.Filled.RestoreFromTrash to "Restoring files"
     is FileJobType.Extract -> Icons.Filled.FolderZip to "Extracting archive"
+    is FileJobType.Compress -> Icons.Filled.FolderZip to "Creating archive"
 }
 
 private fun formatBytes(bytes: Long): String {

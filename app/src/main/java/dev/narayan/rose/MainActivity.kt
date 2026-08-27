@@ -33,7 +33,10 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import dev.narayan.rose.filejob.JobManager
 import dev.narayan.rose.ui.theme.RoseTheme
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3Api::class)
@@ -453,6 +456,25 @@ class MainActivity : ComponentActivity() {
                                         )
                                     }
 
+                                    viewModel.passphrasePromptItem?.let { fileItem ->
+                                        PasswordDialog(
+                                            onDismiss = { 
+                                                viewModel.passphrasePromptItem = null
+                                                viewModel.passphraseAction = null
+                                            },
+                                            onConfirm = { passphrase ->
+                                                val action = viewModel.passphraseAction
+                                                viewModel.passphrasePromptItem = null
+                                                viewModel.passphraseAction = null
+                                                if (action != null) {
+                                                    action(passphrase)
+                                                } else {
+                                                    openFile(fileItem, passphrase)
+                                                }
+                                            }
+                                        )
+                                    }
+
                                     when (currentScreen) {
                                         is AppScreen.Home -> HomeScreen(
                                             viewModel = viewModel,
@@ -658,47 +680,92 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun shareFiles(fileItems: List<FileItem>) {
+    private fun shareFiles(fileItems: List<FileItem>, passphrase: String? = null) {
         if (fileItems.isEmpty()) return
 
-        val uris = ArrayList<Uri>()
-        for (item in fileItems) {
-            val path = item.file.absolutePath
-            if (SafManager.isRestrictedPath(path)) {
-                // Files here don't exist from java.io.File's point of view - only the
-                // SAF DocumentFile's own content:// Uri can be opened by another app.
-                SafManager.getContentUri(this, path)?.let { uris.add(it) }
-            } else if (item.file.isFile) {
-                uris.add(FileProvider.getUriForFile(
-                    this,
-                    "${applicationContext.packageName}.provider",
-                    item.file
-                ))
-            }
-        }
+        lifecycleScope.launch(Dispatchers.IO) {
+            val uris = ArrayList<Uri>()
+            var folderFound = false
 
-        if (uris.isEmpty()) {
-            Toast.makeText(this, "Folders cannot be shared directly", Toast.LENGTH_SHORT).show()
-            return
-        }
+            for (item in fileItems) {
+                if (item.virtualZipSource != null) {
+                    if (item.isDirectory) {
+                        folderFound = true
+                        continue
+                    }
 
-        val intent = Intent().apply {
-            action = if (uris.size > 1) Intent.ACTION_SEND_MULTIPLE else Intent.ACTION_SEND
-            if (uris.size > 1) {
-                putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
-            } else {
-                putExtra(Intent.EXTRA_STREAM, uris[0])
+                    if (item.isEncrypted && passphrase == null) {
+                        withContext(Dispatchers.Main) {
+                            viewModel.passphrasePromptItem = item
+                            viewModel.passphraseAction = { pw -> shareFiles(fileItems, pw) }
+                        }
+                        return@launch
+                    }
+
+                    // Extract virtual file to cache before sharing
+                    val cacheFile = File(cacheDir, "share_${System.currentTimeMillis()}_${item.name}")
+                    try {
+                        cacheFile.outputStream().use { output ->
+                            ArchiveManager.extractEntry(item.virtualZipSource, item.zipEntryPath ?: item.name, output, passphrase)
+                        }
+                        uris.add(FileProvider.getUriForFile(this@MainActivity, "${packageName}.provider", cacheFile))
+                    } catch (e: Exception) {
+                        if (e.message?.contains("Password required") == true) {
+                            withContext(Dispatchers.Main) {
+                                viewModel.passphrasePromptItem = item
+                                viewModel.passphraseAction = { pw -> shareFiles(fileItems, pw) }
+                            }
+                            return@launch
+                        }
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@MainActivity, "Failed to extract ${item.name}: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } else {
+                    val path = item.file.absolutePath
+                    if (SafManager.isRestrictedPath(path)) {
+                        // Files here don't exist from java.io.File's point of view - only the
+                        // SAF DocumentFile's own content:// Uri can be opened by another app.
+                        SafManager.getContentUri(this@MainActivity, path)?.let { uris.add(it) } ?: run { folderFound = true }
+                    } else if (item.file.isFile) {
+                        uris.add(FileProvider.getUriForFile(
+                            this@MainActivity,
+                            "${applicationContext.packageName}.provider",
+                            item.file
+                        ))
+                    } else {
+                        folderFound = true
+                    }
+                }
             }
-            type = if (uris.size > 1) "*/*" else {
-                val extension = MimeTypeMap.getFileExtensionFromUrl(uris[0].toString())
-                MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "*/*"
+
+            withContext(Dispatchers.Main) {
+                if (uris.isEmpty()) {
+                    if (folderFound) {
+                        Toast.makeText(this@MainActivity, "Folders cannot be shared directly", Toast.LENGTH_SHORT).show()
+                    }
+                    return@withContext
+                }
+
+                val intent = Intent().apply {
+                    action = if (uris.size > 1) Intent.ACTION_SEND_MULTIPLE else Intent.ACTION_SEND
+                    if (uris.size > 1) {
+                        putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                    } else {
+                        putExtra(Intent.EXTRA_STREAM, uris[0])
+                    }
+                    type = if (uris.size > 1) "*/*" else {
+                        val extension = MimeTypeMap.getFileExtensionFromUrl(uris[0].toString())
+                        MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "*/*"
+                    }
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(Intent.createChooser(intent, "Share via"))
             }
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        startActivity(Intent.createChooser(intent, "Share via"))
     }
 
-    private fun openFile(fileItem: FileItem) {
+    private fun openFile(fileItem: FileItem, passphrase: String? = null) {
         try {
             val file = fileItem.file
             val path = file.absolutePath
@@ -717,19 +784,27 @@ class MainActivity : ComponentActivity() {
             }
 
             val uri = if (isVirtual) {
+                if (fileItem.isEncrypted && passphrase == null) {
+                    viewModel.passphrasePromptItem = fileItem
+                    viewModel.passphraseAction = { pw -> openFile(fileItem, pw) }
+                    return
+                }
+
                 // Extract virtual file to cache before opening. `name` is just the
                 // display basename now, so it's safe to use directly in a path.
                 val cacheFile = File(cacheDir, "temp_open_${fileItem.name}")
                 try {
-                    java.util.zip.ZipFile(fileItem.virtualZipSource!!).use { zip ->
-                        val entry = zip.getEntry(fileItem.zipEntryPath ?: fileItem.name) ?: throw Exception("Entry not found")
-                        zip.getInputStream(entry).use { input ->
-                            cacheFile.outputStream().use { output -> input.copyTo(output) }
-                        }
+                    cacheFile.outputStream().use { output ->
+                        ArchiveManager.extractEntry(fileItem.virtualZipSource!!, fileItem.zipEntryPath ?: fileItem.name, output, passphrase)
                     }
                     FileProvider.getUriForFile(this, "${packageName}.provider", cacheFile)
                 } catch (e: Exception) {
-                    Toast.makeText(this, "Failed to extract file: ${e.message}", Toast.LENGTH_SHORT).show()
+                    if (e.message?.contains("Password required") == true) {
+                        viewModel.passphrasePromptItem = fileItem
+                        viewModel.passphraseAction = { pw -> openFile(fileItem, pw) }
+                    } else {
+                        Toast.makeText(this, "Failed to extract file: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
                     return
                 }
             } else if (restricted) {
