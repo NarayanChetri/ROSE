@@ -16,7 +16,8 @@ data class FileItem(
     // used for zip lookups since `name` is just the display basename.
     val zipEntryPath: String? = null,
     val bucketId: String? = null,
-    val thumbnailPath: String? = null
+    val thumbnailPath: String? = null,
+    val isEncrypted: Boolean = false
 ) {
     // Secondary constructor for convenience that still does the IO hits
     constructor(file: File, itemCount: Int? = null, virtualZipSource: File? = null) : this(

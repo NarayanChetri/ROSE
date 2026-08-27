@@ -15,7 +15,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import dev.narayan.rose.BuildConfig
 import dev.narayan.rose.filejob.JobManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.StateFlow
@@ -25,7 +24,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.zip.ZipEntry
+import java.util.zip.ZipEntry as JavaZipEntry
 import java.util.zip.ZipOutputStream
 
 enum class GridItemSize(val cellMinSize: Dp, val iconSize: Dp) {
@@ -298,6 +297,9 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     var isCopyOperation by mutableStateOf(true) // true for copy, false for move
         private set
 
+    var passphrasePromptItem by mutableStateOf<FileItem?>(null)
+    var passphraseAction: ((String) -> Unit)? = null
+
     var pendingSafPath by mutableStateOf<String?>(null)
         private set
 
@@ -545,7 +547,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     // Virtual directory path within the open zip ("" = root). Lets folders
     // inside an archive be browsed without re-reading the zip each time.
     var currentZipEntryPath by mutableStateOf("")
-    private var zipEntriesCache: List<ZipEntry> = emptyList()
+    private var zipEntriesCache: List<RoseArchiveEntry> = emptyList()
 
     var isLoading by mutableStateOf(false)
     var isRefreshing by mutableStateOf(false)
@@ -1480,7 +1482,10 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 if (!file.exists()) {
                     throw Exception("Archive file no longer exists.")
                 }
-                val entries = java.util.zip.ZipFile(file).use { it.entries().asSequence().toList() }
+                val entries = ArchiveManager.readEntries(file)
+                if (entries.isEmpty()) {
+                    throw Exception("Failed to read any entries from the archive.")
+                }
                 zipEntriesCache = entries
                 val sorted = sortFileList(buildZipDirectoryListing(entries, initialEntryPath, file))
                 withContext(Dispatchers.Main) {
@@ -1538,7 +1543,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     // already-read entry list, synthesizing folders for entries that never
     // got an explicit directory entry in the zip. No disk I/O - the central
     // directory was already read once in openArchive, so this is instant.
-    private fun buildZipDirectoryListing(entries: List<ZipEntry>, dirPath: String, zipFile: File): List<FileItem> {
+    private fun buildZipDirectoryListing(entries: List<RoseArchiveEntry>, dirPath: String, zipFile: File): List<FileItem> {
         val prefix = dirPath.trim('/').let { if (it.isEmpty()) "" else "$it/" }
         val children = LinkedHashMap<String, FileItem>()
 
@@ -1562,13 +1567,14 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             if (slashIndex == -1) {
                 children[remainder] = FileItem(
                     file = File(zipFile, name),
-                    isDirectory = false,
+                    isDirectory = entry.isDirectory,
                     name = remainder,
                     size = entry.size,
-                    lastModified = entry.time,
+                    lastModified = entry.lastModified,
                     extension = remainder.substringAfterLast('.', "").lowercase(),
                     virtualZipSource = zipFile,
-                    zipEntryPath = name
+                    zipEntryPath = name,
+                    isEncrypted = entry.isEncrypted
                 )
             } else {
                 val childName = remainder.substring(0, slashIndex)
@@ -1578,10 +1584,11 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         isDirectory = true,
                         name = childName,
                         size = 0,
-                        lastModified = entry.time,
+                        lastModified = entry.lastModified,
                         extension = "",
                         virtualZipSource = zipFile,
-                        zipEntryPath = "$prefix$childName/"
+                        zipEntryPath = "$prefix$childName/",
+                        isEncrypted = entry.isEncrypted
                     )
                 }
 
@@ -1641,8 +1648,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         isCopyOperation = true // Reuse the "Paste" FAB logic
     }
 
-    fun extractArchive(file: File, destDir: File = File(file.parent ?: Environment.getExternalStorageDirectory().absolutePath, file.nameWithoutExtension)) {
-        dev.narayan.rose.filejob.FileJobService.startExtract(getApplication(), file.absolutePath, destDir.absolutePath, extractionEntries)
+    fun extractArchive(file: File, destDir: File = File(file.parent ?: Environment.getExternalStorageDirectory().absolutePath, file.nameWithoutExtension), passphrase: String? = null) {
+        dev.narayan.rose.filejob.FileJobService.startExtract(getApplication(), file.absolutePath, destDir.absolutePath, extractionEntries, passphrase)
         clearExtraction()
     }
 
@@ -1879,59 +1886,18 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         exitSelectionMode()
     }
 
-    fun compressSelected(zipName: String) {
+    fun compressSelected(zipName: String, passphrase: String? = null) {
         val filesToZip = selectedFiles.toList()
-        val destFile = File(currentPath, if (zipName.lowercase().endsWith(".zip")) zipName else "$zipName.zip")
-
-        viewModelScope.launch(Dispatchers.IO) {
-            isLoading = true
-            try {
-                FileOutputStream(destFile).use { fos ->
-                    ZipOutputStream(fos).use { zipOut ->
-                        filesToZip.forEach { item ->
-                            addToZip(item.file, item.name, zipOut)
-                        }
-                    }
-                }
-                withContext(Dispatchers.Main) {
-                    exitSelectionMode()
-                    loadFiles(currentPath)
-                    highlightedFile = FileItem(destFile)
-                    rescanForMediaStore(getApplication(), destFile)
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    errorMessage = "Failed to compress: ${e.message}"
-                }
-            } finally {
-                withContext(Dispatchers.Main) {
-                    isLoading = false
-                    isRefreshing = false
-                }
-            }
+        // If in a category, currentPath is "", so we default to the standard Downloads folder.
+        val baseDir = currentPath.ifEmpty {
+            File(Environment.getExternalStorageDirectory(), "Download").absolutePath
         }
-    }
+        val destFile = File(baseDir, if (zipName.lowercase().endsWith(".zip")) zipName else "$zipName.zip")
+        val sources = filesToZip.map { it.file.absolutePath }
+        val displayNames = filesToZip.map { it.name }
 
-    private fun addToZip(file: File, fileName: String, zipOut: ZipOutputStream) {
-        if (file.isDirectory) {
-            val children = file.listFiles()
-            if (children != null && children.isNotEmpty()) {
-                for (child in children) {
-                    addToZip(child, "$fileName/${child.name}", zipOut)
-                }
-            } else {
-                // Empty directory
-                zipOut.putNextEntry(ZipEntry("$fileName/"))
-                zipOut.closeEntry()
-            }
-        } else {
-            FileInputStream(file).use { fis ->
-                val zipEntry = ZipEntry(fileName)
-                zipOut.putNextEntry(zipEntry)
-                fis.copyTo(zipOut)
-                zipOut.closeEntry()
-            }
-        }
+        dev.narayan.rose.filejob.FileJobService.startCompress(getApplication<android.app.Application>(), sources, displayNames, destFile.absolutePath, passphrase)
+        exitSelectionMode()
     }
 
     fun pasteFiles() {
@@ -1946,12 +1912,10 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 isLoading = true
                 val extractedDests = mutableListOf<File>()
                 try {
-                    java.util.zip.ZipFile(sourceZip).use { zip ->
-                        itemsToPaste.forEach { fileItem ->
-                            val dest = File(targetDir, fileItem.name)
-                            extractEntry(zip, fileItem.zipEntryPath ?: fileItem.name, dest)
-                            extractedDests.add(dest)
-                        }
+                    itemsToPaste.forEach { fileItem ->
+                        val dest = File(targetDir, fileItem.name)
+                        extractEntry(sourceZip, fileItem.zipEntryPath ?: fileItem.name, dest)
+                        extractedDests.add(dest)
                     }
                 } catch (e: Exception) {}
                 withContext(Dispatchers.Main) {
@@ -1992,39 +1956,11 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     // arbitrary app-writable files - a classic "zip slip" vulnerability.
     // Every resolved path is normalized and verified to stay inside `dest`'s
     // (for the folder case) canonical directory before anything is written.
-    private fun extractEntry(zip: java.util.zip.ZipFile, entryName: String, dest: File) {
-        val entry = zip.getEntry(entryName)
-        if (entry != null && !entry.isDirectory) {
-            dest.parentFile?.mkdirs()
-            zip.getInputStream(entry).use { input ->
-                dest.outputStream().use { output -> input.copyTo(output) }
-            }
-            return
-        }
-        // Folder (explicit entry or only implied by nested files): pull every
-        // entry whose name starts with this prefix and rebuild it under dest.
-        dest.mkdirs()
-        val destCanonicalPath = dest.canonicalPath
-        val prefix = entryName.trimEnd('/') + "/"
-        zip.entries().asSequence().forEach { child ->
-            if (child.name.startsWith(prefix) && !child.isDirectory) {
-                val relative = child.name.removePrefix(prefix)
-                val childDest = File(dest, relative)
-
-                // Containment check: reject any entry whose resolved path
-                // would land outside `dest` (path traversal / zip slip).
-                val childCanonicalPath = childDest.canonicalPath
-                if (childCanonicalPath != destCanonicalPath &&
-                    !childCanonicalPath.startsWith(destCanonicalPath + File.separator)
-                ) {
-                    return@forEach
-                }
-
-                childDest.parentFile?.mkdirs()
-                zip.getInputStream(child).use { input ->
-                    childDest.outputStream().use { output -> input.copyTo(output) }
-                }
-            }
+    private fun extractEntry(archiveFile: File, entryName: String, dest: File) {
+        try {
+            ArchiveManager.extractTo(archiveFile, entryName, dest)
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
@@ -2157,6 +2093,10 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 if (it.file.absolutePath == fileItem.file.absolutePath) updatedItem else it
             }
 
+            categoryFiles = categoryFiles.map {
+                if (it.file.absolutePath == fileItem.file.absolutePath) updatedItem else it
+            }
+
             val searchIndex = searchResults.indexOfFirst { it.file.absolutePath == fileItem.file.absolutePath }
             if (searchIndex != -1) {
                 searchResults[searchIndex] = updatedItem
@@ -2237,41 +2177,39 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                val restrictedDest = SafManager.isRestrictedPath(destPath)
+                // Extract to a subfolder named after the archive
+                val fileName = getFileNameFromUri(uri) ?: "extracted"
+                val folderName = fileName.substringBeforeLast(".")
+                val finalDestPath = if (folderName.isNotEmpty()) "${destPath.trimEnd('/')}/$folderName" else destPath
+
+                val restrictedDest = SafManager.isRestrictedPath(finalDestPath)
 
                 if (restrictedDest) {
-                    SafManager.createDirectory(getApplication(), destPath)
-                    java.util.zip.ZipFile(tempFile).use { zip ->
-                        zip.entries().asSequence().forEach { entry ->
-                            val entryPath = "${destPath.trimEnd('/')}/${entry.name.trimEnd('/')}"
-                            if (entry.isDirectory) {
-                                SafManager.createDirectory(getApplication(), entryPath)
-                            } else {
-                                val parentPath = entryPath.substringBeforeLast("/")
-                                SafManager.createDirectory(getApplication(), parentPath)
-                                zip.getInputStream(entry).use { input ->
-                                    SafManager.openOutputStreamForNewFile(getApplication(), entryPath)
-                                        ?.use { output -> input.copyTo(output) }
-                                }
+                    SafManager.createDirectory(getApplication(), finalDestPath)
+                    ArchiveManager.extractAll(tempFile) { name, isDirectory, copyTask ->
+                        val entryPath = "${finalDestPath.trimEnd('/')}/${name.trimEnd('/')}"
+                        if (isDirectory) {
+                            SafManager.createDirectory(getApplication(), entryPath)
+                        } else {
+                            val parentPath = entryPath.substringBeforeLast("/")
+                            SafManager.createDirectory(getApplication(), parentPath)
+                            SafManager.openOutputStreamForNewFile(getApplication(), entryPath)?.use { output ->
+                                copyTask(output)
                             }
                         }
                     }
                 } else {
-                    val destDir = File(destPath)
+                    val destDir = File(finalDestPath)
                     if (!destDir.exists()) destDir.mkdirs()
 
-                    java.util.zip.ZipFile(tempFile).use { zip ->
-                        zip.entries().asSequence().forEach { entry ->
-                            val entryFile = File(destDir, entry.name)
-                            if (entry.isDirectory) {
-                                entryFile.mkdirs()
-                            } else {
-                                entryFile.parentFile?.mkdirs()
-                                zip.getInputStream(entry).use { input ->
-                                    entryFile.outputStream().use { output ->
-                                        input.copyTo(output)
-                                    }
-                                }
+                    ArchiveManager.extractAll(tempFile) { name, isDirectory, copyTask ->
+                        val entryFile = File(destDir, name)
+                        if (isDirectory) {
+                            entryFile.mkdirs()
+                        } else {
+                            entryFile.parentFile?.mkdirs()
+                            entryFile.outputStream().use { output ->
+                                copyTask(output)
                             }
                         }
                     }

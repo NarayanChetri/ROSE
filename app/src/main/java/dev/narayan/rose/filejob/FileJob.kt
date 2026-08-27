@@ -16,7 +16,8 @@ sealed class FileJobType {
     data class Download(val source: SourcePath, val targetFile: Path) : FileJobType()
     data class Recycle(val sources: List<SourcePath>) : FileJobType()
     data class Restore(val sources: List<SourcePath>) : FileJobType()
-    data class Extract(val source: Path, val targetDir: Path, val entries: List<String>? = null) : FileJobType()
+    data class Extract(val source: Path, val targetDir: Path, val entries: List<String>? = null, val passphrase: String? = null) : FileJobType()
+    data class Compress(val sources: List<SourcePath>, val targetFile: Path, val passphrase: String? = null) : FileJobType()
 }
 
 data class SourcePath(
@@ -309,6 +310,28 @@ object FileOperationRunner {
                             throw Exception("Failed to extract archive. Check if storage is full or archive is corrupted.")
                         }
                         touchedPaths.add(type.targetDir.toString())
+                        job.processedItems++
+                    }
+                    is FileJobType.Compress -> {
+                        if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
+                        job.currentFileName = type.targetFile.fileName.toString()
+                        onProgress(job)
+                        JobManager.updateJob(job)
+
+                        var lastUpdate = 0L
+                        val success = compressRecursive(appContext, type.sources, type.targetFile, job) {
+                            val now = System.currentTimeMillis()
+                            if (now - lastUpdate > 150 || it.processedBytes == it.totalBytes) {
+                                onProgress(it)
+                                JobManager.updateJob(it)
+                                lastUpdate = now
+                            }
+                        }
+                        if (!success) {
+                            if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
+                            throw Exception("Failed to create archive.")
+                        }
+                        touchedPaths.add(type.targetFile.toString())
                         job.processedItems++
                     }
                 }
@@ -762,73 +785,93 @@ object FileOperationRunner {
             val file = sourceZip.toFile()
             if (!Files.exists(targetDir)) Files.createDirectories(targetDir)
 
-            val entriesToExtract = (job.type as? FileJobType.Extract)?.entries
-
-            java.util.zip.ZipFile(file).use { zip ->
-                val allEntries = zip.entries().asSequence().toList()
-                val targetEntries = if (entriesToExtract != null) {
-                    allEntries.filter { entry ->
-                        entriesToExtract.any { target ->
-                            entry.name == target || entry.name.startsWith("$target/")
-                        }
+            val extractType = job.type as? FileJobType.Extract
+            val entriesToExtract = extractType?.entries
+            val passphrase = extractType?.passphrase
+            val entries = dev.narayan.rose.ArchiveManager.readEntries(file)
+            val filteredEntries = if (entriesToExtract != null) {
+                entries.filter { entry ->
+                    entriesToExtract.any { target ->
+                        entry.name == target || entry.name.startsWith("$target/")
                     }
-                } else {
-                    allEntries
                 }
+            } else {
+                entries
+            }
 
-                val totalEntries = targetEntries.size
-                job.totalItems = totalEntries
-                job.totalBytes = targetEntries.filter { !it.isDirectory }.sumOf { it.size }
-                job.processedItems = 0
-                job.processedBytes = 0L
+            job.totalItems = filteredEntries.size
+            job.totalBytes = filteredEntries.filter { !it.isDirectory }.sumOf { it.size }
+            job.processedItems = 0
+            job.processedBytes = 0L
 
-                targetEntries.forEach { entry ->
-                    if (JobManager.isCancelled(job.id)) return false
+            val targetSet = if (entriesToExtract != null) filteredEntries.map { it.name }.toSet() else null
 
-                    // If extracting specific entries, we might want to strip the prefix
-                    // to avoid creating deep folder structures if only one subfolder was picked.
-                    // But standard behavior is to keep the relative path from the zip root or selection.
-                    // Here we keep the entry name as is, which is safest.
-                    val entryFile = targetDir.resolve(entry.name).normalize()
+            dev.narayan.rose.ArchiveManager.extractAll(file, passphrase) { name, isDirectory, copyTask ->
+                if (JobManager.isCancelled(job.id)) return@extractAll
+                if (targetSet != null && name !in targetSet) return@extractAll
 
-                    // Security check: ensure entry is within targetDir
-                    if (!entryFile.startsWith(targetDir)) {
-                        return@forEach
-                    }
+                val entryFile = targetDir.resolve(name).normalize()
+                if (!entryFile.startsWith(targetDir)) return@extractAll
 
-                    if (entry.isDirectory) {
-                        Files.createDirectories(entryFile)
-                    } else {
-                        if (!Files.exists(entryFile.parent)) {
-                            Files.createDirectories(entryFile.parent)
-                        }
-                        zip.getInputStream(entry).use { input ->
-                            Files.newOutputStream(entryFile).use { output ->
-                                val buffer = ByteArray(8192 * 4)
-                                var bytesRead: Int
-                                while (input.read(buffer).also { bytesRead = it } >= 0) {
-                                    output.write(buffer, 0, bytesRead)
-                                    job.processedBytes += bytesRead
-                                    if (job.totalBytes > 0 && System.currentTimeMillis() % 10 == 0L) {
-                                        job.progress = (job.processedBytes.toFloat() / job.totalBytes).coerceIn(0f, 1f)
-                                        onProgress(job)
-                                    }
+                if (isDirectory) {
+                    Files.createDirectories(entryFile)
+                } else {
+                    if (entryFile.parent != null) Files.createDirectories(entryFile.parent)
+                    Files.newOutputStream(entryFile).use { output ->
+                        val progressOutput = object : java.io.OutputStream() {
+                            override fun write(b: Int) {
+                                output.write(b)
+                                job.processedBytes += 1
+                            }
+                            override fun write(b: ByteArray, off: Int, len: Int) {
+                                output.write(b, off, len)
+                                job.processedBytes += len
+                                if (job.totalBytes > 0 && System.currentTimeMillis() % 100 == 0L) {
+                                    job.progress = (job.processedBytes.toFloat() / job.totalBytes).coerceIn(0f, 1f)
+                                    onProgress(job)
                                 }
                             }
                         }
+                        copyTask(progressOutput)
                     }
-                    job.processedItems++
-                    if (job.totalBytes <= 0) {
-                        job.progress = job.processedItems.toFloat() / totalEntries
-                    } else {
-                        job.progress = (job.processedBytes.toFloat() / job.totalBytes).coerceIn(0f, 1f)
-                    }
-                    job.currentFileName = entry.name.substringAfterLast('/')
+                }
+                job.processedItems++
+                job.currentFileName = name.substringAfterLast('/')
+                onProgress(job)
+            }
+            return true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return false
+        }
+    }
+
+    private fun compressRecursive(context: android.content.Context, sources: List<SourcePath>, targetFile: Path, job: FileJob, onProgress: (FileJob) -> Unit): Boolean {
+        try {
+            val stats = calculateBatchStats(context, sources.map { it.path })
+            job.totalBytes = stats?.first ?: 0L
+            job.processedBytes = 0L
+            job.isIndeterminate = stats == null
+
+            val compressType = job.type as? FileJobType.Compress
+            val passphrase = compressType?.passphrase
+
+            dev.narayan.rose.ArchiveManager.compress(
+                sources = sources.map { java.io.File(it.path) },
+                targetFile = targetFile.toFile(),
+                passphrase = passphrase
+            ) { name, processed ->
+                if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
+                job.currentFileName = name
+                job.processedBytes += processed
+                if (job.totalBytes > 0) {
+                    job.progress = (job.processedBytes.toFloat() / job.totalBytes).coerceIn(0f, 1f)
                     onProgress(job)
                 }
             }
             return true
         } catch (e: Exception) {
+            e.printStackTrace()
             return false
         }
     }

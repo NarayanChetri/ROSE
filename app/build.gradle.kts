@@ -26,6 +26,20 @@ android {
         versionName = "1.2.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Only include common ABIs to reduce APK size
+        ndk {
+            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86_64"))
+        }
+    }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "**/kotlin/**"
+            excludes += "**/io.netty.versions.properties"
+            excludes += "/*.txt"
+        }
     }
 
     signingConfigs {
@@ -81,6 +95,7 @@ android {
 
 dependencies {
     implementation(libs.androidx.documentfile)
+    implementation(libs.libarchive)
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)
     coreLibraryDesugaring(libs.desugar.jdk.libs)

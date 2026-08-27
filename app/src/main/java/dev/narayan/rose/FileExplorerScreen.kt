@@ -78,6 +78,10 @@ import dev.narayan.rose.filejob.FileJob
 import dev.narayan.rose.filejob.FileJobType
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import coil.compose.AsyncImage
@@ -893,7 +897,8 @@ fun FileExplorerScreen(
                                                         Modifier.alpha(0.5f)
                                                     } else {
                                                         Modifier.clickable {
-                                                            viewModel.extractArchive(viewModel.extractionSource!!, File(viewModel.currentPath))
+                                                            val dest = File(viewModel.currentPath, viewModel.extractionSource!!.nameWithoutExtension)
+                                                            viewModel.extractArchive(viewModel.extractionSource!!, dest)
                                                         }
                                                     }
                                                 )
@@ -1508,11 +1513,22 @@ fun FileExplorerScreen(
                                         item = fileItem,
                                         onDismiss = { showExtractionDialog = null },
                                         onExtractHere = {
-                                            if (viewModel.currentZipFile != null || fileItem.zipEntryPath != null) {
-                                                // Extracting from within a zip or a virtual entry
-                                                viewModel.extractArchive(fileItem.file, File(viewModel.currentPath))
+                                            if (fileItem.isEncrypted) {
+                                                viewModel.passphrasePromptItem = fileItem
+                                                viewModel.passphraseAction = { passphrase ->
+                                                    if (viewModel.currentZipFile != null || fileItem.zipEntryPath != null) {
+                                                        viewModel.extractArchive(fileItem.file, File(viewModel.currentPath), passphrase)
+                                                    } else {
+                                                        viewModel.extractArchive(fileItem.file, passphrase = passphrase)
+                                                    }
+                                                }
                                             } else {
-                                                viewModel.extractArchive(fileItem.file)
+                                                if (viewModel.currentZipFile != null || fileItem.zipEntryPath != null) {
+                                                    // Extracting from within a zip or a virtual entry
+                                                    viewModel.extractArchive(fileItem.file, File(viewModel.currentPath))
+                                                } else {
+                                                    viewModel.extractArchive(fileItem.file)
+                                                }
                                             }
                                             showExtractionDialog = null
                                             viewModel.exitSelectionMode()
@@ -1546,8 +1562,8 @@ fun FileExplorerScreen(
     if (showCompressDialog) {
         CompressDialog(
             onDismiss = { showCompressDialog = false },
-            onConfirm = { name ->
-                viewModel.compressSelected(name)
+            onConfirm = { name, password ->
+                viewModel.compressSelected(name, password)
                 showCompressDialog = false
             }
         )
@@ -2715,13 +2731,25 @@ fun FileListItem(
     ) {
         ListItem(
             headlineContent = {
-                Text(
-                    displayNameFor(fileItem, showExtension),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    fontWeight = if (fileItem.isDirectory) FontWeight.SemiBold else FontWeight.Normal,
-                    style = if (fileItem.isDirectory) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        displayNameFor(fileItem, showExtension),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = if (fileItem.isDirectory) FontWeight.SemiBold else FontWeight.Normal,
+                        style = if (fileItem.isDirectory) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (fileItem.isEncrypted) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            Icons.Default.Lock,
+                            contentDescription = "Encrypted",
+                            modifier = Modifier.size(12.dp),
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                        )
+                    }
+                }
             },
             supportingContent = {
                 val dateStr = formatItemDate(fileItem.lastModified)
@@ -2890,44 +2918,33 @@ fun FileIcon(
                 if (isVirtual && fileItem.virtualZipSource != null) {
                     val zipThumb by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = fileItem.file.absolutePath) {
                         value = withContext(Dispatchers.IO) {
-                            try {
-                                java.util.zip.ZipFile(fileItem.virtualZipSource).use { zip ->
-                                    val entry = zip.getEntry(fileItem.zipEntryPath ?: fileItem.name)
-                                    if (entry == null || entry.size >= 10 * 1024 * 1024) { // Only for files < 10MB
-                                        null
-                                    } else {
-                                        // Decoding at full resolution for a small grid
-                                        // thumbnail is how a zip full of camera-resolution
-                                        // photos OOMs while scrolling: a 3MB JPEG can easily
-                                        // decode to a 4000x3000 ARGB_8888 bitmap (~48MB) even
-                                        // though the 10MB cap above only bounds the compressed
-                                        // size. Pass 1 reads bounds only (no pixel allocation),
-                                        // then pass 2 decodes downsampled to roughly thumbnail
-                                        // size via inSampleSize.
-                                        val bounds = android.graphics.BitmapFactory.Options().apply {
-                                            inJustDecodeBounds = true
-                                        }
-                                        zip.getInputStream(entry).use { input ->
-                                            android.graphics.BitmapFactory.decodeStream(input, null, bounds)
-                                        }
-
-                                        val targetPx = 200 // roughly the on-screen thumbnail size in px
-                                        var sampleSize = 1
-                                        while (bounds.outWidth / sampleSize > targetPx * 2 ||
-                                            bounds.outHeight / sampleSize > targetPx * 2
-                                        ) {
-                                            sampleSize *= 2
-                                        }
-
-                                        val opts = android.graphics.BitmapFactory.Options().apply {
-                                            inSampleSize = sampleSize
-                                        }
-                                        zip.getInputStream(entry).use { input ->
-                                            android.graphics.BitmapFactory.decodeStream(input, null, opts)
-                                        }
+                            val entryPath = fileItem.zipEntryPath ?: fileItem.name
+                            val bytes = ArchiveManager.getEntryBytes(fileItem.virtualZipSource, entryPath)
+                            if (bytes != null) {
+                                try {
+                                    val bounds = android.graphics.BitmapFactory.Options().apply {
+                                        inJustDecodeBounds = true
                                     }
+                                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+
+                                    val targetPx = 200
+                                    var sampleSize = 1
+                                    while (bounds.outWidth / sampleSize > targetPx * 2 ||
+                                        bounds.outHeight / sampleSize > targetPx * 2
+                                    ) {
+                                        sampleSize *= 2
+                                    }
+
+                                    val opts = android.graphics.BitmapFactory.Options().apply {
+                                        inSampleSize = sampleSize
+                                    }
+                                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+                                } catch (e: Exception) {
+                                    null
                                 }
-                            } catch (e: Exception) { null }
+                            } else {
+                                null
+                            }
                         }
                     }
 
@@ -3235,37 +3252,67 @@ fun PropertiesDialog(fileItem: FileItem, onDismiss: () -> Unit, viewModel: RoseV
 }
 
 @Composable
-fun CompressDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+fun CompressDialog(onDismiss: () -> Unit, onConfirm: (String, String?) -> Unit) {
     var folderName by remember { mutableStateOf("Archive") }
+    var password by remember { mutableStateOf("") }
+    var showPassword by remember { mutableStateOf(false) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Archive, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Icon(
+                    Icons.Default.Archive,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text("Compress to Zip")
             }
         },
         text = {
-            TextField(
-                value = folderName,
-                onValueChange = { folderName = it },
-                label = { Text("Zip file name") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                suffix = { Text(".zip") }
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                TextField(
+                    value = folderName,
+                    onValueChange = { folderName = it },
+                    label = { Text("Zip file name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    suffix = { Text(".zip") }
+                )
+
+                TextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Password (Optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { showPassword = !showPassword }) {
+                            Icon(
+                                if (showPassword) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                contentDescription = null
+                            )
+                        }
+                    }
+                )
+            }
         },
         confirmButton = {
             Button(
-                onClick = { if (folderName.isNotBlank()) onConfirm(folderName) },
+                onClick = {
+                    if (folderName.isNotBlank()) {
+                        onConfirm(folderName, password.takeIf { it.isNotEmpty() })
+                    }
+                },
                 shape = RoundedCornerShape(12.dp)
             ) { Text("Compress") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
         },
-        shape = RoundedCornerShape(28.dp)
+        shape = RoundedCornerShape(24.dp)
     )
 }
 
@@ -3396,6 +3443,50 @@ fun CreateFolderDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
 }
 
 @Composable
+fun PasswordDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var password by remember { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("Password Required")
+            }
+        },
+        text = {
+            TextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text("Password") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester)
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (password.isNotBlank()) onConfirm(password) },
+                shape = RoundedCornerShape(12.dp)
+            ) { Text("Confirm") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+        shape = RoundedCornerShape(28.dp)
+    )
+}
+
+@Composable
 fun RenameDialog(initialName: String, onDismiss: () -> Unit, onRename: (String) -> Unit) {
     val dotIndex = initialName.lastIndexOf('.')
     val selectionEnd = if (dotIndex > 0) dotIndex else initialName.length
@@ -3508,6 +3599,7 @@ fun ActiveJobsCard(activeJobs: List<FileJob>, onClick: () -> Unit = {}) {
                     is FileJobType.Recycle -> "Moving to Bin..."
                     is FileJobType.Restore -> "Restoring files..."
                     is FileJobType.Extract -> "Extracting archive..."
+                    is FileJobType.Compress -> "Creating archive..."
                     else -> "Processing..."
                 }
                 Text(

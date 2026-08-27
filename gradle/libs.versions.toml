@@ -15,9 +15,11 @@ coil = "2.4.0"
 desugar_jdk_libs = "2.1.5"
 shizuku = "13.1.5"
 documentfile = "1.1.0"
+libarchive = "1.1.6"
 
 [libraries]
 androidx-documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentfile" }
+libarchive = { group = "me.zhanghai.android.libarchive", name = "library", version.ref = "libarchive" }
 shizuku-api = { group = "dev.rikka.shizuku", name = "api", version.ref = "shizuku" }
 shizuku-provider = { group = "dev.rikka.shizuku", name = "provider", version.ref = "shizuku" }
 desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugar_jdk_libs" }

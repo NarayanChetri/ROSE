@@ -9,7 +9,6 @@ import android.os.IBinder
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import dev.narayan.rose.MainActivity
-import java.nio.file.Paths
 
 @Suppress("NewApi")
 class FileJobService : Service() {
@@ -31,6 +30,7 @@ class FileJobService : Service() {
         const val ACTION_START_RECYCLE = "action_start_recycle"
         const val ACTION_START_RESTORE = "action_start_restore"
         const val ACTION_START_EXTRACT = "action_start_extract"
+        const val ACTION_START_COMPRESS = "action_start_compress"
         const val EXTRA_ENTRIES = "extra_entries"
         const val EXTRA_SOURCES = "extra_sources"
         const val EXTRA_DISPLAY_NAMES = "extra_display_names"
@@ -98,15 +98,29 @@ class FileJobService : Service() {
             startService(context, intent)
         }
 
-        fun startExtract(context: Context, sourcePath: String, targetDir: String, entries: List<String>? = null) {
+        const val EXTRA_PASSPHRASE = "extra_passphrase"
+
+        fun startExtract(context: Context, sourcePath: String, targetDir: String, entries: List<String>? = null, passphrase: String? = null) {
             val intent = Intent(context, FileJobService::class.java).apply {
                 action = ACTION_START_EXTRACT
                 putStringArrayListExtra(EXTRA_SOURCES, arrayListOf(sourcePath))
                 putStringArrayListExtra(EXTRA_DISPLAY_NAMES, arrayListOf(sourcePath.substringAfterLast('/')))
                 putExtra(EXTRA_TARGET_DIR, targetDir)
+                putExtra(EXTRA_PASSPHRASE, passphrase)
                 if (entries != null) {
                     putStringArrayListExtra(EXTRA_ENTRIES, ArrayList(entries))
                 }
+            }
+            startService(context, intent)
+        }
+
+        fun startCompress(context: Context, sources: List<String>, displayNames: List<String>, targetFile: String, passphrase: String? = null) {
+            val intent = Intent(context, FileJobService::class.java).apply {
+                action = ACTION_START_COMPRESS
+                putStringArrayListExtra(EXTRA_SOURCES, ArrayList(sources))
+                putStringArrayListExtra(EXTRA_DISPLAY_NAMES, ArrayList(displayNames))
+                putExtra(EXTRA_TARGET_FILE, targetFile)
+                putExtra(EXTRA_PASSPHRASE, passphrase)
             }
             startService(context, intent)
         }
@@ -168,7 +182,13 @@ class FileJobService : Service() {
             ACTION_START_EXTRACT -> {
                 val targetDir = intent.getStringExtra(EXTRA_TARGET_DIR) ?: return START_NOT_STICKY
                 val entries = intent.getStringArrayListExtra(EXTRA_ENTRIES)
-                FileJobType.Extract(java.io.File(sourcePaths[0].path).toPath(), java.io.File(targetDir).toPath(), entries)
+                val passphrase = intent.getStringExtra(EXTRA_PASSPHRASE)
+                FileJobType.Extract(java.io.File(sourcePaths[0].path).toPath(), java.io.File(targetDir).toPath(), entries, passphrase)
+            }
+            ACTION_START_COMPRESS -> {
+                val targetFile = intent.getStringExtra(EXTRA_TARGET_FILE) ?: return START_NOT_STICKY
+                val passphrase = intent.getStringExtra(EXTRA_PASSPHRASE)
+                FileJobType.Compress(sourcePaths, java.io.File(targetFile).toPath(), passphrase)
             }
             else -> return START_NOT_STICKY
         }
@@ -234,6 +254,7 @@ class FileJobService : Service() {
             is FileJobType.Recycle -> "Moving to Recycle Bin"
             is FileJobType.Restore -> "Restoring Files"
             is FileJobType.Extract -> "Extracting Archive"
+            is FileJobType.Compress -> "Creating Archive"
         }
 
         val progressPercent = (job.progress * 100).toInt()
@@ -284,6 +305,7 @@ class FileJobService : Service() {
             is FileJobType.Recycle -> "Moving to bin"
             is FileJobType.Restore -> "Restore"
             is FileJobType.Extract -> "Extraction"
+            is FileJobType.Compress -> "Compression"
         }
         val title = if (success) {
             when (job.type) {
