@@ -284,6 +284,7 @@ fun FileExplorerScreen(
     animatedVisibilityScope: AnimatedVisibilityScope? = null, // New parameter
     onExitToHome: (() -> Unit)? = null,
     onFileClick: (FileItem) -> Unit = {},
+    onOpenWithClick: (FileItem) -> Unit = {},
     onShareClick: (List<FileItem>) -> Unit = {},
     listState: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(),
     gridState: androidx.compose.foundation.lazy.grid.LazyGridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
@@ -1362,17 +1363,19 @@ fun FileExplorerScreen(
                                                                     },
                                                                     onRename = { newName -> viewModel.renameFile(fileItem, newName) },
                                                                     onRenameRequest = { showRenameDialog = fileItem },
+                                                                    onOpenWith = { onOpenWithClick(fileItem) },
                                                                     onShare = { onShareClick(listOf(fileItem)) },
                                                                     onCopy = { viewModel.toggleSelection(fileItem); viewModel.copySelected() },
                                                                     onCut = { viewModel.toggleSelection(fileItem); viewModel.moveSelected() },
-                                                                    onOpenLocation = if (searchQuery.isNotEmpty()) {
+                                                                    onOpenLocation = if (searchQuery.isNotEmpty() || currentView == "Recent") {
                                                                         {
                                                                             val parent = fileItem.file.parentFile
                                                                             if (parent != null) {
                                                                                 isSearching = false
                                                                                 searchQuery = ""
-                                                                                viewModel.loadFiles(parent.absolutePath)
+                                                                                viewModel.navigateTo(parent, true)
                                                                                 viewModel.highlightedFile = fileItem
+                                                                                currentView = "Files"
                                                                             }
                                                                         }
                                                                     } else null,
@@ -1466,17 +1469,19 @@ fun FileExplorerScreen(
                                                             },
                                                             onRename = { newName -> viewModel.renameFile(fileItem, newName) },
                                                             onRenameRequest = { showRenameDialog = fileItem },
+                                                            onOpenWith = { onOpenWithClick(fileItem) },
                                                             onShare = { onShareClick(listOf(fileItem)) },
                                                             onCopy = { viewModel.toggleSelection(fileItem); viewModel.copySelected() },
                                                             onCut = { viewModel.toggleSelection(fileItem); viewModel.moveSelected() },
-                                                            onOpenLocation = if (searchQuery.isNotEmpty()) {
+                                                            onOpenLocation = if (searchQuery.isNotEmpty() || currentView == "Recent") {
                                                                 {
                                                                     val parent = fileItem.file.parentFile
                                                                     if (parent != null) {
                                                                         isSearching = false
                                                                         searchQuery = ""
-                                                                        viewModel.loadFiles(parent.absolutePath)
+                                                                        viewModel.navigateTo(parent, true)
                                                                         viewModel.highlightedFile = fileItem
+                                                                        currentView = "Files"
                                                                     }
                                                                 }
                                                             } else null,
@@ -2679,6 +2684,7 @@ fun FileListItem(
     clipboardHasFiles: Boolean = false,
     isSelectionMode: Boolean = false,
     isHighlighted: Boolean = false,
+    onOpenWith: (() -> Unit)? = null, // New parameter
     onOpenLocation: (() -> Unit)? = null, // New parameter
     onExtract: (() -> Unit)? = null,
     index: Int = 0,
@@ -2740,15 +2746,6 @@ fun FileListItem(
                         style = if (fileItem.isDirectory) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.weight(1f, fill = false)
                     )
-                    if (fileItem.isEncrypted) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Icon(
-                            Icons.Default.Lock,
-                            contentDescription = "Encrypted",
-                            modifier = Modifier.size(12.dp),
-                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-                        )
-                    }
                 }
             },
             supportingContent = {
@@ -2821,6 +2818,20 @@ fun FileListItem(
                             shape = RoundedCornerShape(16.dp),
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                         ) {
+                            if (onOpenLocation != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Open location") },
+                                    onClick = { showMenu = false; onOpenLocation() },
+                                    leadingIcon = { Icon(Icons.Default.FolderOpen, null) }
+                                )
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Open with") },
+                                onClick = { showMenu = false; onOpenWith?.invoke() },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, null) }
+                            )
+                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             DropdownMenuItem(
                                 text = { Text("Share") },
                                 onClick = { showMenu = false; onShare() },
@@ -2909,6 +2920,7 @@ fun FileIcon(
 ) {
     val context = LocalContext.current
     val modifier = Modifier.size(iconSize).clip(RoundedCornerShape(12.dp))
+    var isThumbnailLoaded by remember { mutableStateOf(false) }
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         when (fileItem.fileType) {
@@ -2916,10 +2928,10 @@ fun FileIcon(
                 val placeholderIcon = if (fileItem.fileType == FileType.IMAGE) Icons.Default.Image else Icons.Default.Movie
 
                 if (isVirtual && fileItem.virtualZipSource != null) {
-                    val zipThumb by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = fileItem.file.absolutePath) {
+                    val zipThumb by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = fileItem.file.absolutePath, key2 = viewModel?.cachedZipPassword) {
                         value = withContext(Dispatchers.IO) {
                             val entryPath = fileItem.zipEntryPath ?: fileItem.name
-                            val bytes = ArchiveManager.getEntryBytes(fileItem.virtualZipSource, entryPath)
+                            val bytes = ArchiveManager.getEntryBytes(fileItem.virtualZipSource, entryPath, passphrase = viewModel?.cachedZipPassword)
                             if (bytes != null) {
                                 try {
                                     val bounds = android.graphics.BitmapFactory.Options().apply {
@@ -2946,6 +2958,7 @@ fun FileIcon(
                                 null
                             }
                         }
+                        if (value != null) isThumbnailLoaded = true
                     }
 
                     if (zipThumb != null) {
@@ -3172,6 +3185,26 @@ fun FileIcon(
             FileType.AUDIO -> FileTypeBadge(Icons.Default.MusicNote, FileIconColors.audio, iconSize, Modifier.fillMaxSize())
             FileType.DOCUMENT -> FileTypeBadge(Icons.Default.Description, FileIconColors.document, iconSize, Modifier.fillMaxSize())
             else -> FileTypeBadge(Icons.Default.InsertDriveFile, MaterialTheme.colorScheme.secondary, iconSize, Modifier.fillMaxSize())
+        }
+
+        if (fileItem.isEncrypted && !isThumbnailLoaded && viewModel?.cachedZipPassword == null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 2.dp, y = 2.dp)
+                    .size(iconSize * 0.35f)
+                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(4.dp))
+                    .padding(2.dp)
+                    .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(2.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.Lock,
+                    contentDescription = "Encrypted",
+                    modifier = Modifier.size(iconSize * 0.22f),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
         }
     }
 }

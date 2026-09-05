@@ -543,6 +543,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     var currentZipFile by mutableStateOf<File?>(null)
+    var cachedZipPassword by mutableStateOf<String?>(null)
     var currentZipSourcePath by mutableStateOf<String?>(null)
     // Virtual directory path within the open zip ("" = root). Lets folders
     // inside an archive be browsed without re-reading the zip each time.
@@ -1471,6 +1472,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         stopWatchingDirectory()
         currentPath = file.parent ?: Environment.getExternalStorageDirectory().absolutePath
         currentZipFile = file
+        cachedZipPassword = null
         currentZipSourcePath = file.absolutePath
         currentZipEntryPath = initialEntryPath
         files = emptyList()
@@ -1907,6 +1909,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         val targetDir = currentPath
 
         if (sourceZip != null) {
+            val passphrase = if (sourceZip == currentZipFile) cachedZipPassword else null
             // Zip extraction still handled in ViewModel for now or could be a job too
             viewModelScope.launch(Dispatchers.IO) {
                 isLoading = true
@@ -1914,7 +1917,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 try {
                     itemsToPaste.forEach { fileItem ->
                         val dest = File(targetDir, fileItem.name)
-                        extractEntry(sourceZip, fileItem.zipEntryPath ?: fileItem.name, dest)
+                        extractEntry(sourceZip, fileItem.zipEntryPath ?: fileItem.name, dest, passphrase)
                         extractedDests.add(dest)
                     }
                 } catch (e: Exception) {}
@@ -1956,9 +1959,9 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     // arbitrary app-writable files - a classic "zip slip" vulnerability.
     // Every resolved path is normalized and verified to stay inside `dest`'s
     // (for the folder case) canonical directory before anything is written.
-    private fun extractEntry(archiveFile: File, entryName: String, dest: File) {
+    private fun extractEntry(archiveFile: File, entryName: String, dest: File, passphrase: String? = null) {
         try {
-            ArchiveManager.extractTo(archiveFile, entryName, dest)
+            ArchiveManager.extractTo(archiveFile, entryName, dest, passphrase)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -2036,6 +2039,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         categoryFilterType = null
         categoryBucketId = null
         currentZipFile = null
+        cachedZipPassword = null
         currentZipSourcePath = null
         currentZipEntryPath = ""
 
@@ -2055,6 +2059,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
     fun closeArchive() {
         currentZipFile = null
+        cachedZipPassword = null
         currentZipSourcePath = null
         currentZipEntryPath = ""
         files = emptyList()
