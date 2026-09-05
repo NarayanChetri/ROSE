@@ -519,6 +519,7 @@ class MainActivity : ComponentActivity() {
                                                     openFile(fileItem)
                                                 }
                                             },
+                                            onOpenWithClick = { openFileWith(it) },
                                             onShareClick = { fileItem -> shareFiles(listOf(fileItem)) },
                                             onSettingsClick = { screen = AppScreen.Settings },
                                             onAboutClick = { screen = AppScreen.About },
@@ -542,6 +543,7 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             },
                                             onFileClick = { fileItem -> openFile(fileItem) },
+                                            onOpenWithClick = { openFileWith(it) },
                                             onShareClick = { fileItems -> shareFiles(fileItems) },
                                             listState = explorerListState,
                                             gridState = explorerGridState
@@ -726,7 +728,10 @@ class MainActivity : ComponentActivity() {
                         continue
                     }
 
-                    if (item.isEncrypted && passphrase == null) {
+                    val cached = viewModel.cachedZipPassword
+                    val effectivePassphrase = passphrase ?: cached
+
+                    if (item.isEncrypted && effectivePassphrase == null) {
                         withContext(Dispatchers.Main) {
                             viewModel.passphrasePromptItem = item
                             viewModel.passphraseAction = { pw -> shareFiles(fileItems, pw) }
@@ -738,12 +743,18 @@ class MainActivity : ComponentActivity() {
                     val cacheFile = File(cacheDir, "share_${System.currentTimeMillis()}_${item.name}")
                     try {
                         cacheFile.outputStream().use { output ->
-                            ArchiveManager.extractEntry(item.virtualZipSource, item.zipEntryPath ?: item.name, output, passphrase)
+                            ArchiveManager.extractEntry(item.virtualZipSource, item.zipEntryPath ?: item.name, output, effectivePassphrase)
+                        }
+                        if (effectivePassphrase != null) {
+                            withContext(Dispatchers.Main) {
+                                viewModel.cachedZipPassword = effectivePassphrase
+                            }
                         }
                         uris.add(FileProvider.getUriForFile(this@MainActivity, "${packageName}.provider", cacheFile))
                     } catch (e: Exception) {
-                        if (e.message?.contains("Password required") == true) {
+                        if (e.message?.contains("Password required") == true || e.message?.contains("Invalid password") == true) {
                             withContext(Dispatchers.Main) {
+                                viewModel.cachedZipPassword = null
                                 viewModel.passphrasePromptItem = item
                                 viewModel.passphraseAction = { pw -> shareFiles(fileItems, pw) }
                             }
@@ -753,7 +764,8 @@ class MainActivity : ComponentActivity() {
                             Toast.makeText(this@MainActivity, "Failed to extract ${item.name}: ${e.message}", Toast.LENGTH_SHORT).show()
                         }
                     }
-                } else {
+                }
+else {
                     val path = item.file.absolutePath
                     if (SafManager.isRestrictedPath(path)) {
                         // Files here don't exist from java.io.File's point of view - only the
@@ -797,7 +809,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun openFile(fileItem: FileItem, passphrase: String? = null) {
+    private fun openFileWith(fileItem: FileItem) {
+        val intent = createViewIntent(fileItem) ?: return
+        try {
+            val chooser = Intent.createChooser(intent, "Open with")
+            startActivity(chooser)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Couldn't open file: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun createViewIntent(fileItem: FileItem, passphrase: String? = null): Intent? {
         try {
             val file = fileItem.file
             val path = file.absolutePath
@@ -807,42 +829,48 @@ class MainActivity : ComponentActivity() {
             if (!isVirtual) {
                 if (restricted && !SafManager.exists(this, path)) {
                     Toast.makeText(this, "File no longer exists", Toast.LENGTH_SHORT).show()
-                    return
+                    return null
                 }
                 if (!restricted && !file.exists()) {
                     Toast.makeText(this, "File no longer exists", Toast.LENGTH_SHORT).show()
-                    return
+                    return null
                 }
             }
 
             val uri = if (isVirtual) {
-                if (fileItem.isEncrypted && passphrase == null) {
+                val cached = viewModel.cachedZipPassword
+                val effectivePassphrase = passphrase ?: cached
+
+                if (fileItem.isEncrypted && effectivePassphrase == null) {
                     viewModel.passphrasePromptItem = fileItem
                     viewModel.passphraseAction = { pw -> openFile(fileItem, pw) }
-                    return
+                    return null
                 }
 
-                // Extract virtual file to cache before opening. `name` is just the
-                // display basename now, so it's safe to use directly in a path.
                 val cacheFile = File(cacheDir, "temp_open_${fileItem.name}")
                 try {
                     cacheFile.outputStream().use { output ->
-                        ArchiveManager.extractEntry(fileItem.virtualZipSource!!, fileItem.zipEntryPath ?: fileItem.name, output, passphrase)
+                        ArchiveManager.extractEntry(fileItem.virtualZipSource!!, fileItem.zipEntryPath ?: fileItem.name, output, effectivePassphrase)
+                    }
+                    if (effectivePassphrase != null) {
+                        viewModel.cachedZipPassword = effectivePassphrase
                     }
                     FileProvider.getUriForFile(this, "${packageName}.provider", cacheFile)
                 } catch (e: Exception) {
-                    if (e.message?.contains("Password required") == true) {
+                    if (e.message?.contains("Password required") == true || e.message?.contains("Invalid password") == true) {
+                        viewModel.cachedZipPassword = null
                         viewModel.passphrasePromptItem = fileItem
                         viewModel.passphraseAction = { pw -> openFile(fileItem, pw) }
                     } else {
                         Toast.makeText(this, "Failed to extract file: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
-                    return
+                    return null
                 }
-            } else if (restricted) {
+            }
+else if (restricted) {
                 SafManager.getContentUri(this, path) ?: run {
                     Toast.makeText(this, "Couldn't access file", Toast.LENGTH_SHORT).show()
-                    return
+                    return null
                 }
             } else {
                 FileProvider.getUriForFile(
@@ -860,21 +888,15 @@ class MainActivity : ComponentActivity() {
                         }
                         startActivity(settingsIntent)
                         Toast.makeText(this, "Please allow installation from this source", Toast.LENGTH_LONG).show()
-                        return
+                        return null
                     }
                 }
 
-                val intent = Intent(Intent.ACTION_VIEW).apply {
+                return Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(uri, "application/vnd.android.package-archive")
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                try {
-                    startActivity(intent)
-                } catch (e: Exception) {
-                    Toast.makeText(this, "No app can install this APK", Toast.LENGTH_SHORT).show()
-                }
-                return
             }
 
             val intent = Intent(Intent.ACTION_VIEW)
@@ -901,12 +923,8 @@ class MainActivity : ComponentActivity() {
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
-                    try {
-                        startActivity(offlineIntent)
-                        return
-                    } catch (e: Exception) {
-                        // Fallback to online version if offline play fails
-                    }
+                    // Try returning this if we have it, or let the caller decide
+                    // For now, openFile handles it differently
                 }
             }
 
@@ -915,8 +933,34 @@ class MainActivity : ComponentActivity() {
             intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
+            return intent
+        } catch (e: Exception) {
+            Toast.makeText(this, "Couldn't prepare intent: ${e.message}", Toast.LENGTH_SHORT).show()
+            return null
+        }
+    }
+
+    private fun openFile(fileItem: FileItem, passphrase: String? = null) {
+        val intent = createViewIntent(fileItem, passphrase) ?: return
+        try {
+            // Check for offline file first (simplified from previous implementation)
+            if (fileItem.fileType == FileType.VIDEO || fileItem.fileType == FileType.AUDIO || fileItem.fileType == FileType.IMAGE) {
+                viewModel.getLocalOfflineFile(fileItem)?.let { localFile ->
+                    val localUri = FileProvider.getUriForFile(this, "${packageName}.provider", localFile)
+                    val type = contentResolver.getType(localUri) ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(fileItem.extension)
+                    val offlineIntent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(localUri, type ?: "*/*")
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    try {
+                        startActivity(offlineIntent)
+                        return
+                    } catch (e: Exception) {}
+                }
+            }
+
             try {
-                // Remove createChooser to allow default app selection/recognition
                 startActivity(intent)
             } catch (e: Exception) {
                 val chooser = Intent.createChooser(intent, "Open with")
@@ -926,6 +970,7 @@ class MainActivity : ComponentActivity() {
             Toast.makeText(this, "Couldn't open file: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
+
 
     internal fun openRecycledFile(item: RecycledItem) {
         val file = RecycleBinManager.getRecycledFile(this, item)

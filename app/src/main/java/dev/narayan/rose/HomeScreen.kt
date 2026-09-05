@@ -73,6 +73,7 @@ fun HomeScreen(
     onOpenCategory: (FileType, String) -> Unit,
     onOpenRecent: () -> Unit,
     onFileClick: (FileItem) -> Unit,
+    onOpenWithClick: (FileItem) -> Unit,
     onShareClick: (FileItem) -> Unit,
     onSettingsClick: () -> Unit,
     onAboutClick: () -> Unit,
@@ -488,8 +489,9 @@ fun HomeScreen(
                             recentFiles = viewModel.recentFiles,
                             showDividers = viewModel.showListDividers,
                             onOpenRecent = onOpenRecent,
-                            onOpenPath = { path -> onOpenPath(path, null) },
+                            onOpenPath = onOpenPath,
                             onFileClick = onFileClick,
+                            onOpenWithClick = onOpenWithClick,
                             onShareClick = onShareClick,
                             onRenameClick = { fileForRename = it },
                             onDeleteClick = { fileForDelete = it },
@@ -906,8 +908,9 @@ private fun RecentFilesSection(
     recentFiles: List<FileItem>,
     showDividers: Boolean,
     onOpenRecent: () -> Unit,
-    onOpenPath: (String) -> Unit,
+    onOpenPath: (String, FileItem?) -> Unit,
     onFileClick: (FileItem) -> Unit,
+    onOpenWithClick: (FileItem) -> Unit,
     onShareClick: (FileItem) -> Unit,
     onRenameClick: (FileItem) -> Unit,
     onDeleteClick: (FileItem) -> Unit,
@@ -1037,9 +1040,16 @@ private fun RecentFilesSection(
                                         text = { Text("Open location", modifier = Modifier.padding(vertical = 4.dp)) },
                                         onClick = {
                                             showFileMenu = false
-                                            onOpenPath(item.file.parent ?: item.file.absolutePath)
+                                            onOpenPath(item.file.parent ?: item.file.absolutePath, item)
                                         },
                                         leadingIcon = { Icon(Icons.Default.FolderOpen, null) },
+                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                                    )
+                                    HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                    DropdownMenuItem(
+                                        text = { Text("Open with", modifier = Modifier.padding(vertical = 4.dp)) },
+                                        onClick = { showFileMenu = false; onOpenWithClick(item) },
+                                        leadingIcon = { Icon(Icons.Default.OpenInNew, null) },
                                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                                     )
                                     HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
