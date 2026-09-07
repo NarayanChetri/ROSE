@@ -1041,14 +1041,17 @@ fun FileExplorerScreen(
                             val hasShizuku = ShizukuManager.isAvailable() && ShizukuManager.hasPermission()
                             val hasSaf = SafManager.hasPermission(LocalContext.current, viewModel.currentPath)
 
-                            // DO NOT show Restricted card if Shizuku is authorized.
-                            // SAF is disabled for OBB/Data on Android 11+, so suggesting it is a bug.
-                            val accessDenied = isRestricted && viewModel.files.isEmpty() && !hasSaf && !hasShizuku
+                            // Show the card if access was explicitly denied by the load process
+                            val accessDenied = viewModel.accessDenied
 
                             if (accessDenied && !viewModel.isLoading) {
+                                val isSystemRestricted = isRestricted
                                 RestrictedFolderView(
                                     path = viewModel.currentPath,
                                     isShizukuAuthorized = hasShizuku,
+                                    title = if (isSystemRestricted) "Restricted System Folder" else "Drive Access Required",
+                                    description = if (isSystemRestricted) "Android 11+ restricts standard access to Android/data and Android/obb folders to protect app data. To view and modify these files, ROSE requires Shizuku permission."
+                                    else "This USB drive or SD card requires standard Android access permission to be read and modified. Please grant access.",
                                     onGrantShizuku = {
                                         if (ShizukuManager.isAvailable()) {
                                             viewModel.onShizukuResult(false, viewModel.currentPath) // Reset
@@ -3823,7 +3826,9 @@ fun RestrictedFolderView(
     path: String,
     isShizukuAuthorized: Boolean = false,
     onGrantShizuku: () -> Unit,
-    onGrantSaf: () -> Unit
+    onGrantSaf: () -> Unit,
+    title: String = "Restricted Folder",
+    description: String = "Android restricts access to this folder. To view and modify these files, ROSE needs permission."
 ) {
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
 
@@ -3835,40 +3840,26 @@ fun RestrictedFolderView(
             modifier = Modifier
                 .fillMaxWidth(0.9f)
                 .padding(16.dp),
-            shape = RoundedCornerShape(28.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp)
             ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            shape = RoundedCornerShape(24.dp)
         ) {
             Column(
-                modifier = Modifier
-                    .padding(24.dp)
-                    .fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                modifier = Modifier.padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .background(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                            androidx.compose.foundation.shape.CircleShape
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Outlined.Lock,
-                        contentDescription = null,
-                        modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
+                Icon(
+                    Icons.Outlined.Lock,
+                    contentDescription = null,
+                    modifier = Modifier.size(64.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
 
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Text(
-                    "Restricted System Folder",
+                    title,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.ExtraBold,
                     textAlign = TextAlign.Center
@@ -3877,74 +3868,56 @@ fun RestrictedFolderView(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    "Android 11+ restricts standard access to Android/data and Android/obb folders to protect app data. To view and modify these files, ROSE requires Shizuku permission.",
+                    description,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                     lineHeight = 20.sp
                 )
 
-                Spacer(modifier = Modifier.height(32.dp))
+                val isSystemRestricted = path.contains("/Android/data") || path.contains("/Android/obb")
 
-                Button(
-                    onClick = onGrantShizuku,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Outlined.VerifiedUser,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            "Grant Shizuku Access",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                TextButton(
-                    onClick = { uriHandler.openUri("https://shizuku.rikka.app/download/") }
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Outlined.HelpOutline,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            "How to setup Shizuku?",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-
-                // Fallback for non-Android/data/obb paths that might be restricted
-                if (!path.contains("/Android/data") && !path.contains("/Android/obb")) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    TextButton(
-                        onClick = onGrantSaf,
-                        modifier = Modifier.alpha(0.7f)
+                if (isSystemRestricted) {
+                    Button(
+                        onClick = onGrantShizuku,
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
-                        Text(
-                            "Use system picker (Fallback)",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.VerifiedUser, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("Grant Shizuku Access", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    TextButton(onClick = { uriHandler.openUri("https://shizuku.rikka.app/download/") }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.AutoMirrored.Outlined.HelpOutline, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("How to setup Shizuku?", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                } else {
+                    Button(
+                        onClick = onGrantSaf,
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.FolderSpecial, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("Grant Storage Access", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    TextButton(onClick = onGrantShizuku, modifier = Modifier.alpha(0.7f)) {
+                        Text("Use Shizuku instead", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

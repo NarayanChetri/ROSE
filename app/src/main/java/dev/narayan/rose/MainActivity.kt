@@ -677,6 +677,12 @@ class MainActivity : ComponentActivity() {
                 }
                 uris?.let { sharedUris = it }
             }
+            android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
+                // The user tapped ROSE in the Android USB app-chooser dialog.
+                // Tell the ViewModel to automatically navigate to the first
+                // USB storage device it sees once Android finishes mounting it.
+                viewModel.handleUsbDeviceAttached()
+            }
         }
     }
 

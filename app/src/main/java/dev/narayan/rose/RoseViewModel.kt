@@ -1207,6 +1207,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             }
         )
     }
+    var accessDenied by mutableStateOf(false)
+        private set
 
     fun loadFiles(path: String, isManualRefresh: Boolean = false, showLoading: Boolean = true) {
         val normalizedPath = ShizukuManager.normalize(path)
@@ -1245,6 +1247,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         // Material Files style: if navigating to a new path, open it instantly, clear
         // current files, and show a loading spinner if the scan takes more than a moment.
         loadJob?.cancel()
+        accessDenied = false
         if (normalizedPath != currentPath) {
             currentPath = normalizedPath
             files = emptyList()
@@ -1267,8 +1270,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 //
                 // Shizuku support: if SAF is not granted, we can try using Shizuku
                 // to list files smoothly without the system picker if authorized.
-                val isRestricted = SafManager.isRestrictedPath(normalizedPath) ||
-                        (normalizedPath.startsWith("/") && !normalizedPath.startsWith(Environment.getExternalStorageDirectory().absolutePath))
+                val isRestricted = SafManager.isRestrictedPath(normalizedPath)
 
                 val result = withContext(Dispatchers.IO) {
                     val directory = File(normalizedPath)
@@ -1362,9 +1364,13 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         } else {
                             // No Shizuku AND no SAF permission.
                             // Triggering permission is now handled by user interaction in the UI.
+                            withContext(Dispatchers.Main) {
+                                accessDenied = true
+                            }
                             emptyList()
                         }
                     }
+
                 }
 
                 withContext(Dispatchers.Main) {
@@ -2600,9 +2606,27 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             withContext(Dispatchers.Main) {
                 storageDevices.clear()
                 storageDevices.addAll(devices)
+
+                if (pendingUsbNavigation) {
+                    val usb = devices.filterIsInstance<StorageDevice.Physical>().firstOrNull { it.isSdCard }
+                    if (usb != null) {
+                        currentPath = usb.path
+                        loadFiles(usb.path)
+                        pendingUsbNavigation = false
+                    }
+                }
             }
         }
     }
+
+    var pendingUsbNavigation by mutableStateOf(false)
+        private set
+
+    fun handleUsbDeviceAttached() {
+        pendingUsbNavigation = true
+        loadStorageDevices()
+    }
+
 
 
     fun addExternalStorage(name: String, treeUri: Uri) {
