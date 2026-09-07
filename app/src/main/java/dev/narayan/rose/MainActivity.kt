@@ -355,6 +355,15 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
+                        // Handle auto-navigation (e.g. when USB is attached and user selects ROSE)
+                        LaunchedEffect(viewModel.pendingNavigationPath) {
+                            viewModel.pendingNavigationPath?.let { path ->
+                                viewModel.resetFiles()
+                                screen = AppScreen.Files(startPath = path, fromHome = true)
+                                viewModel.clearPendingNavigation()
+                            }
+                        }
+
                         // Handle viewed archive
                         LaunchedEffect(pendingArchiveUri) {
                             pendingArchiveUri?.let { uri ->
@@ -676,6 +685,12 @@ class MainActivity : ComponentActivity() {
                     intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
                 }
                 uris?.let { sharedUris = it }
+            }
+            android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
+                // The user tapped ROSE in the Android USB app-chooser dialog.
+                // Tell the ViewModel to automatically navigate to the first
+                // USB storage device it sees once Android finishes mounting it.
+                viewModel.handleUsbDeviceAttached()
             }
         }
     }
@@ -1012,11 +1027,68 @@ else if (restricted) {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // USB / SD hot-plug: listen for MEDIA_* broadcasts while the app is
+    // in the foreground (onStart → onStop window). Registration is done
+    // programmatically (not in the manifest) so we only receive events
+    // while the Activity is visible — no wasted work in the background.
+    // -------------------------------------------------------------------------
+    private val storageReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: Intent?) {
+            intent ?: return
+            // Extract the filesystem path from the intent's data URI
+            // (e.g. "file:///storage/xxxx-xxxx" → "/storage/xxxx-xxxx")
+            val path = intent.data?.path ?: ""
+            when (intent.action) {
+                Intent.ACTION_MEDIA_MOUNTED -> {
+                    // New volume appeared (USB inserted or SD card mounted)
+                    viewModel.loadStorageDevices()
+                }
+                Intent.ACTION_MEDIA_REMOVED,
+                Intent.ACTION_MEDIA_UNMOUNTED,
+                Intent.ACTION_MEDIA_EJECT,
+                Intent.ACTION_MEDIA_BAD_REMOVAL -> {
+                    // Volume gone — refresh list and navigate away if we are inside it
+                    if (path.isNotEmpty()) {
+                        viewModel.onStorageEjected(path)
+                    } else {
+                        viewModel.loadStorageDevices()
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val filter = android.content.IntentFilter().apply {
+            addAction(Intent.ACTION_MEDIA_MOUNTED)
+            addAction(Intent.ACTION_MEDIA_REMOVED)
+            addAction(Intent.ACTION_MEDIA_UNMOUNTED)
+            addAction(Intent.ACTION_MEDIA_EJECT)
+            addAction(Intent.ACTION_MEDIA_BAD_REMOVAL)
+            // Required for all MEDIA_* intents — without this the receiver
+            // never fires even when the action string matches.
+            addDataScheme("file")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(storageReceiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(storageReceiver, filter)
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        try { unregisterReceiver(storageReceiver) } catch (e: IllegalArgumentException) { /* already unregistered */ }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
         Shizuku.removeBinderReceivedListener(shizukuBinderListener)
     }
+
 
     private fun hasStoragePermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {

@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+    USB device filter: an empty <usb-device> element with no vendor-id /
+    product-id restrictions matches ALL USB devices, so ROSE appears in
+    the "Choose an app for the USB device" chooser regardless of which
+    USB drive / OTG adapter is plugged in.
+-->
+<resources>
+    <usb-device />
+</resources>

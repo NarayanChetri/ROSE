@@ -1,6 +1,9 @@
 package dev.narayan.rose
 
+import android.app.Application
+import android.content.Intent
 import android.os.Environment
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.Animatable
@@ -1356,9 +1359,9 @@ private fun StorageSection(
                                     is StorageDevice.Physical -> onOpenPath(device.path)
                                     is StorageDevice.Logical -> onOpenPath(device.treeUri.toString())
                                 }
-                            },
-                            onLongClick = {}
+                            }
                         )
+
                         if (viewModel.showListDividers && index != devices.lastIndex) {
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                         }
@@ -1369,21 +1372,16 @@ private fun StorageSection(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun StorageDeviceItem(
     device: StorageDevice,
     modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit
+    onClick: () -> Unit
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick
-            )
+            .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
