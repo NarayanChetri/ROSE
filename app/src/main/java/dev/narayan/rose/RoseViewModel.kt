@@ -1211,6 +1211,13 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     fun loadFiles(path: String, isManualRefresh: Boolean = false, showLoading: Boolean = true) {
+        // Clear any stale storage-removed event when we explicitly start browsing a path.
+        // This prevents the "USB drive was removed" toast from firing if a drive was
+        // previously ejected while we were on the Home screen and then re-inserted.
+        if (storageRemovedEvent != null) {
+            clearStorageRemovedEvent()
+        }
+
         val normalizedPath = ShizukuManager.normalize(path)
         val archiveExtensions = listOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz")
 
@@ -2048,6 +2055,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         cachedZipPassword = null
         currentZipSourcePath = null
         currentZipEntryPath = ""
+        clearStorageRemovedEvent()
 
         // `categoryFiles` used to be left untouched here on the (wrong)
         // assumption that clearing it risked the same "blank flash" as
@@ -2613,6 +2621,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         currentPath = usb.path
                         loadFiles(usb.path)
                         pendingUsbNavigation = false
+                        // Signal to MainActivity that it should switch to the Files screen
+                        pendingNavigationPath = usb.path
                     }
                 }
             }
@@ -2621,6 +2631,13 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
     var pendingUsbNavigation by mutableStateOf(false)
         private set
+
+    var pendingNavigationPath by mutableStateOf<String?>(null)
+        private set
+
+    fun clearPendingNavigation() {
+        pendingNavigationPath = null
+    }
 
     fun handleUsbDeviceAttached() {
         pendingUsbNavigation = true

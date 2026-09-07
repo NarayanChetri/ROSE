@@ -355,6 +355,15 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
+                        // Handle auto-navigation (e.g. when USB is attached and user selects ROSE)
+                        LaunchedEffect(viewModel.pendingNavigationPath) {
+                            viewModel.pendingNavigationPath?.let { path ->
+                                viewModel.resetFiles()
+                                screen = AppScreen.Files(startPath = path, fromHome = true)
+                                viewModel.clearPendingNavigation()
+                            }
+                        }
+
                         // Handle viewed archive
                         LaunchedEffect(pendingArchiveUri) {
                             pendingArchiveUri?.let { uri ->
