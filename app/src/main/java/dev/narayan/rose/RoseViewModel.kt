@@ -2547,21 +2547,25 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
             // 1. Internal Storage
             val internalFile = Environment.getExternalStorageDirectory()
-            val internalStats = StatFs(internalFile.path)
+            val internalStats = try { StatFs(internalFile.path) } catch (e: Exception) { null }
             devices.add(
                 StorageDevice.Physical(
                     name = "Internal Storage",
                     path = internalFile.absolutePath,
-                    totalBytes = internalStats.totalBytes,
-                    availableBytes = internalStats.availableBytes,
+                    totalBytes = internalStats?.totalBytes ?: 0L,
+                    availableBytes = internalStats?.availableBytes ?: 0L,
                     isSdCard = false
                 )
             )
 
-            // 2. SD Cards and other physical volumes
+            // 2. SD Cards and other physical volumes (includes USB OTG drives).
+            // Accept both MEDIA_MOUNTED and MEDIA_MOUNTED_READ_ONLY so read-only
+            // FAT32/exFAT drives still appear in the list.
             val sm = getApplication<Application>().getSystemService(android.content.Context.STORAGE_SERVICE) as android.os.storage.StorageManager
             sm.storageVolumes.forEach { volume ->
-                if (!volume.isPrimary && volume.state == Environment.MEDIA_MOUNTED) {
+                val mounted = volume.state == Environment.MEDIA_MOUNTED ||
+                        volume.state == "mounted_ro" // MEDIA_MOUNTED_READ_ONLY constant value
+                if (!volume.isPrimary && mounted) {
                     val path = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                         volume.directory?.absolutePath
                     } else {
@@ -2575,13 +2579,17 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                     if (path != null) {
-                        val stats = StatFs(path)
+                        // Wrap StatFs in try/catch: FAT32 and some exotic formats
+                        // can throw IllegalArgumentException or IOException here on
+                        // certain devices/kernels. We still add the volume to the
+                        // list so the user can see and open it — sizes just show 0.
+                        val stats = try { StatFs(path) } catch (e: Exception) { null }
                         devices.add(
                             StorageDevice.Physical(
                                 name = volume.getDescription(getApplication()) ?: "SD Card",
                                 path = path,
-                                totalBytes = stats.totalBytes,
-                                availableBytes = stats.availableBytes,
+                                totalBytes = stats?.totalBytes ?: 0L,
+                                availableBytes = stats?.availableBytes ?: 0L,
                                 isSdCard = volume.isRemovable
                             )
                         )
@@ -2595,6 +2603,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
 
     fun addExternalStorage(name: String, treeUri: Uri) {
         val newStorage = StorageDevice.Logical(name, treeUri)
@@ -2615,8 +2624,46 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
     var onRequestAddStorage: () -> Unit = {}
 
+    /**
+     * Returns true if [path] lives on a removable physical volume (SD card or
+     * USB OTG drive). Used to suppress the "Delete permanently" checkbox in the
+     * confirmation dialog — for removable drives there is no recycle-bin benefit
+     * visible to the user (the bin is on the drive itself and lost if the drive
+     * is ejected), so we hide the toggle and let the global useRecycleBin
+     * setting decide silently, without exposing the low-level detail.
+     */
+    fun isRemovableStorage(path: String): Boolean {
+        return storageDevices.any { device ->
+            device is StorageDevice.Physical &&
+                    device.isSdCard &&
+                    path.startsWith(device.path)
+        }
+    }
+
+    /** True if the user is currently browsing a removable storage path. */
+    fun isCurrentPathRemovable(): Boolean = isRemovableStorage(currentPath)
+
+    // One-shot event: set to the ejected volume path when Android broadcasts
+    // MEDIA_REMOVED / MEDIA_UNMOUNTED / MEDIA_EJECT. UI observes this to
+    // navigate away and show a Snackbar, then calls clearStorageRemovedEvent().
+    var storageRemovedEvent by mutableStateOf<String?>(null)
+        private set
+
+    fun onStorageEjected(path: String) {
+        loadStorageDevices()
+        // Only fire the navigate-away event if we are currently inside the ejected volume
+        if (currentPath.startsWith(path)) {
+            storageRemovedEvent = path
+        }
+    }
+
+    fun clearStorageRemovedEvent() {
+        storageRemovedEvent = null
+    }
+
     var offlineFiles: Set<String> by mutableStateOf(settings.offlineFiles)
     val activeJobs = JobManager.activeJobs
+
 
     // Some cloud providers (Google Drive in particular) report a display
     // name with no extension for ordinary binary files even when the MIME

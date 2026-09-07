@@ -368,7 +368,24 @@ fun FileExplorerScreen(
         }
     }
 
+    // Live USB/SD removal feedback: when the volume the user is browsing
+    // is ejected, navigate straight back to Home and show a brief message
+    // rather than leaving the user on a stale, empty directory listing.
+    LaunchedEffect(viewModel.storageRemovedEvent) {
+        val ejectedPath = viewModel.storageRemovedEvent ?: return@LaunchedEffect
+        viewModel.clearStorageRemovedEvent()
+        // Show a Toast so the user understands why the screen changed
+        android.widget.Toast.makeText(
+            context,
+            "USB drive was removed",
+            android.widget.Toast.LENGTH_SHORT
+        ).show()
+        // Navigate back to Home
+        onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
+    }
+
     BackHandler(enabled = true) {
+
         if (viewModel.propertiesFile != null) {
             viewModel.closeProperties()
         } else if (activeScreen != "Main") {
@@ -1587,6 +1604,10 @@ fun FileExplorerScreen(
     }
 
     pendingDelete?.let { pending ->
+        val isOnRemovable = when (pending) {
+            is PendingDelete.Single -> viewModel.isRemovableStorage(pending.fileItem.file.absolutePath)
+            is PendingDelete.Selection -> viewModel.isCurrentPathRemovable()
+        }
         DeleteConfirmationDialog(
             useRecycleBin = viewModel.useRecycleBin,
             pending = pending,
@@ -1597,7 +1618,8 @@ fun FileExplorerScreen(
                     is PendingDelete.Selection -> viewModel.deleteSelected(permanently)
                 }
                 pendingDelete = null
-            }
+            },
+            isOnRemovableStorage = isOnRemovable
         )
     }
 }
@@ -1613,7 +1635,12 @@ fun DeleteConfirmationDialog(
     useRecycleBin: Boolean,
     pending: PendingDelete,
     onDismiss: () -> Unit,
-    onConfirm: (Boolean) -> Unit
+    onConfirm: (Boolean) -> Unit,
+    // When the file(s) live on a removable volume (USB / SD card) the
+    // "Delete permanently" checkbox is hidden. The user doesn't need to
+    // know whether the recycle bin is on the drive or not — the global
+    // useRecycleBin setting still applies silently.
+    isOnRemovableStorage: Boolean = false
 ) {
     val totalSize = when (pending) {
         is PendingDelete.Single -> pending.fileItem.size
@@ -1658,10 +1685,12 @@ fun DeleteConfirmationDialog(
                     )
                 }
 
-                // Show checkbox if Recycle Bin is enabled OR if it's a large file
-                // (giving users the choice even if they normally have Bin OFF,
-                // or just making it explicit for large files).
-                if (useRecycleBin || isLarge) {
+                // Show checkbox only when recycle bin is on OR it's a large file,
+                // AND the file is NOT on removable storage (USB / SD card).
+                // For removable volumes the checkbox is hidden — the global
+                // useRecycleBin setting decides silently so we don't expose the
+                // internal ".rose_recycle_bin on the drive" detail.
+                if (!isOnRemovableStorage && (useRecycleBin || isLarge)) {
                     Spacer(modifier = Modifier.height(16.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -1696,6 +1725,8 @@ fun DeleteConfirmationDialog(
         shape = RoundedCornerShape(28.dp)
     )
 }
+
+
 
 
 @OptIn(ExperimentalMaterial3Api::class)
