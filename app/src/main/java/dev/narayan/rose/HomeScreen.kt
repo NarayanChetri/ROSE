@@ -157,6 +157,15 @@ fun HomeScreen(
         }
     }
 
+    LaunchedEffect(Unit) {
+        if (!viewModel.hasRunCategoryAnimation) {
+            // Small delay so the first time user sees the home screen they get the counts
+            // counting up, but subsequent visits are instant.
+            kotlinx.coroutines.delay(1000)
+            viewModel.hasRunCategoryAnimation = true
+        }
+    }
+
     var showMenu by remember { mutableStateOf(false) }
     var isSearching by remember { mutableStateOf(false) }
 
@@ -477,6 +486,7 @@ fun HomeScreen(
                         CategoryGrid(
                             counts = viewModel.categoryCounts,
                             isLoading = viewModel.isCategoryCountsLoading,
+                            hasRunAnimation = viewModel.hasRunCategoryAnimation,
                             onCategoryClick = { category -> onOpenCategory(category.type, category.label) }
                         )
                     }
@@ -807,6 +817,7 @@ private fun StorageCapsule(
 private fun CategoryGrid(
     counts: Map<FileType, Int>,
     isLoading: Boolean,
+    hasRunAnimation: Boolean,
     onCategoryClick: (HomeCategory) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -821,6 +832,7 @@ private fun CategoryGrid(
                         count = counts[category.type] ?: 0,
                         isLoading = isLoading,
                         index = rowIndex * 3 + colIndex,
+                        hasRunAnimation = hasRunAnimation,
                         modifier = Modifier.weight(1f),
                         onClick = { onCategoryClick(category) }
                     )
@@ -839,11 +851,25 @@ private fun CategoryCard(
     count: Int,
     isLoading: Boolean,
     index: Int = 0,
+    hasRunAnimation: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    // What the count-up animation is currently chasing. Deliberately starts at
+    // 0 instead of `count` directly - `count` can already be the real number
+    // on first composition (seeded from SettingsManager's cache), and without
+    // this indirection animateIntAsState would just snap straight to it with
+    // no animation at all. Starting the target at 0 and only moving it to
+    // `count` once composition is live means the cached value counts up too,
+    // then a later background rescan just animates the (usually small) delta
+    // from wherever the count currently sits.
+    var animationTarget by remember { mutableIntStateOf(if (hasRunAnimation) count else 0) }
+    LaunchedEffect(count) {
+        animationTarget = count
+    }
+
     val animatedCount by androidx.compose.animation.core.animateIntAsState(
-        targetValue = count,
+        targetValue = animationTarget,
         animationSpec = tween(durationMillis = 1000, easing = FastOutSlowInEasing),
         label = "CategoryCountAnimation"
     )
@@ -853,10 +879,12 @@ private fun CategoryCard(
     // Modifier.animateItem(), which only works inside a Lazy scope and
     // would blank the screen here since this grid is a regular Column/Row).
     val density = LocalDensity.current
-    val animatedProgress = remember { Animatable(0f) }
+    val animatedProgress = remember { Animatable(if (hasRunAnimation) 1f else 0f) }
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay((index * 25).toLong())
-        animatedProgress.animateTo(1f, tween(durationMillis = 220, easing = LinearOutSlowInEasing))
+        if (!hasRunAnimation) {
+            kotlinx.coroutines.delay((index * 25).toLong())
+            animatedProgress.animateTo(1f, tween(durationMillis = 220, easing = LinearOutSlowInEasing))
+        }
     }
 
     Card(
@@ -1451,7 +1479,7 @@ private fun StorageDeviceItem(
 private fun FolderPickerDialog(onDismiss: () -> Unit, onFolderSelected: (String) -> Unit) {
     val rootDir = remember { Environment.getExternalStorageDirectory() }
     var currentDir by remember { mutableStateOf(rootDir) }
-    
+
     val vm = (androidx.compose.ui.platform.LocalContext.current as? androidx.activity.ComponentActivity)?.let { (it as? MainActivity)?.viewModel }
 
     // Use FileItems to match the main listing and provide item counts
@@ -1583,7 +1611,7 @@ private fun FolderPickerRow(
             animatedProgress.animateTo(1f, tween(durationMillis = 200, easing = LinearOutSlowInEasing))
         }
     }
-    
+
     ListItem(
         headlineContent = {
             Text(

@@ -49,7 +49,7 @@ object SafManager {
     fun isRestrictedPath(path: String): Boolean {
         if (isSafUri(path)) return true
         val lowPath = try { File(path).canonicalPath.lowercase() } catch (e: Exception) { path.lowercase() }
-        
+
         // Check for Android/data or Android/obb at the end of path or as a directory segment
         return lowPath.endsWith("/android/data") || lowPath.contains("/android/data/") ||
                 lowPath.endsWith("/android/obb") || lowPath.contains("/android/obb/")
@@ -88,13 +88,13 @@ object SafManager {
     fun hasRootPermission(context: Context): Boolean = persistedRootTreeUri(context) != null
 
     fun hasPermission(context: Context, path: String): Boolean {
-        if (isSafUri(path)) return true 
+        if (isSafUri(path)) return true
         if (!isRestrictedPath(path)) return true
         if (hasRootPermission(context)) return true
-        
+
         // Check if we have a persisted permission for this specific folder or a parent
         val docId = documentIdForPath(path) ?: return false
-        return context.contentResolver.persistedUriPermissions.any { 
+        return context.contentResolver.persistedUriPermissions.any {
             it.isReadPermission && it.uri.toString().contains(docId.replace(":", "%3A"))
         }
     }
@@ -115,11 +115,11 @@ object SafManager {
     fun requestPermission(context: Context, path: String): Intent? {
         if (isSafUri(path)) return null
         if (!isRestrictedPath(path)) return null
-        
+
         // Targeted permission request for specific subfolder (like CX/NFile)
         val docId = documentIdForPath(path) ?: return requestRootPermission()
         val initialUri = DocumentsContract.buildDocumentUri(AUTHORITY, docId)
-        
+
         return Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
                     Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
@@ -142,15 +142,15 @@ object SafManager {
                 null
             }
         }
-        
+
         val (rootDocId, relativePath) = splitAndroidSubRoot(path) ?: return null
         val fullDocId = if (relativePath.isEmpty()) rootDocId else "$rootDocId/$relativePath"
-        
+
         // Try to find a persisted URI that can reach this path
         val treeUri = context.contentResolver.persistedUriPermissions
             .filter { it.isReadPermission }
             .map { it.uri }
-            .find { uri -> 
+            .find { uri ->
                 val treeId = try { DocumentsContract.getTreeDocumentId(uri) } catch (e: Exception) { null }
                 treeId != null && (fullDocId == treeId || fullDocId.startsWith("$treeId/"))
             } ?: return null
@@ -158,16 +158,16 @@ object SafManager {
         var doc = DocumentFile.fromSingleUri(
             context, DocumentsContract.buildDocumentUriUsingTree(treeUri, fullDocId)
         )
-        
+
         if (doc == null || !doc.exists()) {
             // Fallback: start from tree root and walk down
             val treeId = DocumentsContract.getTreeDocumentId(treeUri)
             doc = DocumentFile.fromSingleUri(context, DocumentsContract.buildDocumentUriUsingTree(treeUri, treeId))
             if (doc == null) return null
-            
+
             val relativeToTree = fullDocId.removePrefix(treeId).removePrefix("/")
             if (relativeToTree.isEmpty()) return doc
-            
+
             for (part in relativeToTree.split("/").filter { it.isNotEmpty() }) {
                 doc = doc!!.findFile(part) ?: return null
             }
@@ -200,6 +200,30 @@ object SafManager {
 
     /** Content Uri for a path, suitable for ACTION_VIEW / ACTION_SEND with FLAG_GRANT_READ_URI_PERMISSION. */
     fun getContentUri(context: Context, path: String): Uri? = getDocumentFile(context, path)?.uri
+
+    /**
+     * Recursive size (bytes) of a directory reached only through the SAF grant (no
+     * Shizuku authorized). Used by the Properties dialog as the fallback when Shizuku
+     * isn't available - walking DocumentFile children is the only way to see inside
+     * Android/data or Android/obb without it.
+     */
+    fun folderSize(context: Context, path: String): Long {
+        val doc = getDocumentFile(context, path) ?: return 0L
+        return try {
+            walkDocumentSize(doc)
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    private fun walkDocumentSize(doc: DocumentFile): Long {
+        if (!doc.isDirectory) return doc.length()
+        var total = 0L
+        for (child in doc.listFiles()) {
+            total += if (child.isDirectory) walkDocumentSize(child) else child.length()
+        }
+        return total
+    }
 
     // ---------------------------------------------------------------------
     // Listing
@@ -281,7 +305,7 @@ object SafManager {
         try {
             val authority = uri.authority ?: return emptyList()
 
-            // Extract the tree ID and document ID. Even if it's a subfolder, 
+            // Extract the tree ID and document ID. Even if it's a subfolder,
             // we need the tree ID to list its children.
             val treeId = try {
                 DocumentsContract.getTreeDocumentId(uri)

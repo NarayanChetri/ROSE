@@ -116,8 +116,37 @@ object ShizukuManager {
             // Modified to also include child count for directories.
             // searchPrefix is escaped since it's a real filesystem path that can
             // contain shell metacharacters - see shellEscape() for why this matters.
+            //
+            // The child count used to be `count=$(ls -1A "$f" | wc -l)`, which forks
+            // two extra processes (ls, wc) *and* a subshell for every single directory
+            // entry. On a folder like Android/data - which can easily hold 100+ app
+            // subfolders - that's 300+ extra fork/execs in one listing, and was the
+            // main reason browsing Android/data or Android/obb felt so slow. Counting
+            // via shell's own glob expansion (`set -- "$f"/* "$f"/.*`) needs zero
+            // forks, so the whole directory count is effectively free.
             val escapedPrefix = shellEscape(searchPrefix)
-            val cmd = "for f in $escapedPrefix/* $escapedPrefix/.*; do [ -e \"\$f\" ] && [ \"\${f##*/}\" != \".\" ] && [ \"\${f##*/}\" != \"..\" ] && { count=0; [ -d \"\$f\" ] && count=$(ls -1A \"\$f\" 2>/dev/null | wc -l); (stat -L -c \"%F|%s|%Y|\$count|%n\" \"\$f\" 2>/dev/null || stat -c \"%F|%s|%Y|\$count|%n\" \"\$f\"); }; done"
+            val cmd = buildString {
+                append("for f in $escapedPrefix/* $escapedPrefix/.*; do ")
+                append("[ -e \"\$f\" ] || continue; ")
+                append("n=\"\${f##*/}\"; ")
+                append("[ \"\$n\" = \".\" ] && continue; ")
+                append("[ \"\$n\" = \"..\" ] && continue; ")
+                append("count=0; ")
+                append("if [ -d \"\$f\" ]; then ")
+                append("cnt=0; ")
+                append("set -- \"\$f\"/* \"\$f\"/.*; ")
+                append("for x in \"\$@\"; do ")
+                append("[ -e \"\$x\" ] || continue; ")
+                append("xn=\"\${x##*/}\"; ")
+                append("[ \"\$xn\" = \".\" ] && continue; ")
+                append("[ \"\$xn\" = \"..\" ] && continue; ")
+                append("cnt=\$((cnt+1)); ")
+                append("done; ")
+                append("count=\$cnt; ")
+                append("fi; ")
+                append("stat -L -c \"%F|%s|%Y|\$count|%n\" \"\$f\" 2>/dev/null || stat -c \"%F|%s|%Y|\$count|%n\" \"\$f\"; ")
+                append("done")
+            }
 
             val process = runShizukuCommand(cmd)
             val reader = BufferedReader(InputStreamReader(process.inputStream))
@@ -196,6 +225,77 @@ object ShizukuManager {
         } catch (e: Exception) {
             Log.e(TAG, "Execution failed for: $command", e)
             -1
+        }
+    }
+
+    /**
+     * True if [path] exists as seen by Shizuku's shell identity. Used before opening
+     * a file inside Android/data or Android/obb: java.io.File.exists() always returns
+     * false there (that's the whole reason we're going through Shizuku in the first
+     * place), so checking `file.exists()` for these paths was reporting every single
+     * file as "no longer exists" even though it was right there.
+     */
+    suspend fun exists(path: String): Boolean = withContext(Dispatchers.IO) {
+        val clean = normalize(path)
+        runCommandSync("[ -e ${shellEscape(clean)} ]") == 0
+    }
+
+    /**
+     * Streams a remote file's bytes into [destFile] via `cat`, without ever holding
+     * the whole file in this process's memory - safe for large videos, etc. [destFile]
+     * must be somewhere our own app process can write directly (its own cache dir is
+     * the normal choice): Shizuku's shell identity only needs *read* access to the
+     * restricted source, our own process handles the write with its own normal
+     * permissions, so no elevated write access is ever required or attempted.
+     *
+     * This is what lets "Open with" / thumbnails / sharing work for files inside
+     * Android/data or Android/obb when only Shizuku (and not the SAF folder grant)
+     * has been authorized - previously those code paths only ever tried SAF's
+     * DocumentFile, so they failed with "file no longer exists" / "couldn't access
+     * file" any time SAF wasn't also separately granted.
+     */
+    suspend fun copyToLocalFile(path: String, destFile: File): Boolean = withContext(Dispatchers.IO) {
+        val clean = normalize(path)
+        try {
+            destFile.parentFile?.mkdirs()
+            val process = runShizukuCommand("cat ${shellEscape(clean)}")
+            process.inputStream.use { input ->
+                destFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            val exit = process.waitFor()
+            if (exit != 0) {
+                val err = process.errorStream.bufferedReader().readText().trim()
+                if (err.isNotEmpty()) Log.e(TAG, "copyToLocalFile failed for $clean: $err")
+                destFile.delete()
+                return@withContext false
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "copyToLocalFile exception for $clean", e)
+            destFile.delete()
+            false
+        }
+    }
+
+    /**
+     * Recursive size (bytes) of a directory via Shizuku, for the Properties dialog.
+     * Plain shell (find + stat + a builtin arithmetic loop) - no `du`/`awk` dependency,
+     * since their availability varies across OEM toybox/busybox builds.
+     */
+    suspend fun folderSize(path: String): Long = withContext(Dispatchers.IO) {
+        val clean = normalize(path)
+        val escaped = shellEscape(clean)
+        val cmd = "find $escaped -type f -exec stat -L -c '%s' {} + 2>/dev/null | ( total=0; while read -r sz; do case \"\$sz\" in ''|*[!0-9]*) continue;; esac; total=\$((total+sz)); done; echo \$total )"
+        try {
+            val process = runShizukuCommand(cmd)
+            val output = process.inputStream.bufferedReader().readText().trim()
+            process.waitFor()
+            output.toLongOrNull() ?: 0L
+        } catch (e: Exception) {
+            Log.e(TAG, "folderSize failed for $clean", e)
+            0L
         }
     }
 

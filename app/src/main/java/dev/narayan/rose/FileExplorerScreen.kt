@@ -1650,7 +1650,7 @@ fun DeleteConfirmationDialog(
         is PendingDelete.Selection -> pending.totalSize
     }
     val isLarge = totalSize > LARGE_FILE_THRESHOLD
-    
+
     // Default to permanent only if recycle bin is disabled. Large files
     // still show the toggle but don't force it to ON by default.
     var permanently by remember { mutableStateOf(!useRecycleBin) }
@@ -3001,6 +3001,54 @@ fun FileIcon(
                             contentDescription = null,
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        FileTypeBadge(placeholderIcon, if (fileItem.fileType == FileType.IMAGE) Color(0xFF4C8DFF) else Color(0xFF9C6ADE), iconSize, Modifier.fillMaxSize())
+                    }
+                } else if (SafManager.isRestrictedPath(fileItem.file.absolutePath) &&
+                    !SafManager.isSafUri(fileItem.file.absolutePath)
+                ) {
+                    // Restricted (Android/data or Android/obb) item listed via Shizuku,
+                    // so it carries a plain filesystem path rather than a content:// Uri
+                    // - the isSafUri() branch below only ever sees genuinely SAF-listed
+                    // items. java.io.File (and therefore Coil's default file fetcher)
+                    // can't see this path at all, which is why these silently showed no
+                    // thumbnail before. Use a locally-cached copy (see
+                    // ensureShizukuThumbCache) once one exists.
+                    val cachedCopy by produceState<File?>(
+                        initialValue = viewModel?.getShizukuThumbCache(fileItem),
+                        key1 = fileItem.file.absolutePath,
+                        key2 = fileItem.lastModified
+                    ) {
+                        val vm = viewModel
+                        if (value == null && vm != null) {
+                            vm.ensureShizukuThumbCache(fileItem) {
+                                value = vm.getShizukuThumbCache(fileItem)
+                            }
+                        }
+                    }
+
+                    if (cachedCopy != null) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(cachedCopy)
+                                .memoryCacheKey("${cachedCopy!!.absolutePath}_${fileItem.lastModified}")
+                                .diskCacheKey("${cachedCopy!!.absolutePath}_${fileItem.lastModified}")
+                                .size(128)
+                                .allowHardware(true)
+                                .apply {
+                                    if (fileItem.fileType == FileType.VIDEO) {
+                                        decoderFactory(VideoFrameDecoder.Factory())
+                                        videoFrameMillis(1000)
+                                    }
+                                }
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                            placeholder = rememberVectorPainter(placeholderIcon),
+                            error = rememberVectorPainter(placeholderIcon)
                         )
                     } else {
                         FileTypeBadge(placeholderIcon, if (fileItem.fileType == FileType.IMAGE) Color(0xFF4C8DFF) else Color(0xFF9C6ADE), iconSize, Modifier.fillMaxSize())

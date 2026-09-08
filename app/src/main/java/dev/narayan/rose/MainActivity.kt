@@ -130,21 +130,32 @@ class MainActivity : ComponentActivity() {
     private val SHIZUKU_PERMISSION_REQUEST_CODE = 1001
 
     private val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
-        if (requestCode == SHIZUKU_PERMISSION_REQUEST_CODE) {
-            val path = viewModel.pendingShizukuPath ?: viewModel.currentPath
-            val granted = grantResult == PackageManager.PERMISSION_GRANTED
-            viewModel.onShizukuResult(granted, path)
-            if (!granted) {
-                // If Shizuku denied, fallback to SAF
-                viewModel.retrySaf(path)
+        // Shizuku's own library normally dispatches this on the main thread, but that
+        // callback comes from a separate process (the Shizuku permission dialog), and
+        // on some OEM builds / timings it can land while this Activity is still mid
+        // recomposition or paused. runOnUiThread guarantees it's handled on the main
+        // thread and queued to run as soon as we're able to, instead of a Compose
+        // state write racing the UI and only "sticking" after the user manually
+        // leaves and re-enters the folder.
+        runOnUiThread {
+            if (requestCode == SHIZUKU_PERMISSION_REQUEST_CODE) {
+                val path = viewModel.pendingShizukuPath ?: viewModel.currentPath
+                val granted = grantResult == PackageManager.PERMISSION_GRANTED
+                viewModel.onShizukuResult(granted, path)
+                if (!granted) {
+                    // If Shizuku denied, fallback to SAF
+                    viewModel.retrySaf(path)
+                }
             }
         }
     }
 
     private val shizukuBinderListener = Shizuku.OnBinderReceivedListener {
-        val currentPath = viewModel.currentPath
-        if (SafManager.isRestrictedPath(currentPath)) {
-            viewModel.loadFiles(currentPath, showLoading = false)
+        runOnUiThread {
+            val currentPath = viewModel.currentPath
+            if (SafManager.isRestrictedPath(currentPath)) {
+                viewModel.loadFiles(currentPath, showLoading = false)
+            }
         }
     }
 
@@ -735,6 +746,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             val uris = ArrayList<Uri>()
             var folderFound = false
+            var shareFailed = false
 
             for (item in fileItems) {
                 if (item.virtualZipSource != null) {
@@ -780,12 +792,27 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-else {
+                else {
                     val path = item.file.absolutePath
                     if (SafManager.isRestrictedPath(path)) {
-                        // Files here don't exist from java.io.File's point of view - only the
-                        // SAF DocumentFile's own content:// Uri can be opened by another app.
-                        SafManager.getContentUri(this@MainActivity, path)?.let { uris.add(it) } ?: run { folderFound = true }
+                        // Files here don't exist from java.io.File's point of view.
+                        // Prefer the SAF DocumentFile's own content:// Uri when that
+                        // grant is present; otherwise fall back to pulling the bytes
+                        // out through Shizuku's shell into our own cache dir - without
+                        // this, sharing anything from Android/data or Android/obb
+                        // silently failed whenever only Shizuku (not SAF) was granted.
+                        if (SafManager.hasPermission(this@MainActivity, path)) {
+                            SafManager.getContentUri(this@MainActivity, path)?.let { uris.add(it) } ?: run { shareFailed = true }
+                        } else if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
+                            val cacheFile = File(cacheDir, "shizuku_share_${System.currentTimeMillis()}_${item.name}")
+                            if (ShizukuManager.copyToLocalFile(path, cacheFile)) {
+                                uris.add(FileProvider.getUriForFile(this@MainActivity, "${packageName}.provider", cacheFile))
+                            } else {
+                                shareFailed = true
+                            }
+                        } else {
+                            shareFailed = true
+                        }
                     } else if (item.file.isFile) {
                         uris.add(FileProvider.getUriForFile(
                             this@MainActivity,
@@ -802,6 +829,8 @@ else {
                 if (uris.isEmpty()) {
                     if (folderFound) {
                         Toast.makeText(this@MainActivity, "Folders cannot be shared directly", Toast.LENGTH_SHORT).show()
+                    } else if (shareFailed) {
+                        Toast.makeText(this@MainActivity, "Couldn't access file to share", Toast.LENGTH_SHORT).show()
                     }
                     return@withContext
                 }
@@ -825,31 +854,44 @@ else {
     }
 
     private fun openFileWith(fileItem: FileItem) {
-        val intent = createViewIntent(fileItem) ?: return
-        try {
-            val chooser = Intent.createChooser(intent, "Open with")
-            startActivity(chooser)
-        } catch (e: Exception) {
-            Toast.makeText(this, "Couldn't open file: ${e.message}", Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            val intent = createViewIntent(fileItem) ?: return@launch
+            try {
+                val chooser = Intent.createChooser(intent, "Open with")
+                startActivity(chooser)
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, "Couldn't open file: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
-    private fun createViewIntent(fileItem: FileItem, passphrase: String? = null): Intent? {
+    private suspend fun createViewIntent(fileItem: FileItem, passphrase: String? = null): Intent? {
         try {
             val file = fileItem.file
             val path = file.absolutePath
             val restricted = SafManager.isRestrictedPath(path)
             val isVirtual = fileItem.virtualZipSource != null
-
-            if (!isVirtual) {
-                if (restricted && !SafManager.exists(this, path)) {
+            // Files inside Android/data or Android/obb never exist from java.io.File's
+            // point of view, even when they're really there - so "exists" has to be
+            // checked through whichever access path is actually authorized (SAF's
+            // DocumentFile, or Shizuku's shell), same priority loadFiles() uses.
+            // Previously this only ever checked SafManager, so browsing those folders
+            // via Shizuku alone (no separate SAF grant) made every single file look
+            // like it had vanished the moment you tried to open it.
+            if (!isVirtual && restricted) {
+                val restrictedAccessible = when {
+                    SafManager.hasPermission(this, path) -> SafManager.exists(this, path)
+                    ShizukuManager.isAvailable() && ShizukuManager.hasPermission() -> ShizukuManager.exists(path)
+                    else -> false
+                }
+                if (!restrictedAccessible) {
                     Toast.makeText(this, "File no longer exists", Toast.LENGTH_SHORT).show()
                     return null
                 }
-                if (!restricted && !file.exists()) {
-                    Toast.makeText(this, "File no longer exists", Toast.LENGTH_SHORT).show()
-                    return null
-                }
+            }
+            if (!isVirtual && !restricted && !file.exists()) {
+                Toast.makeText(this, "File no longer exists", Toast.LENGTH_SHORT).show()
+                return null
             }
 
             val uri = if (isVirtual) {
@@ -882,8 +924,28 @@ else {
                     return null
                 }
             }
-else if (restricted) {
-                SafManager.getContentUri(this, path) ?: run {
+            else if (restricted) {
+                if (SafManager.hasPermission(this, path)) {
+                    SafManager.getContentUri(this, path) ?: run {
+                        Toast.makeText(this, "Couldn't access file", Toast.LENGTH_SHORT).show()
+                        return null
+                    }
+                } else if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
+                    // No SAF grant for this folder - pull the bytes out through
+                    // Shizuku's shell into our own cache dir (our process can always
+                    // write there directly) and hand that local copy to the viewer
+                    // instead. This is what previously made every file inside
+                    // Android/data or Android/obb say "Couldn't access file" whenever
+                    // only Shizuku (and not the separate SAF folder grant) was
+                    // authorized.
+                    val cacheFile = File(cacheDir, "shizuku_open_${fileItem.name}")
+                    val copied = ShizukuManager.copyToLocalFile(path, cacheFile)
+                    if (!copied) {
+                        Toast.makeText(this, "Couldn't access file", Toast.LENGTH_SHORT).show()
+                        return null
+                    }
+                    FileProvider.getUriForFile(this, "${packageName}.provider", cacheFile)
+                } else {
                     Toast.makeText(this, "Couldn't access file", Toast.LENGTH_SHORT).show()
                     return null
                 }
@@ -956,33 +1018,35 @@ else if (restricted) {
     }
 
     private fun openFile(fileItem: FileItem, passphrase: String? = null) {
-        val intent = createViewIntent(fileItem, passphrase) ?: return
-        try {
-            // Check for offline file first (simplified from previous implementation)
-            if (fileItem.fileType == FileType.VIDEO || fileItem.fileType == FileType.AUDIO || fileItem.fileType == FileType.IMAGE) {
-                viewModel.getLocalOfflineFile(fileItem)?.let { localFile ->
-                    val localUri = FileProvider.getUriForFile(this, "${packageName}.provider", localFile)
-                    val type = contentResolver.getType(localUri) ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(fileItem.extension)
-                    val offlineIntent = Intent(Intent.ACTION_VIEW).apply {
-                        setDataAndType(localUri, type ?: "*/*")
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    try {
-                        startActivity(offlineIntent)
-                        return
-                    } catch (e: Exception) {}
-                }
-            }
-
+        lifecycleScope.launch {
+            val intent = createViewIntent(fileItem, passphrase) ?: return@launch
             try {
-                startActivity(intent)
+                // Check for offline file first (simplified from previous implementation)
+                if (fileItem.fileType == FileType.VIDEO || fileItem.fileType == FileType.AUDIO || fileItem.fileType == FileType.IMAGE) {
+                    viewModel.getLocalOfflineFile(fileItem)?.let { localFile ->
+                        val localUri = FileProvider.getUriForFile(this@MainActivity, "${packageName}.provider", localFile)
+                        val type = contentResolver.getType(localUri) ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(fileItem.extension)
+                        val offlineIntent = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(localUri, type ?: "*/*")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        try {
+                            startActivity(offlineIntent)
+                            return@launch
+                        } catch (e: Exception) {}
+                    }
+                }
+
+                try {
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    val chooser = Intent.createChooser(intent, "Open with")
+                    startActivity(chooser)
+                }
             } catch (e: Exception) {
-                val chooser = Intent.createChooser(intent, "Open with")
-                startActivity(chooser)
+                Toast.makeText(this@MainActivity, "Couldn't open file: ${e.message}", Toast.LENGTH_SHORT).show()
             }
-        } catch (e: Exception) {
-            Toast.makeText(this, "Couldn't open file: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1081,6 +1145,14 @@ else if (restricted) {
     override fun onStop() {
         super.onStop()
         try { unregisterReceiver(storageReceiver) } catch (e: IllegalArgumentException) { /* already unregistered */ }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Safety net for bug where a Shizuku grant callback arrives while we're not
+        // in the foreground to react to it - see revalidateAccessIfNeeded()'s doc.
+        // Cheap no-op when nothing needs refreshing.
+        viewModel.revalidateAccessIfNeeded()
     }
 
     override fun onDestroy() {

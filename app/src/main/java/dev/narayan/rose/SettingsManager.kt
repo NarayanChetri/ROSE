@@ -154,6 +154,28 @@ class SettingsManager(context: Context) {
         get() = prefs.getStringSet(KEY_EXCLUDED_FOLDERS, emptySet()) ?: emptySet()
         set(value) = prefs.edit { putStringSet(KEY_EXCLUDED_FOLDERS, value) }
 
+    // Home screen category counts (Images/Videos/.../Documents) from the last
+    // successful scan, keyed by FileType.name. Lets the count-up animation
+    // start from real numbers on cold launch instead of always animating up
+    // from 0 while the (now much faster) rescan runs. Encoded the same way as
+    // externalStorages: "KEY:value" pairs joined with the shared delimiter.
+    var cachedCategoryCounts: Map<String, Int>
+        get() = prefs.getString(KEY_CATEGORY_COUNTS, "")
+            ?.split(QUICK_ACCESS_DELIMITER)
+            ?.filter { it.isNotBlank() }
+            ?.mapNotNull { entry ->
+                val separatorIndex = entry.lastIndexOf(':')
+                if (separatorIndex == -1) return@mapNotNull null
+                val key = entry.substring(0, separatorIndex)
+                val value = entry.substring(separatorIndex + 1).toIntOrNull() ?: return@mapNotNull null
+                key to value
+            }
+            ?.toMap()
+            ?: emptyMap()
+        set(value) = prefs.edit {
+            putString(KEY_CATEGORY_COUNTS, value.entries.joinToString(QUICK_ACCESS_DELIMITER) { "${it.key}:${it.value}" })
+        }
+
     // Whether the contextual notification-permission primer (shown the first
     // time a background file operation starts) has already been presented once.
     // We only ever ask this way once - if the user dismisses it, we respect
@@ -187,6 +209,7 @@ class SettingsManager(context: Context) {
         private const val KEY_USE_RECYCLE_BIN = "use_recycle_bin"
         private const val KEY_RECENT_FILES_LIMIT = "recent_files_limit"
         private const val KEY_EXCLUDED_FOLDERS = "excluded_folders"
+        private const val KEY_CATEGORY_COUNTS = "category_counts"
         private const val KEY_NOTIFICATION_PRIMER_SHOWN = "notification_primer_shown"
         private const val KEY_SHOW_QUICK_ACCESS = "show_quick_access"
         private const val KEY_SHOW_EXTERNAL_STORAGE = "show_external_storage"

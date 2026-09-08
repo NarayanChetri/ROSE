@@ -347,6 +347,29 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Safety net for permission grants that don't make it back to us in time to
+     * repaint the screen: the Shizuku permission dialog is a separate app/process, and
+     * its grant callback can arrive right as our Activity is mid-transition (or, on
+     * some OEM builds, be delayed a beat) - which used to mean the "Grant Access"
+     * screen kept showing until the user manually left the folder and came back.
+     * Call this from onResume(): if we're sitting on a restricted folder that's
+     * either showing the access-denied screen or is unexpectedly empty, and
+     * permission for it has since become available, silently reload. Cheap and
+     * idempotent when nothing changed, so it's safe to call on every resume.
+     */
+    fun revalidateAccessIfNeeded() {
+        val path = currentPath
+        if (path.isEmpty()) return
+        if (!SafManager.isRestrictedPath(path)) return
+        val nowAuthorized = (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) ||
+                SafManager.hasPermission(getApplication(), path)
+        if (!nowAuthorized) return
+        if (accessDenied || (files.isEmpty() && !isLoading)) {
+            loadFiles(path, showLoading = false)
+        }
+    }
+
     var errorMessage by mutableStateOf<String?>(null)
 
     fun clearError() { errorMessage = null }
@@ -513,8 +536,28 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         propertiesFile = fileItem
         folderSize = null
         if (fileItem.isDirectory) {
+            val path = fileItem.file.absolutePath
             viewModelScope.launch(Dispatchers.IO) {
-                folderSize = calculateFolderSize(fileItem.file)
+                // Plain java.io.File / NIO walking can never see inside Android/data or
+                // Android/obb - that's the same OS-level restriction everything else in
+                // this file works around. calculateFolderSize() alone always silently
+                // came back with 0 there, so Properties permanently showed "Calculating..."
+                // for any folder inside those two directories. Route through whichever
+                // access path is actually authorized, same priority as loadFiles().
+                val restricted = SafManager.isRestrictedPath(path)
+                val size = when {
+                    !restricted -> calculateFolderSize(fileItem.file)
+                    ShizukuManager.isAvailable() && ShizukuManager.hasPermission() -> ShizukuManager.folderSize(path)
+                    SafManager.hasPermission(getApplication(), path) -> SafManager.folderSize(getApplication(), path)
+                    else -> 0L
+                }
+                withContext(Dispatchers.Main) {
+                    // Dialog may have been closed (or reopened for a different item)
+                    // while this was still calculating - don't let a stale result land.
+                    if (propertiesFile?.file?.absolutePath == path) {
+                        folderSize = size
+                    }
+                }
             }
         }
     }
@@ -613,6 +656,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     var hasRunDividerAnimation by mutableStateOf(false)
     var hasRunStorageAnimation by mutableStateOf(false)
     var hasRunEntranceAnimation by mutableStateOf(false)
+    var hasRunCategoryAnimation by mutableStateOf(false)
 
     // Home screen scroll position, saved continuously while Home is visible and
     // re-applied every time Home is (re)composed - e.g. after opening a folder
@@ -640,6 +684,16 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private var rootCache: List<FileItem>? = null
+
+    // Android/data and Android/obb are read through Shizuku's shell or SAF's
+    // DocumentFile, both far slower per-call than a plain java.io.File listing - so
+    // re-entering the same folder (or going back into a parent you just left) used to
+    // re-pay that full cost and sit on an empty/spinner screen every time. Cache the
+    // last listing per restricted path and paint it instantly on re-entry, then
+    // silently refresh in the background and swap in the up-to-date result when it
+    // lands - the same stale-while-revalidate approach `rootCache` above uses for the
+    // storage root, just keyed per-folder instead of one slot.
+    private val restrictedListCache = mutableMapOf<String, List<FileItem>>()
 
     fun preLoadRoot() {
         if (rootCache != null) {
@@ -1255,12 +1309,22 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         // current files, and show a loading spinner if the scan takes more than a moment.
         loadJob?.cancel()
         accessDenied = false
+        val isRestrictedNav = SafManager.isRestrictedPath(normalizedPath)
+        val cachedRestrictedList = if (isRestrictedNav) restrictedListCache[normalizedPath] else null
         if (normalizedPath != currentPath) {
             currentPath = normalizedPath
-            files = emptyList()
-            isLoading = true
+            if (cachedRestrictedList != null) {
+                // Paint the last known listing immediately instead of flashing an
+                // empty screen + spinner - the fresh listing below will replace it
+                // shortly, silently, once it's ready.
+                files = cachedRestrictedList
+                isLoading = false
+            } else {
+                files = emptyList()
+                isLoading = true
+            }
         } else {
-            if (isManualRefresh) isRefreshing = true else if (showLoading) isLoading = true
+            if (isManualRefresh) isRefreshing = true else if (showLoading && cachedRestrictedList == null) isLoading = true
         }
 
         val requestGeneration = ++filesGeneration
@@ -1355,9 +1419,17 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
                                 return@withContext shizukuResults
                             } else {
-                                // Shizuku running but needs authorization.
-                                // We no longer auto-trigger the permission dialog here.
-                                // The UI will show a "Grant Access" button instead.
+                                // Shizuku running but needs authorization for this app.
+                                // We no longer auto-trigger the permission dialog here -
+                                // the UI shows a "Grant Access" button instead. That
+                                // button only appears when accessDenied is true, so it
+                                // must be set here too, not just in the "no Shizuku and
+                                // no SAF" branch below - otherwise a disabled/denied
+                                // Shizuku permission silently rendered as an empty
+                                // "No files found" folder instead of the grant screen.
+                                withContext(Dispatchers.Main) {
+                                    accessDenied = true
+                                }
                                 return@withContext emptyList<FileItem>()
                             }
                         }
@@ -1387,6 +1459,12 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     isRefreshing = false
                     if (normalizedPath == Environment.getExternalStorageDirectory().absolutePath) {
                         rootCache = result
+                    }
+                    // Only cache a genuine successful listing - not the empty list that
+                    // comes back from the accessDenied path, which would otherwise get
+                    // "stuck" showing 0 items on the next visit even after access is granted.
+                    if (isRestrictedNav && !accessDenied) {
+                        restrictedListCache[normalizedPath] = result
                     }
                     val directory = File(normalizedPath)
                     if (!isRestricted && directory.exists() && directory.isDirectory) {
@@ -2286,13 +2364,23 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     var categoryBucketId by mutableStateOf<String?>(null)
         private set
 
-    var categoryCounts by mutableStateOf<Map<FileType, Int>>(emptyMap())
+    // Seeded from last session's persisted counts (SettingsManager.cachedCategoryCounts)
+    // rather than emptyMap() - this is what lets the Home screen count-up
+    // animation start from real numbers on cold launch instead of always
+    // animating up from 0 while the first scan is still running.
+    private fun loadCachedCategoryCounts(): Map<FileType, Int> {
+        return settings.cachedCategoryCounts.mapNotNull { (name, count) ->
+            try { FileType.valueOf(name) to count } catch (e: IllegalArgumentException) { null }
+        }.toMap()
+    }
+
+    var categoryCounts by mutableStateOf<Map<FileType, Int>>(loadCachedCategoryCounts())
         private set
 
     var isCategoryCountsLoading by mutableStateOf(false)
         private set
 
-    /** Optimized counting using MediaStore query counts */
+    /** Optimized counting using a single MediaStore query, classified in-memory. */
     private var lastCategoryLoadTime = 0L
     fun loadCategoryCounts(force: Boolean = false) {
         if (isCategoryCountsLoading) return
@@ -2303,49 +2391,90 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             isCategoryCountsLoading = true
             lastCategoryLoadTime = now
-            val counts = mutableMapOf<FileType, Int>()
             val resolver = getApplication<Application>().contentResolver
 
-            // Helper to count by selection
-            fun countSelection(selection: String, excludeWhatsappTelegram: Boolean = true): Int {
-                val hardcodedExcluded = if (excludeWhatsappTelegram) {
-                    listOf("WhatsApp/Media", "Telegram", ".thumbnails", "Android/data", "Android/obb")
-                } else {
-                    listOf(".thumbnails", "Android/data", "Android/obb")
+            // Same extension/MIME rules the old per-category selections used,
+            // just checked in Kotlin against one cursor instead of driving 7
+            // separate LIKE-based table scans.
+            val imageExtensions = setOf("jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif")
+            val videoExtensions = setOf("mp4", "mkv", "mov", "avi", "3gp", "flv", "wmv")
+            val audioExtensions = setOf("mp3", "wav", "ogg", "m4a", "flac", "aac")
+            val zipExtensions = setOf("zip", "rar", "7z", "tar", "gz")
+            val documentExtensions = setOf("txt", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "pdf", "rtf")
+
+            // Shared exclusions only - hidden files/folders, thumbnail caches,
+            // other apps' private storage, and user-excluded folders. These
+            // apply to every category alike, so they're pushed down to SQL to
+            // keep the single scan cheap. WhatsApp/Telegram is deliberately
+            // left out here: that exclusion only ever applied to Image/Video/
+            // Audio, so it's applied in-memory below, per matching row.
+            val hardcodedExcluded = listOf(".thumbnails", "Android/data", "Android/obb")
+            val userExcluded = excludedFolders.toList()
+            val excludeSelection = (hardcodedExcluded.map { "${MediaStore.MediaColumns.DATA} NOT LIKE '%/$it/%'" } +
+                    userExcluded.map { "(${MediaStore.MediaColumns.DATA} NOT LIKE '$it/%' AND ${MediaStore.MediaColumns.DATA} != '$it')" }).joinToString(" AND ")
+            val noHiddenSelection = "(${MediaStore.MediaColumns.DATA} NOT LIKE '%/.%' AND ${MediaStore.MediaColumns.DATA} NOT LIKE '.%')"
+            val finalSelection = "($excludeSelection) AND ($noHiddenSelection)"
+
+            val counts = mutableMapOf(
+                FileType.IMAGE to 0, FileType.VIDEO to 0, FileType.AUDIO to 0,
+                FileType.PDF to 0, FileType.APK to 0, FileType.ZIP to 0, FileType.DOCUMENT to 0
+            )
+
+            try {
+                val uri = MediaStore.Files.getContentUri("external")
+                val projection = arrayOf(
+                    MediaStore.MediaColumns.DATA,
+                    MediaStore.Files.FileColumns.MIME_TYPE,
+                    MediaStore.Files.FileColumns.MEDIA_TYPE
+                )
+                resolver.query(uri, projection, finalSelection, null, null)?.use { cursor ->
+                    val dataCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)
+                    val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MIME_TYPE)
+                    val mediaTypeCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MEDIA_TYPE)
+
+                    while (cursor.moveToNext()) {
+                        val path = cursor.getString(dataCol) ?: continue
+                        val mime = cursor.getString(mimeCol)
+                        val mediaType = cursor.getInt(mediaTypeCol)
+                        val ext = path.substringAfterLast('.', "").lowercase()
+
+                        val isImage = mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE || ext in imageExtensions
+                        val isVideo = mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO || ext in videoExtensions
+                        val isAudio = mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO || ext in audioExtensions
+                        val isPdf = mime == "application/pdf" || ext == "pdf"
+                        val isApk = mime == "application/vnd.android.package-archive" || ext == "apk"
+                        val isZip = ext in zipExtensions
+                        val isDocument = mime?.startsWith("text/") == true ||
+                                mime?.startsWith("application/vnd.ms-") == true ||
+                                mime?.startsWith("application/vnd.openxmlformats-officedocument") == true ||
+                                ext in documentExtensions
+
+                        // Matches old behavior exactly: this exclusion only ever
+                        // gated Image/Video/Audio (countSelection's default
+                        // excludeWhatsappTelegram = true); PDF/APK/ZIP/Document
+                        // always passed excludeWhatsappTelegram = false.
+                        val excludeForMedia = (isImage || isVideo || isAudio) &&
+                                (path.contains("/WhatsApp/Media/") || path.contains("/Telegram/"))
+
+                        if (isImage && !excludeForMedia) counts[FileType.IMAGE] = counts.getValue(FileType.IMAGE) + 1
+                        if (isVideo && !excludeForMedia) counts[FileType.VIDEO] = counts.getValue(FileType.VIDEO) + 1
+                        if (isAudio && !excludeForMedia) counts[FileType.AUDIO] = counts.getValue(FileType.AUDIO) + 1
+                        if (isPdf) counts[FileType.PDF] = counts.getValue(FileType.PDF) + 1
+                        if (isApk) counts[FileType.APK] = counts.getValue(FileType.APK) + 1
+                        if (isZip) counts[FileType.ZIP] = counts.getValue(FileType.ZIP) + 1
+                        if (isDocument) counts[FileType.DOCUMENT] = counts.getValue(FileType.DOCUMENT) + 1
+                    }
                 }
-
-                val userExcluded = excludedFolders.toList()
-
-                val excludeSelection = (hardcodedExcluded.map { "${MediaStore.MediaColumns.DATA} NOT LIKE '%/$it/%'" } +
-                        userExcluded.map { "(${MediaStore.MediaColumns.DATA} NOT LIKE '$it/%' AND ${MediaStore.MediaColumns.DATA} != '$it')" }).joinToString(" AND ")
-
-                // Exclude hidden files and folders
-                val noHiddenSelection = "(${MediaStore.MediaColumns.DATA} NOT LIKE '%/.%' AND ${MediaStore.MediaColumns.DATA} NOT LIKE '.%')"
-
-                val finalSelection = if (selection.isNotEmpty()) {
-                    "($selection) AND ($excludeSelection) AND ($noHiddenSelection)"
-                } else {
-                    "($excludeSelection) AND ($noHiddenSelection)"
-                }
-
-                return try {
-                    val uri = MediaStore.Files.getContentUri("external")
-                    resolver.query(uri, arrayOf(MediaStore.Files.FileColumns._ID), finalSelection, null, null)?.use { cursor ->
-                        cursor.count
-                    } ?: 0
-                } catch (e: Throwable) { 0 }
+            } catch (e: Throwable) {
+                // Same failure behavior as the old countSelection() catch: fall
+                // back to whatever counts were accumulated (possibly all 0)
+                // rather than crashing the scan.
             }
 
-            counts[FileType.IMAGE] = countSelection("${MediaStore.Files.FileColumns.MEDIA_TYPE} = ${MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE} OR ${MediaStore.MediaColumns.DATA} LIKE '%.jpg' OR ${MediaStore.MediaColumns.DATA} LIKE '%.jpeg' OR ${MediaStore.MediaColumns.DATA} LIKE '%.png' OR ${MediaStore.MediaColumns.DATA} LIKE '%.webp' OR ${MediaStore.MediaColumns.DATA} LIKE '%.gif' OR ${MediaStore.MediaColumns.DATA} LIKE '%.bmp' OR ${MediaStore.MediaColumns.DATA} LIKE '%.heic' OR ${MediaStore.MediaColumns.DATA} LIKE '%.heif' OR ${MediaStore.MediaColumns.DATA} LIKE '%.JPG' OR ${MediaStore.MediaColumns.DATA} LIKE '%.JPEG' OR ${MediaStore.MediaColumns.DATA} LIKE '%.PNG'")
-            counts[FileType.VIDEO] = countSelection("${MediaStore.Files.FileColumns.MEDIA_TYPE} = ${MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO} OR ${MediaStore.MediaColumns.DATA} LIKE '%.mp4' OR ${MediaStore.MediaColumns.DATA} LIKE '%.mkv' OR ${MediaStore.MediaColumns.DATA} LIKE '%.mov' OR ${MediaStore.MediaColumns.DATA} LIKE '%.avi' OR ${MediaStore.MediaColumns.DATA} LIKE '%.3gp' OR ${MediaStore.MediaColumns.DATA} LIKE '%.flv' OR ${MediaStore.MediaColumns.DATA} LIKE '%.wmv' OR ${MediaStore.MediaColumns.DATA} LIKE '%.MP4'")
-            counts[FileType.AUDIO] = countSelection("${MediaStore.Files.FileColumns.MEDIA_TYPE} = ${MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO} OR ${MediaStore.MediaColumns.DATA} LIKE '%.mp3' OR ${MediaStore.MediaColumns.DATA} LIKE '%.wav' OR ${MediaStore.MediaColumns.DATA} LIKE '%.ogg' OR ${MediaStore.MediaColumns.DATA} LIKE '%.m4a' OR ${MediaStore.MediaColumns.DATA} LIKE '%.flac' OR ${MediaStore.MediaColumns.DATA} LIKE '%.aac' OR ${MediaStore.MediaColumns.DATA} LIKE '%.MP3'")
-
-            counts[FileType.PDF] = countSelection("${MediaStore.Files.FileColumns.MIME_TYPE} = 'application/pdf' OR ${MediaStore.MediaColumns.DATA} LIKE '%.pdf' OR ${MediaStore.MediaColumns.DATA} LIKE '%.PDF'", excludeWhatsappTelegram = false)
-            counts[FileType.APK] = countSelection("${MediaStore.Files.FileColumns.MIME_TYPE} = 'application/vnd.android.package-archive' OR ${MediaStore.MediaColumns.DATA} LIKE '%.apk' OR ${MediaStore.MediaColumns.DATA} LIKE '%.APK'", excludeWhatsappTelegram = false)
-            counts[FileType.ZIP] = countSelection("${MediaStore.MediaColumns.DATA} LIKE '%.zip' OR ${MediaStore.MediaColumns.DATA} LIKE '%.rar' OR ${MediaStore.MediaColumns.DATA} LIKE '%.7z' OR ${MediaStore.MediaColumns.DATA} LIKE '%.tar' OR ${MediaStore.MediaColumns.DATA} LIKE '%.gz' OR ${MediaStore.MediaColumns.DATA} LIKE '%.ZIP'", excludeWhatsappTelegram = false)
-            counts[FileType.DOCUMENT] = countSelection("${MediaStore.Files.FileColumns.MIME_TYPE} LIKE 'text/%' OR ${MediaStore.Files.FileColumns.MIME_TYPE} LIKE 'application/vnd.ms-%' OR ${MediaStore.Files.FileColumns.MIME_TYPE} LIKE 'application/vnd.openxmlformats-officedocument%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.txt' OR ${MediaStore.MediaColumns.DATA} LIKE '%.doc%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.xls%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.ppt%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.pdf' OR ${MediaStore.MediaColumns.DATA} LIKE '%.rtf' OR ${MediaStore.MediaColumns.DATA} LIKE '%.TXT' OR ${MediaStore.MediaColumns.DATA} LIKE '%.DOC%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.PDF'", excludeWhatsappTelegram = false)
-
             withContext(Dispatchers.Main) {
+                // Persist right alongside the state update so next cold start
+                // seeds categoryCounts from this scan instead of from 0.
+                settings.cachedCategoryCounts = counts.entries.associate { (type, count) -> type.name to count }
                 categoryCounts = counts
                 isCategoryCountsLoading = false
             }
@@ -2752,6 +2881,55 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun isFileOffline(path: String): Boolean = offlineFiles.contains(path)
+
+    // Items listed via Shizuku inside Android/data or Android/obb carry a plain
+    // filesystem path (not a content:// Uri), so Coil can't thumbnail them directly -
+    // java.io.File can't see those paths any more than the rest of this file can. The
+    // fix used everywhere else in this file (copy the bytes out through Shizuku's
+    // shell, then work with the local copy) applies here too: cache a local copy per
+    // file the first time its thumbnail is needed, then hand that real local file to
+    // Coil like any other. Keyed by path+mtime so a changed file gets a fresh copy.
+    private val shizukuThumbCacheDir by lazy {
+        File(getApplication<Application>().cacheDir, "shizuku_thumbs").apply { mkdirs() }
+    }
+    private val shizukuThumbInFlight = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+    private fun shizukuThumbCacheFile(fileItem: FileItem): File {
+        val key = "${fileItem.file.absolutePath}_${fileItem.lastModified}".hashCode()
+        return File(shizukuThumbCacheDir, "${key}_${fileItem.name}")
+    }
+
+    /** Synchronous cache lookup - returns null if no cached copy exists yet. */
+    fun getShizukuThumbCache(fileItem: FileItem): File? {
+        val cacheFile = shizukuThumbCacheFile(fileItem)
+        return if (cacheFile.exists() && cacheFile.length() > 0) cacheFile else null
+    }
+
+    /** Kicks off a background copy if one isn't already cached or in flight; calls
+     *  [onReady] on the main thread once the copy lands. No-op if Shizuku isn't
+     *  currently authorized - caller just keeps showing its placeholder. */
+    fun ensureShizukuThumbCache(fileItem: FileItem, onReady: () -> Unit) {
+        if (!(ShizukuManager.isAvailable() && ShizukuManager.hasPermission())) return
+        val path = fileItem.file.absolutePath
+        val cacheFile = shizukuThumbCacheFile(fileItem)
+        if (cacheFile.exists() && cacheFile.length() > 0) {
+            onReady()
+            return
+        }
+        if (!shizukuThumbInFlight.add(path)) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val ok = ShizukuManager.copyToLocalFile(path, cacheFile)
+                if (ok) {
+                    withContext(Dispatchers.Main) { onReady() }
+                } else {
+                    cacheFile.delete()
+                }
+            } finally {
+                shizukuThumbInFlight.remove(path)
+            }
+        }
+    }
 
     fun getLocalOfflineFile(fileItem: FileItem): File? {
         if (!isFileOffline(fileItem.file.absolutePath)) return null
