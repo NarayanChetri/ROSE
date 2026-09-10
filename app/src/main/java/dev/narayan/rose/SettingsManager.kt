@@ -122,6 +122,24 @@ class SettingsManager(context: Context) {
             ?: emptyList()
         set(value) = prefs.edit { putString(KEY_EXTERNAL_STORAGES, value.joinToString(QUICK_ACCESS_DELIMITER)) }
 
+    // Last-scanned category counts (keyed by FileType.name), persisted so cold launches
+    // show real counts immediately without flashing 0 or waiting for MediaStore query.
+    var cachedCategoryCounts: Map<String, Int>
+        get() = prefs.getString(KEY_CACHED_CATEGORY_COUNTS, "")
+            ?.split(QUICK_ACCESS_DELIMITER)
+            ?.filter { it.isNotBlank() && it.contains(":") }
+            ?.associate { entry ->
+                val (k, v) = entry.split(":", limit = 2)
+                k to (v.toIntOrNull() ?: 0)
+            }
+            ?: emptyMap()
+        set(value) = prefs.edit {
+            putString(
+                KEY_CACHED_CATEGORY_COUNTS,
+                value.entries.joinToString(QUICK_ACCESS_DELIMITER) { "${it.key}:${it.value}" }
+            )
+        }
+
     var offlineFiles: Set<String>
         get() = prefs.getStringSet(KEY_OFFLINE_FILES, emptySet()) ?: emptySet()
         set(value) = prefs.edit { putStringSet(KEY_OFFLINE_FILES, value) }
@@ -183,6 +201,7 @@ class SettingsManager(context: Context) {
         private const val KEY_QUICK_ACCESS_REMOVED = "quick_access_removed"
         private const val KEY_QUICK_ACCESS_CUSTOM = "quick_access_custom"
         private const val KEY_EXTERNAL_STORAGES = "external_storages"
+        private const val KEY_CACHED_CATEGORY_COUNTS = "cached_category_counts"
         private const val KEY_OFFLINE_FILES = "offline_files"
         private const val KEY_USE_RECYCLE_BIN = "use_recycle_bin"
         private const val KEY_RECENT_FILES_LIMIT = "recent_files_limit"

@@ -2475,7 +2475,7 @@ fun SelectionBottomBar(
                                 leadingIcon = { Icon(Icons.Default.Add, null) }
                             )
                         }
-                        if ((fileItem.fileType == FileType.ZIP || fileItem.fileType == FileType.APK) && viewModel.currentZipFile == null) {
+                        if (fileItem.fileType == FileType.ZIP && viewModel.currentZipFile == null) {
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             DropdownMenuItem(
                                 text = { Text("Extract") },
@@ -2932,7 +2932,7 @@ fun FileListItem(
                                     colors = MenuDefaults.itemColors(textColor = MaterialTheme.colorScheme.error)
                                 )
                             }
-                            if ((fileItem.fileType == FileType.ZIP || fileItem.fileType == FileType.APK || isVirtual) && !isVirtual) {
+                            if ((fileItem.fileType == FileType.ZIP || isVirtual) && !isVirtual) {
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                 DropdownMenuItem(
                                     text = { Text("Extract") },

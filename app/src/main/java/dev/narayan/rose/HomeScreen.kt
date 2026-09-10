@@ -10,6 +10,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -478,6 +479,8 @@ fun HomeScreen(
                         CategoryGrid(
                             counts = viewModel.categoryCounts,
                             isLoading = viewModel.isCategoryCountsLoading,
+                            hasRunCountAnimation = viewModel.hasRunCategoryCountAnimation,
+                            onAnimationFinished = { viewModel.hasRunCategoryCountAnimation = true },
                             onCategoryClick = { category -> onOpenCategory(category.type, category.label) }
                         )
                     }
@@ -690,7 +693,7 @@ private fun SearchResultItem(
                         leadingIcon = { Icon(Icons.Default.ContentCut, null) },
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                     )
-                    if (item.fileType == FileType.ZIP || item.fileType == FileType.APK) {
+                    if (item.fileType == FileType.ZIP) {
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                         DropdownMenuItem(
                             text = { Text("Extract", modifier = Modifier.padding(vertical = 4.dp)) },
@@ -809,6 +812,8 @@ private fun StorageCapsule(
 private fun CategoryGrid(
     counts: Map<FileType, Int>,
     isLoading: Boolean,
+    hasRunCountAnimation: Boolean,
+    onAnimationFinished: () -> Unit,
     onCategoryClick: (HomeCategory) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -822,6 +827,8 @@ private fun CategoryGrid(
                         category = category,
                         count = counts[category.type] ?: 0,
                         isLoading = isLoading,
+                        hasRunCountAnimation = hasRunCountAnimation,
+                        onAnimationFinished = onAnimationFinished,
                         index = rowIndex * 3 + colIndex,
                         modifier = Modifier.weight(1f),
                         onClick = { onCategoryClick(category) }
@@ -840,13 +847,18 @@ private fun CategoryCard(
     category: HomeCategory,
     count: Int,
     isLoading: Boolean,
+    hasRunCountAnimation: Boolean,
+    onAnimationFinished: () -> Unit,
     index: Int = 0,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     val animatedCount by androidx.compose.animation.core.animateIntAsState(
         targetValue = count,
-        animationSpec = tween(durationMillis = 1000, easing = FastOutSlowInEasing),
+        animationSpec = if (!hasRunCountAnimation) tween(durationMillis = 1000, easing = FastOutSlowInEasing) else snap<Int>(),
+        finishedListener = {
+            onAnimationFinished()
+        },
         label = "CategoryCountAnimation"
     )
 
@@ -1078,7 +1090,7 @@ private fun RecentFilesSection(
                                         leadingIcon = { Icon(Icons.Default.Info, null) },
                                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                                     )
-                                    if (item.fileType == FileType.ZIP || item.fileType == FileType.APK) {
+                                    if (item.fileType == FileType.ZIP) {
                                         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                         DropdownMenuItem(
                                             text = { Text("Extract", modifier = Modifier.padding(vertical = 4.dp)) },
