@@ -1219,7 +1219,13 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         val normalizedPath = ShizukuManager.normalize(path)
-        val archiveExtensions = listOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz")
+        val archiveExtensions = listOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "apk", "xapk", "apks")
+        val archiveMimeTypes = listOf(
+            "application/zip", "application/x-zip", "application/x-zip-compressed",
+            "application/x-7z-compressed", "application/x-rar-compressed", "application/rar", "application/vnd.rar",
+            "application/x-tar", "application/gzip", "application/x-bzip2", "application/x-xz",
+            "application/vnd.android.package-archive"
+        )
 
         // Check if it's an archive, including restricted paths and shared URIs
         val isArchive = if (path.startsWith("content://")) {
@@ -1227,7 +1233,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             val mime = getApplication<Application>().contentResolver.getType(uri)
             val displayName = getFileNameFromUri(uri)?.lowercase() ?: ""
 
-            mime in listOf("application/zip", "application/x-7z-compressed", "application/x-rar-compressed", "application/x-tar", "application/gzip", "application/x-bzip2", "application/x-xz") ||
+            mime in archiveMimeTypes ||
                     archiveExtensions.any { displayName.endsWith(".$it") } ||
                     path.lowercase().let { p -> archiveExtensions.any { p.endsWith(".$it") } }
         } else if (path.startsWith("file://")) {
@@ -1532,7 +1538,21 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         val requestGeneration = ++filesGeneration
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val tempFile = File(context.cacheDir, "shared_archive.zip")
+                val displayName = getFileNameFromUri(uri) ?: "shared_archive"
+                val extFromName = displayName.substringAfterLast('.', "").lowercase()
+                val mime = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
+                val effectiveExt = when {
+                    extFromName in listOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "apk", "xapk", "apks") -> extFromName
+                    mime == "application/vnd.android.package-archive" -> "apk"
+                    mime in listOf("application/zip", "application/x-zip", "application/x-zip-compressed") -> "zip"
+                    else -> "zip"
+                }
+                val baseName = if (displayName.contains(".")) displayName.substringBeforeLast('.') else displayName
+                val safeBase = baseName.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(50)
+
+                val targetDir = File(context.cacheDir, "view_archives/${System.currentTimeMillis()}")
+                targetDir.mkdirs()
+                val tempFile = File(targetDir, "$safeBase.$effectiveExt")
                 context.contentResolver.openInputStream(uri)?.use { input ->
                     tempFile.outputStream().use { output -> input.copyTo(output) }
                 } ?: throw Exception("Failed to open shared file.")

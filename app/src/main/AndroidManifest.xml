@@ -61,25 +61,58 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="file" />
                 <data android:scheme="content" />
-                <data android:host="*" />
                 <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip" />
                 <data android:mimeType="application/x-zip-compressed" />
                 <data android:mimeType="application/x-rar-compressed" />
                 <data android:mimeType="application/rar" />
+                <data android:mimeType="application/vnd.rar" />
                 <data android:mimeType="application/x-7z-compressed" />
                 <data android:mimeType="application/x-tar" />
+                <data android:mimeType="application/gzip" />
+                <data android:mimeType="application/x-bzip2" />
+                <data android:mimeType="application/x-xz" />
                 <data android:mimeType="application/vnd.android.package-archive" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+
+            <intent-filter android:label="Archive Viewer">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+                <data android:pathPattern=".*\\.apk" />
+                <data android:pathPattern=".*\\.APK" />
+                <data android:pathPattern=".*\\.xapk" />
+                <data android:pathPattern=".*\\.XAPK" />
+                <data android:pathPattern=".*\\.apks" />
+                <data android:pathPattern=".*\\.APKS" />
+                <data android:pathPattern=".*\\.zip" />
+                <data android:pathPattern=".*\\.ZIP" />
+                <data android:pathPattern=".*\\.rar" />
+                <data android:pathPattern=".*\\.RAR" />
+                <data android:pathPattern=".*\\.7z" />
+                <data android:pathPattern=".*\\.7Z" />
+                <data android:pathPattern=".*\\.tar" />
+                <data android:pathPattern=".*\\.TAR" />
             </intent-filter>
 
             <intent-filter android:label="Archive Viewer">
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip" />
                 <data android:mimeType="application/x-zip-compressed" />
                 <data android:mimeType="application/x-rar-compressed" />
                 <data android:mimeType="application/rar" />
+                <data android:mimeType="application/vnd.rar" />
                 <data android:mimeType="application/x-7z-compressed" />
                 <data android:mimeType="application/x-tar" />
+                <data android:mimeType="application/gzip" />
+                <data android:mimeType="application/x-bzip2" />
+                <data android:mimeType="application/x-xz" />
+                <data android:mimeType="application/vnd.android.package-archive" />
             </intent-filter>
 
             <intent-filter android:label="Save As...">

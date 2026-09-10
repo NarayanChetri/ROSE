@@ -354,7 +354,7 @@ fun FileExplorerScreen(
                     viewModel.loadFiles(startPath)
                 } else {
                     val file = File(startPath)
-                    val archiveExtensions = listOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz")
+                    val archiveExtensions = listOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "apk", "xapk", "apks")
                     val isArchive = file.extension.lowercase() in archiveExtensions ||
                             file.name.lowercase().let { name -> archiveExtensions.any { name.endsWith(".$it") } }
 
@@ -865,6 +865,16 @@ fun FileExplorerScreen(
                                     } else {
                                         viewModel.selectAll(displayedFiles)
                                     }
+                                },
+                                onOpenArchiveClick = { fileItem ->
+                                    if (isSearching) {
+                                        isSearching = false
+                                        searchQuery = ""
+                                        viewModel.searchFiles("")
+                                    }
+                                    lastNonZipView = currentView
+                                    viewModel.openArchive(fileItem.file)
+                                    currentView = "Files"
                                 }
                             )
                         }
@@ -1412,6 +1422,16 @@ fun FileExplorerScreen(
                                                                             showExtractionDialog = fileItem
                                                                         }
                                                                     },
+                                                                    onOpenArchive = {
+                                                                        if (isSearching) {
+                                                                            isSearching = false
+                                                                            searchQuery = ""
+                                                                            viewModel.searchFiles("")
+                                                                        }
+                                                                        lastNonZipView = currentView
+                                                                        viewModel.openArchive(fileItem.file)
+                                                                        currentView = "Files"
+                                                                    },
                                                                     onProperties = { viewModel.showProperties(fileItem) },
                                                                     viewModel = viewModel,
                                                                     dragSelectState = checkboxDragSelectState,
@@ -1512,6 +1532,16 @@ fun FileExplorerScreen(
                                                                 } else {
                                                                     showExtractionDialog = fileItem
                                                                 }
+                                                            },
+                                                            onOpenArchive = {
+                                                                if (isSearching) {
+                                                                    isSearching = false
+                                                                    searchQuery = ""
+                                                                    viewModel.searchFiles("")
+                                                                }
+                                                                lastNonZipView = currentView
+                                                                viewModel.openArchive(fileItem.file)
+                                                                currentView = "Files"
                                                             },
                                                             onProperties = { viewModel.showProperties(fileItem) },
                                                             viewModel = viewModel,
@@ -2340,7 +2370,8 @@ fun SelectionBottomBar(
     onRenameClick: () -> Unit,
     onExtractClick: () -> Unit,
     isAllSelected: Boolean,
-    onSelectAllClick: () -> Unit
+    onSelectAllClick: () -> Unit,
+    onOpenArchiveClick: ((FileItem) -> Unit)? = null
 ) {
     val context = LocalContext.current
 
@@ -2444,7 +2475,19 @@ fun SelectionBottomBar(
                                 leadingIcon = { Icon(Icons.Default.Add, null) }
                             )
                         }
-                        if (fileItem.fileType == FileType.ZIP && viewModel.currentZipFile == null) {
+                        if (fileItem.fileType == FileType.APK && viewModel.currentZipFile == null) {
+                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                            DropdownMenuItem(
+                                text = { Text("Open as archive") },
+                                onClick = {
+                                    viewModel.exitSelectionMode()
+                                    onOpenArchiveClick?.invoke(fileItem)
+                                    showMoreMenu = false
+                                },
+                                leadingIcon = { Icon(Icons.Default.Archive, null) }
+                            )
+                        }
+                        if ((fileItem.fileType == FileType.ZIP || fileItem.fileType == FileType.APK) && viewModel.currentZipFile == null) {
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             DropdownMenuItem(
                                 text = { Text("Extract") },
@@ -2721,6 +2764,7 @@ fun FileListItem(
     onOpenWith: (() -> Unit)? = null, // New parameter
     onOpenLocation: (() -> Unit)? = null, // New parameter
     onExtract: (() -> Unit)? = null,
+    onOpenArchive: (() -> Unit)? = null,
     index: Int = 0,
     scrollResetKey: Any = Unit,
     hasAnimatedBefore: Boolean = true,
@@ -2900,7 +2944,18 @@ fun FileListItem(
                                     colors = MenuDefaults.itemColors(textColor = MaterialTheme.colorScheme.error)
                                 )
                             }
-                            if ((fileItem.fileType == FileType.ZIP || isVirtual) && !isVirtual) {
+                            if (fileItem.fileType == FileType.APK && !isVirtual) {
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                DropdownMenuItem(
+                                    text = { Text("Open as archive") },
+                                    onClick = {
+                                        showMenu = false
+                                        onOpenArchive?.invoke()
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Archive, null) }
+                                )
+                            }
+                            if ((fileItem.fileType == FileType.ZIP || fileItem.fileType == FileType.APK || isVirtual) && !isVirtual) {
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                 DropdownMenuItem(
                                     text = { Text("Extract") },

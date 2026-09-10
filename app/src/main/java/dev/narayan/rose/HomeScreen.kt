@@ -436,7 +436,8 @@ fun HomeScreen(
                             onExtract = {
                                 viewModel.prepareExtraction(item.file)
                                 android.widget.Toast.makeText(context, "Archive ready. Navigate to a folder to extract.", android.widget.Toast.LENGTH_SHORT).show()
-                            }
+                            },
+                            onOpenArchive = { onOpenPath(item.file.absolutePath, null) }
                         )
                         if (viewModel.showListDividers && index != viewModel.searchResults.lastIndex) {
                             HorizontalDivider(
@@ -627,7 +628,8 @@ private fun SearchResultItem(
     onOpenLocation: () -> Unit,
     onCopy: () -> Unit,
     onCut: () -> Unit,
-    onExtract: () -> Unit = {}
+    onExtract: () -> Unit = {},
+    onOpenArchive: () -> Unit = {}
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
@@ -688,7 +690,16 @@ private fun SearchResultItem(
                         leadingIcon = { Icon(Icons.Default.ContentCut, null) },
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                     )
-                    if (item.fileType == FileType.ZIP) {
+                    if (item.fileType == FileType.APK) {
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                        DropdownMenuItem(
+                            text = { Text("Open as archive", modifier = Modifier.padding(vertical = 4.dp)) },
+                            onClick = { showMenu = false; onOpenArchive() },
+                            leadingIcon = { Icon(Icons.Default.Archive, null) },
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
+                    if (item.fileType == FileType.ZIP || item.fileType == FileType.APK) {
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                         DropdownMenuItem(
                             text = { Text("Extract", modifier = Modifier.padding(vertical = 4.dp)) },
@@ -1076,7 +1087,16 @@ private fun RecentFilesSection(
                                         leadingIcon = { Icon(Icons.Default.Info, null) },
                                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                                     )
-                                    if (item.fileType == FileType.ZIP) {
+                                    if (item.fileType == FileType.APK) {
+                                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                        DropdownMenuItem(
+                                            text = { Text("Open as archive", modifier = Modifier.padding(vertical = 4.dp)) },
+                                            onClick = { showFileMenu = false; onOpenPath(item.file.absolutePath, null) },
+                                            leadingIcon = { Icon(Icons.Default.Archive, null) },
+                                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                                        )
+                                    }
+                                    if (item.fileType == FileType.ZIP || item.fileType == FileType.APK) {
                                         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                         DropdownMenuItem(
                                             text = { Text("Extract", modifier = Modifier.padding(vertical = 4.dp)) },
