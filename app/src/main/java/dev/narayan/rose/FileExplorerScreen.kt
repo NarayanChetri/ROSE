@@ -2475,18 +2475,6 @@ fun SelectionBottomBar(
                                 leadingIcon = { Icon(Icons.Default.Add, null) }
                             )
                         }
-                        if (fileItem.fileType == FileType.APK && viewModel.currentZipFile == null) {
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                            DropdownMenuItem(
-                                text = { Text("Open as archive") },
-                                onClick = {
-                                    viewModel.exitSelectionMode()
-                                    onOpenArchiveClick?.invoke(fileItem)
-                                    showMoreMenu = false
-                                },
-                                leadingIcon = { Icon(Icons.Default.Archive, null) }
-                            )
-                        }
                         if ((fileItem.fileType == FileType.ZIP || fileItem.fileType == FileType.APK) && viewModel.currentZipFile == null) {
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             DropdownMenuItem(
@@ -2942,17 +2930,6 @@ fun FileListItem(
                                     onClick = { showMenu = false; onDelete() },
                                     leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
                                     colors = MenuDefaults.itemColors(textColor = MaterialTheme.colorScheme.error)
-                                )
-                            }
-                            if (fileItem.fileType == FileType.APK && !isVirtual) {
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                                DropdownMenuItem(
-                                    text = { Text("Open as archive") },
-                                    onClick = {
-                                        showMenu = false
-                                        onOpenArchive?.invoke()
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.Archive, null) }
                                 )
                             }
                             if ((fileItem.fileType == FileType.ZIP || fileItem.fileType == FileType.APK || isVirtual) && !isVirtual) {

@@ -690,15 +690,6 @@ private fun SearchResultItem(
                         leadingIcon = { Icon(Icons.Default.ContentCut, null) },
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                     )
-                    if (item.fileType == FileType.APK) {
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                        DropdownMenuItem(
-                            text = { Text("Open as archive", modifier = Modifier.padding(vertical = 4.dp)) },
-                            onClick = { showMenu = false; onOpenArchive() },
-                            leadingIcon = { Icon(Icons.Default.Archive, null) },
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                        )
-                    }
                     if (item.fileType == FileType.ZIP || item.fileType == FileType.APK) {
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                         DropdownMenuItem(
@@ -1087,15 +1078,6 @@ private fun RecentFilesSection(
                                         leadingIcon = { Icon(Icons.Default.Info, null) },
                                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                                     )
-                                    if (item.fileType == FileType.APK) {
-                                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                                        DropdownMenuItem(
-                                            text = { Text("Open as archive", modifier = Modifier.padding(vertical = 4.dp)) },
-                                            onClick = { showFileMenu = false; onOpenPath(item.file.absolutePath, null) },
-                                            leadingIcon = { Icon(Icons.Default.Archive, null) },
-                                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                                        )
-                                    }
                                     if (item.fileType == FileType.ZIP || item.fileType == FileType.APK) {
                                         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                         DropdownMenuItem(
