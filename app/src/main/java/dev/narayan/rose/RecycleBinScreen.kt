@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -156,9 +157,9 @@ fun RecycleBinScreen(
                 TopAppBar(
                     title = {
                         Column {
-                            Text("${selectedItems.size} selected")
+                            Text(stringResource(R.string.selection_count, selectedItems.size))
                             Text(
-                                "${items.size} items total",
+                                stringResource(R.string.total_items_count, items.size),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -166,7 +167,7 @@ fun RecycleBinScreen(
                     },
                     navigationIcon = {
                         IconButton(onClick = { exitSelection() }) {
-                            Icon(Icons.Default.Close, contentDescription = "Cancel")
+                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.action_cancel))
                         }
                     },
                     actions = {
@@ -174,7 +175,7 @@ fun RecycleBinScreen(
                             if (selectedIds.size == items.size) selectedIds = emptySet()
                             else selectedIds = items.map { it.id }.toSet()
                         }) {
-                            Icon(Icons.Default.SelectAll, contentDescription = "Select All")
+                            Icon(Icons.Default.SelectAll, contentDescription = stringResource(R.string.action_select_all))
                         }
                     }
                 )
@@ -182,9 +183,9 @@ fun RecycleBinScreen(
                 TopAppBar(
                     title = {
                         Column {
-                            Text("Recycle Bin")
+                            Text(stringResource(R.string.recycle_bin_title))
                             Text(
-                                "${items.size} items total",
+                                stringResource(R.string.total_items_count, items.size),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -192,29 +193,29 @@ fun RecycleBinScreen(
                     },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.content_desc_back))
                         }
                     },
                     actions = {
                         Box {
                             IconButton(onClick = { showSortMenu = true }) {
-                                Icon(Icons.Default.Sort, contentDescription = "Sort")
+                                Icon(Icons.Default.Sort, contentDescription = stringResource(R.string.sort_title))
                             }
                             DropdownMenu(
                                 expanded = showSortMenu,
                                 onDismissRequest = { showSortMenu = false }
                             ) {
-                                RecycledSortItem("Name", RoseViewModel.SortBy.NAME, sortBy, sortOrder) {
+                                RecycledSortItem(stringResource(R.string.sort_name), RoseViewModel.SortBy.NAME, sortBy, sortOrder) {
                                     if (sortBy == it) sortOrder = if (sortOrder == RoseViewModel.SortOrder.ASCENDING) RoseViewModel.SortOrder.DESCENDING else RoseViewModel.SortOrder.ASCENDING
                                     else { sortBy = it; sortOrder = RoseViewModel.SortOrder.ASCENDING }
                                     showSortMenu = false
                                 }
-                                RecycledSortItem("Date", RoseViewModel.SortBy.DATE, sortBy, sortOrder) {
+                                RecycledSortItem(stringResource(R.string.sort_date), RoseViewModel.SortBy.DATE, sortBy, sortOrder) {
                                     if (sortBy == it) sortOrder = if (sortOrder == RoseViewModel.SortOrder.ASCENDING) RoseViewModel.SortOrder.DESCENDING else RoseViewModel.SortOrder.ASCENDING
                                     else { sortBy = it; sortOrder = RoseViewModel.SortOrder.DESCENDING }
                                     showSortMenu = false
                                 }
-                                RecycledSortItem("Size", RoseViewModel.SortBy.SIZE, sortBy, sortOrder) {
+                                RecycledSortItem(stringResource(R.string.sort_size), RoseViewModel.SortBy.SIZE, sortBy, sortOrder) {
                                     if (sortBy == it) sortOrder = if (sortOrder == RoseViewModel.SortOrder.ASCENDING) RoseViewModel.SortOrder.DESCENDING else RoseViewModel.SortOrder.ASCENDING
                                     else { sortBy = it; sortOrder = RoseViewModel.SortOrder.DESCENDING }
                                     showSortMenu = false
@@ -223,7 +224,7 @@ fun RecycleBinScreen(
                         }
                         if (items.isNotEmpty()) {
                             IconButton(onClick = { showEmptyConfirm = true }) {
-                                Icon(Icons.Default.DeleteSweep, contentDescription = "Empty", tint = MaterialTheme.colorScheme.error)
+                                Icon(Icons.Default.DeleteSweep, contentDescription = stringResource(R.string.action_empty), tint = MaterialTheme.colorScheme.error)
                             }
                         }
                     }
@@ -248,7 +249,7 @@ fun RecycleBinScreen(
                         ) {
                             Icon(Icons.Default.Restore, null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Restore")
+                            Text(stringResource(R.string.action_restore))
                         }
                         Button(
                             onClick = { showBulkDeleteConfirm = true },
@@ -258,7 +259,7 @@ fun RecycleBinScreen(
                         ) {
                             Icon(Icons.Default.DeleteForever, null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Delete")
+                            Text(stringResource(R.string.action_delete))
                         }
                     }
                 )
@@ -281,13 +282,13 @@ fun RecycleBinScreen(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        "Recycle bin is empty",
+                        stringResource(R.string.recycle_bin_is_empty),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Items will be deleted after 30 days",
+                        stringResource(R.string.recycle_bin_empty_desc),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
@@ -357,19 +358,19 @@ fun RecycleBinScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Info, null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(12.dp))
-                    Text("Properties")
+                    Text(stringResource(R.string.action_properties))
                 }
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    PropertyRow("Original Name", item.originalName)
-                    PropertyRow("Original Path", item.originalPath)
-                    PropertyRow("Deletion Date", formatItemDate(item.deletionTime))
-                    PropertyRow("Size", formatFileSize(item.size))
+                    PropertyRow(stringResource(R.string.recycle_prop_original_name), item.originalName)
+                    PropertyRow(stringResource(R.string.recycle_prop_original_path), item.originalPath)
+                    PropertyRow(stringResource(R.string.recycle_prop_deletion_date), formatItemDate(item.deletionTime))
+                    PropertyRow(stringResource(R.string.recycle_prop_size), formatFileSize(item.size))
                 }
             },
             confirmButton = {
-                Button(onClick = { propertyItem = null }) { Text("Close") }
+                Button(onClick = { propertyItem = null }) { Text(stringResource(R.string.action_close)) }
             }
         )
     }
@@ -377,8 +378,8 @@ fun RecycleBinScreen(
     showDeleteConfirm?.let { item ->
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = null },
-            title = { Text("Delete Permanently") },
-            text = { Text("Are you sure you want to delete \"${item.originalName}\"? This cannot be undone.") },
+            title = { Text(stringResource(R.string.delete_permanently_title)) },
+            text = { Text(stringResource(R.string.delete_permanently_confirm, item.originalName)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -386,10 +387,10 @@ fun RecycleBinScreen(
                         showDeleteConfirm = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("Delete") }
+                ) { Text(stringResource(R.string.action_delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = null }) { Text("Cancel") }
+                TextButton(onClick = { showDeleteConfirm = null }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -397,8 +398,8 @@ fun RecycleBinScreen(
     if (showEmptyConfirm) {
         AlertDialog(
             onDismissRequest = { showEmptyConfirm = false },
-            title = { Text("Empty Recycle Bin") },
-            text = { Text("All items will be permanently deleted. Are you sure?") },
+            title = { Text(stringResource(R.string.empty_recycle_bin_title)) },
+            text = { Text(stringResource(R.string.empty_recycle_bin_confirm)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -406,10 +407,10 @@ fun RecycleBinScreen(
                         showEmptyConfirm = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("Empty") }
+                ) { Text(stringResource(R.string.action_empty)) }
             },
             dismissButton = {
-                TextButton(onClick = { showEmptyConfirm = false }) { Text("Cancel") }
+                TextButton(onClick = { showEmptyConfirm = false }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -417,8 +418,8 @@ fun RecycleBinScreen(
     if (showBulkDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showBulkDeleteConfirm = false },
-            title = { Text("Delete Permanently") },
-            text = { Text("Delete ${selectedItems.size} selected item(s) permanently?") },
+            title = { Text(stringResource(R.string.delete_permanently_title)) },
+            text = { Text(stringResource(R.string.delete_permanently_bulk_confirm, selectedItems.size)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -427,10 +428,10 @@ fun RecycleBinScreen(
                         showBulkDeleteConfirm = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("Delete") }
+                ) { Text(stringResource(R.string.action_delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { showBulkDeleteConfirm = false }) { Text("Cancel") }
+                TextButton(onClick = { showBulkDeleteConfirm = false }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -439,9 +440,9 @@ fun RecycleBinScreen(
         AlertDialog(
             onDismissRequest = { showRestoreToViewPrompt = null },
             icon = { Icon(Icons.Default.Restore, null) },
-            title = { Text(if (item.isDirectory) "Restore Folder?" else "Restore Archive?") },
+            title = { Text(if (item.isDirectory) stringResource(R.string.restore_folder_prompt_title) else stringResource(R.string.restore_archive_prompt_title)) },
             text = {
-                Text("To view the contents of \"${item.originalName}\", you need to restore it first.")
+                Text(stringResource(R.string.restore_to_view_message, item.originalName))
             },
             confirmButton = {
                 Button(
@@ -450,12 +451,12 @@ fun RecycleBinScreen(
                         showRestoreToViewPrompt = null
                     }
                 ) {
-                    Text("Restore Now")
+                    Text(stringResource(R.string.action_restore_now))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showRestoreToViewPrompt = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             },
             shape = RoundedCornerShape(28.dp)
@@ -575,12 +576,19 @@ internal fun RecycledItemView(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    "${formatFileSize(if (recycledFile.exists()) recycledFile.length() else item.size)} | Deleted: ${formatItemDate(item.deletionTime)}",
+                    stringResource(
+                        R.string.recycled_item_subtitle,
+                        formatFileSize(if (recycledFile.exists()) recycledFile.length() else item.size),
+                        formatItemDate(item.deletionTime)
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    "From: ${item.originalPath.substringBeforeLast("/")}",
+                    stringResource(
+                        R.string.recycled_item_from,
+                        item.originalPath.substringBeforeLast("/")
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     maxLines = 1,
@@ -597,17 +605,17 @@ internal fun RecycledItemView(
                         onDismissRequest = { showMenu = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Restore") },
+                            text = { Text(stringResource(R.string.action_restore)) },
                             onClick = { showMenu = false; onRestore() },
                             leadingIcon = { Icon(Icons.Default.Restore, null) }
                         )
                         DropdownMenuItem(
-                            text = { Text("Delete Permanently") },
+                            text = { Text(stringResource(R.string.delete_permanently_title)) },
                             onClick = { showMenu = false; onDeletePermanently() },
                             leadingIcon = { Icon(Icons.Default.DeleteForever, null, tint = MaterialTheme.colorScheme.error) }
                         )
                         DropdownMenuItem(
-                            text = { Text("Properties") },
+                            text = { Text(stringResource(R.string.action_properties)) },
                             onClick = { showMenu = false; onProperties() },
                             leadingIcon = { Icon(Icons.Default.Info, null) }
                         )

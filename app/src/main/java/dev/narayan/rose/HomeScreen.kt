@@ -37,10 +37,12 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.annotation.StringRes
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,19 +53,19 @@ import coil.request.videoFrameMillis
 import java.io.File
 
 private data class HomeCategory(
-    val label: String,
+    @StringRes val labelRes: Int,
     val type: FileType,
     val icon: ImageVector,
     val color: Color,
 )
 
 private val homeCategories = listOf(
-    HomeCategory("Photos", FileType.IMAGE, Icons.Default.Image, Color(0xFF4C8DFF)),
-    HomeCategory("Videos", FileType.VIDEO, Icons.Default.VideoLibrary, Color(0xFF9C6ADE)),
-    HomeCategory("Audio", FileType.AUDIO, Icons.Default.MusicNote, Color(0xFFE0904C)),
-    HomeCategory("Documents", FileType.DOCUMENT, Icons.Default.Description, Color(0xFF4C9A72)),
-    HomeCategory("APKs", FileType.APK, Icons.Default.Android, Color(0xFF4CAF7D)),
-    HomeCategory("Archives", FileType.ZIP, Icons.Default.Archive, Color(0xFFC98A2E))
+    HomeCategory(R.string.category_photos, FileType.IMAGE, Icons.Default.Image, Color(0xFF4C8DFF)),
+    HomeCategory(R.string.category_videos, FileType.VIDEO, Icons.Default.VideoLibrary, Color(0xFF9C6ADE)),
+    HomeCategory(R.string.category_audio, FileType.AUDIO, Icons.Default.MusicNote, Color(0xFFE0904C)),
+    HomeCategory(R.string.category_documents, FileType.DOCUMENT, Icons.Default.Description, Color(0xFF4C9A72)),
+    HomeCategory(R.string.category_apks, FileType.APK, Icons.Default.Android, Color(0xFF4CAF7D)),
+    HomeCategory(R.string.category_archives, FileType.ZIP, Icons.Default.Archive, Color(0xFFC98A2E))
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
@@ -214,7 +216,7 @@ fun HomeScreen(
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text(
-                                        "ROSE",
+                                        stringResource(R.string.app_name),
                                         style = MaterialTheme.typography.titleLarge,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -222,11 +224,11 @@ fun HomeScreen(
                             },
                             actions = {
                                 IconButton(onClick = { isSearching = true }) {
-                                    Icon(Icons.Default.Search, contentDescription = "Search")
+                                    Icon(Icons.Default.Search, contentDescription = stringResource(R.string.content_desc_search))
                                 }
                                 Box {
                                     IconButton(onClick = { showMenu = true }) {
-                                        Icon(Icons.Default.MoreVert, contentDescription = "More")
+                                        Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.content_desc_more_options))
                                     }
                                     DropdownMenu(
                                         expanded = showMenu,
@@ -236,14 +238,14 @@ fun HomeScreen(
                                         offset = androidx.compose.ui.unit.DpOffset(x = (-8).dp, y = 0.dp)
                                     ) {
                                         DropdownMenuItem(
-                                            text = { Text("Settings", modifier = Modifier.padding(vertical = 4.dp)) },
+                                            text = { Text(stringResource(R.string.action_settings), modifier = Modifier.padding(vertical = 4.dp)) },
                                             onClick = { showMenu = false; onSettingsClick() },
                                             leadingIcon = { Icon(Icons.Default.Settings, null) },
                                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                                         )
                                         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                         DropdownMenuItem(
-                                            text = { Text("About", modifier = Modifier.padding(vertical = 4.dp)) },
+                                            text = { Text(stringResource(R.string.action_about), modifier = Modifier.padding(vertical = 4.dp)) },
                                             onClick = { showMenu = false; onAboutClick() },
                                             leadingIcon = { Icon(Icons.Default.Info, null) },
                                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
@@ -291,7 +293,7 @@ fun HomeScreen(
                             ) {
                                 Icon(
                                     Icons.Default.Close,
-                                    contentDescription = "Cancel",
+                                    contentDescription = stringResource(R.string.action_cancel),
                                     tint = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f),
                                     modifier = Modifier.size(20.dp)
                                 )
@@ -317,7 +319,7 @@ fun HomeScreen(
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
-                                    "Extract Here",
+                                    stringResource(R.string.action_extract_here),
                                     style = MaterialTheme.typography.labelLarge,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onTertiaryContainer
@@ -348,7 +350,7 @@ fun HomeScreen(
                             ) {
                                 Icon(
                                     Icons.Default.Close,
-                                    contentDescription = "Cancel",
+                                    contentDescription = stringResource(R.string.action_cancel),
                                     tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                                     modifier = Modifier.size(20.dp)
                                 )
@@ -374,7 +376,7 @@ fun HomeScreen(
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
-                                    if (viewModel.isCopyOperation) "Paste Here" else "Move Here",
+                                    if (viewModel.isCopyOperation) stringResource(R.string.action_paste_here) else stringResource(R.string.action_move_here),
                                     style = MaterialTheme.typography.labelLarge,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -400,7 +402,7 @@ fun HomeScreen(
                 if (viewModel.searchResults.isEmpty() && !viewModel.isRecursiveSearching) {
                     item(key = "no_results") {
                         Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                            Text("No results for \"$searchQuery\"", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.no_results_for_query, searchQuery), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 } else {
@@ -436,7 +438,7 @@ fun HomeScreen(
                             },
                             onExtract = {
                                 viewModel.prepareExtraction(item.file)
-                                android.widget.Toast.makeText(context, "Archive ready. Navigate to a folder to extract.", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, context.getString(R.string.toast_archive_ready_extract), android.widget.Toast.LENGTH_SHORT).show()
                             },
                             onOpenArchive = { onOpenPath(item.file.absolutePath, null) }
                         )
@@ -483,7 +485,7 @@ fun HomeScreen(
                             onAnimationFinished = { viewModel.hasRunCategoryCountAnimation = true },
                             onCategoryClick = { category ->
                                 viewModel.hasRunCategoryCountAnimation = true
-                                onOpenCategory(category.type, category.label)
+                                onOpenCategory(category.type, context.getString(category.labelRes))
                             }
                         )
                     }
@@ -507,7 +509,7 @@ fun HomeScreen(
                             onDeleteClick = { fileForDelete = it },
                             onExtractClick = {
                                 viewModel.prepareExtraction(it.file)
-                                android.widget.Toast.makeText(context, "Archive ready. Navigate to a folder to extract.", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, context.getString(R.string.toast_archive_ready_extract), android.widget.Toast.LENGTH_SHORT).show()
                             },
                             onPropertiesClick = { viewModel.showProperties(it) }
                         )
@@ -579,14 +581,14 @@ fun HomeScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                     Spacer(modifier = Modifier.width(12.dp))
-                    Text("Delete File")
+                    Text(stringResource(R.string.delete_file_title))
                 }
             },
             text = {
                 Column {
                     Text(
-                        "Delete \"${item.name}\"?" +
-                                if (viewModel.useRecycleBin && !permanently) " It will be moved to the bin." else " This action cannot be undone."
+                        stringResource(R.string.delete_single_confirm, item.name) +
+                                if (viewModel.useRecycleBin && !permanently) stringResource(R.string.delete_single_moved_to_bin) else stringResource(R.string.delete_action_cannot_be_undone)
                     )
                     if (viewModel.useRecycleBin) {
                         Spacer(modifier = Modifier.height(16.dp))
@@ -601,7 +603,7 @@ fun HomeScreen(
                                 onCheckedChange = { permanently = it }
                             )
                             Text(
-                                "Delete permanently",
+                                stringResource(R.string.delete_permanently),
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
@@ -616,10 +618,10 @@ fun HomeScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     shape = RoundedCornerShape(12.dp)
-                ) { Text("Delete") }
+                ) { Text(stringResource(R.string.action_delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { fileForDelete = null }) { Text("Cancel") }
+                TextButton(onClick = { fileForDelete = null }) { Text(stringResource(R.string.action_cancel)) }
             },
             shape = RoundedCornerShape(28.dp)
         )
@@ -677,21 +679,21 @@ private fun SearchResultItem(
                     offset = androidx.compose.ui.unit.DpOffset(x = (-8).dp, y = 0.dp)
                 ) {
                     DropdownMenuItem(
-                        text = { Text("Open location", modifier = Modifier.padding(vertical = 4.dp)) },
+                        text = { Text(stringResource(R.string.action_open_location), modifier = Modifier.padding(vertical = 4.dp)) },
                         onClick = { showMenu = false; onOpenLocation() },
                         leadingIcon = { Icon(Icons.Default.FolderOpen, null) },
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                     DropdownMenuItem(
-                        text = { Text("Copy", modifier = Modifier.padding(vertical = 4.dp)) },
+                        text = { Text(stringResource(R.string.action_copy), modifier = Modifier.padding(vertical = 4.dp)) },
                         onClick = { showMenu = false; onCopy() },
                         leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                     DropdownMenuItem(
-                        text = { Text("Move", modifier = Modifier.padding(vertical = 4.dp)) },
+                        text = { Text(stringResource(R.string.action_move), modifier = Modifier.padding(vertical = 4.dp)) },
                         onClick = { showMenu = false; onCut() },
                         leadingIcon = { Icon(Icons.Default.ContentCut, null) },
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
@@ -699,7 +701,7 @@ private fun SearchResultItem(
                     if (item.fileType == FileType.ZIP) {
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                         DropdownMenuItem(
-                            text = { Text("Extract", modifier = Modifier.padding(vertical = 4.dp)) },
+                            text = { Text(stringResource(R.string.action_extract), modifier = Modifier.padding(vertical = 4.dp)) },
                             onClick = { showMenu = false; onExtract() },
                             leadingIcon = { Icon(Icons.Outlined.Unarchive, null) },
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
@@ -769,7 +771,7 @@ private fun StorageCapsule(
                     Spacer(modifier = Modifier.width(8.dp))
                     with(sharedTransitionScope) {
                         Text(
-                            "All Files",
+                            stringResource(R.string.category_all_files),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Medium,
                             softWrap = false,
@@ -789,7 +791,7 @@ private fun StorageCapsule(
                     Text(formatFileSize(storageInfo.usedBytes), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        "used of ${formatFileSize(storageInfo.totalBytes)}",
+                        stringResource(R.string.storage_used_of_total, formatFileSize(storageInfo.totalBytes)),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 3.dp)
@@ -914,7 +916,7 @@ private fun CategoryCard(
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                category.label,
+                stringResource(category.labelRes),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
@@ -956,7 +958,7 @@ private fun RecentFilesSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "Recent files",
+                stringResource(R.string.home_recent_files),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
@@ -979,7 +981,7 @@ private fun RecentFilesSection(
                 ) {
                     Icon(
                         Icons.Default.Refresh,
-                        contentDescription = "Refresh",
+                        contentDescription = stringResource(R.string.action_refresh),
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp).graphicsLayer { rotationZ = rotation }
                     )
@@ -993,7 +995,7 @@ private fun RecentFilesSection(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "See all",
+                        stringResource(R.string.action_see_all),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1044,7 +1046,7 @@ private fun RecentFilesSection(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    "${formatFileSize(item.size)} | ${formatItemDate(item.lastModified)}",
+                                    stringResource(R.string.item_size_and_date, formatFileSize(item.size), formatItemDate(item.lastModified)),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1053,7 +1055,7 @@ private fun RecentFilesSection(
                                 IconButton(onClick = { showFileMenu = true }, modifier = Modifier.size(32.dp)) {
                                     Icon(
                                         Icons.Default.MoreVert,
-                                        contentDescription = "File actions",
+                                        contentDescription = stringResource(R.string.content_desc_file_actions),
                                         modifier = Modifier.size(18.dp),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -1066,7 +1068,7 @@ private fun RecentFilesSection(
                                     offset = androidx.compose.ui.unit.DpOffset(x = (-8).dp, y = 0.dp)
                                 ) {
                                     DropdownMenuItem(
-                                        text = { Text("Open location", modifier = Modifier.padding(vertical = 4.dp)) },
+                                        text = { Text(stringResource(R.string.action_open_location), modifier = Modifier.padding(vertical = 4.dp)) },
                                         onClick = {
                                             showFileMenu = false
                                             onOpenPath(item.file.parent ?: item.file.absolutePath, item)
@@ -1076,28 +1078,28 @@ private fun RecentFilesSection(
                                     )
                                     HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                     DropdownMenuItem(
-                                        text = { Text("Open with", modifier = Modifier.padding(vertical = 4.dp)) },
+                                        text = { Text(stringResource(R.string.action_open_with), modifier = Modifier.padding(vertical = 4.dp)) },
                                         onClick = { showFileMenu = false; onOpenWithClick(item) },
                                         leadingIcon = { Icon(Icons.Default.OpenInNew, null) },
                                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                                     )
                                     HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                     DropdownMenuItem(
-                                        text = { Text("Share", modifier = Modifier.padding(vertical = 4.dp)) },
+                                        text = { Text(stringResource(R.string.action_share), modifier = Modifier.padding(vertical = 4.dp)) },
                                         onClick = { showFileMenu = false; onShareClick(item) },
                                         leadingIcon = { Icon(Icons.Default.Share, null) },
                                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                                     )
                                     HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                     DropdownMenuItem(
-                                        text = { Text("Rename", modifier = Modifier.padding(vertical = 4.dp)) },
+                                        text = { Text(stringResource(R.string.action_rename), modifier = Modifier.padding(vertical = 4.dp)) },
                                         onClick = { showFileMenu = false; onRenameClick(item) },
                                         leadingIcon = { Icon(Icons.Default.Edit, null) },
                                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                                     )
                                     HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                     DropdownMenuItem(
-                                        text = { Text("Properties", modifier = Modifier.padding(vertical = 4.dp)) },
+                                        text = { Text(stringResource(R.string.action_properties), modifier = Modifier.padding(vertical = 4.dp)) },
                                         onClick = { showFileMenu = false; onPropertiesClick(item) },
                                         leadingIcon = { Icon(Icons.Default.Info, null) },
                                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
@@ -1105,7 +1107,7 @@ private fun RecentFilesSection(
                                     if (item.fileType == FileType.ZIP) {
                                         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                         DropdownMenuItem(
-                                            text = { Text("Extract", modifier = Modifier.padding(vertical = 4.dp)) },
+                                            text = { Text(stringResource(R.string.action_extract), modifier = Modifier.padding(vertical = 4.dp)) },
                                             onClick = { showFileMenu = false; onExtractClick(item) },
                                             leadingIcon = { Icon(Icons.Outlined.Unarchive, null) },
                                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
@@ -1113,7 +1115,7 @@ private fun RecentFilesSection(
                                     }
                                     HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                     DropdownMenuItem(
-                                        text = { Text("Delete", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 4.dp)) },
+                                        text = { Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 4.dp)) },
                                         onClick = { showFileMenu = false; onDeleteClick(item) },
                                         leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
                                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
@@ -1150,13 +1152,14 @@ private data class QuickItem(
     val label: String,
     val icon: ImageVector,
     val path: String,
-    val custom: Boolean
+    val custom: Boolean,
+    @StringRes val labelRes: Int? = null
 )
 
 private val defaultQuickAccessFolders = listOf(
-    Triple("downloads", Environment.DIRECTORY_DOWNLOADS, "Downloads"),
-    Triple("camera", Environment.DIRECTORY_DCIM, "Camera"),
-    Triple("documents", Environment.DIRECTORY_DOCUMENTS, "Documents")
+    Triple("downloads", Environment.DIRECTORY_DOWNLOADS, R.string.category_downloads),
+    Triple("camera", Environment.DIRECTORY_DCIM, R.string.folder_camera),
+    Triple("documents", Environment.DIRECTORY_DOCUMENTS, R.string.category_documents)
 )
 
 private val defaultQuickAccessIcons: Map<String, ImageVector> = mapOf(
@@ -1172,7 +1175,7 @@ private fun QuickAccessSection(viewModel: RoseViewModel, onOpenPath: (String) ->
     var itemPendingRemoval by remember { mutableStateOf<QuickItem?>(null) }
 
     val items = remember(viewModel.quickAccessRemoved, viewModel.quickAccessCustomPaths) {
-        val defaultItems = defaultQuickAccessFolders.mapNotNull { (id, dir, label) ->
+        val defaultItems = defaultQuickAccessFolders.mapNotNull { (id, dir, labelRes) ->
             if (viewModel.quickAccessRemoved.contains(id)) return@mapNotNull null
             var folder = Environment.getExternalStoragePublicDirectory(dir)
             if (id == "camera") {
@@ -1181,7 +1184,7 @@ private fun QuickAccessSection(viewModel: RoseViewModel, onOpenPath: (String) ->
                     folder = cameraFolder
                 }
             }
-            if (folder.exists()) QuickItem(id, label, defaultQuickAccessIcons.getValue(id), folder.absolutePath, false) else null
+            if (folder.exists()) QuickItem(id, "", defaultQuickAccessIcons.getValue(id), folder.absolutePath, false, labelRes) else null
         }
 
         val customItems = viewModel.quickAccessCustomPaths.mapNotNull { path ->
@@ -1198,7 +1201,7 @@ private fun QuickAccessSection(viewModel: RoseViewModel, onOpenPath: (String) ->
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "Quick access",
+                stringResource(R.string.home_quick_access),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
@@ -1207,7 +1210,7 @@ private fun QuickAccessSection(viewModel: RoseViewModel, onOpenPath: (String) ->
             IconButton(onClick = { viewModel.setQuickAccessExpanded(!viewModel.quickAccessExpanded) }) {
                 Icon(
                     if (viewModel.quickAccessExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = if (viewModel.quickAccessExpanded) "Collapse" else "Expand",
+                    contentDescription = if (viewModel.quickAccessExpanded) stringResource(R.string.content_desc_collapse) else stringResource(R.string.content_desc_expand),
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
@@ -1242,7 +1245,7 @@ private fun QuickAccessSection(viewModel: RoseViewModel, onOpenPath: (String) ->
                         ) {
                             FileIcon(fileItem = FileItem(File(item.path)), iconSize = 24.dp, folderTint = MaterialTheme.colorScheme.primary, viewModel = viewModel)
                             Spacer(modifier = Modifier.width(16.dp))
-                            Text(item.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                            Text(item.labelRes?.let { stringResource(it) } ?: item.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                         }
                         if (viewModel.showListDividers) {
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
@@ -1264,7 +1267,7 @@ private fun QuickAccessSection(viewModel: RoseViewModel, onOpenPath: (String) ->
                                 modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(16.dp))
-                            Text("Add folders", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                            Text(stringResource(R.string.action_add_folders), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                             Icon(
                                 Icons.Default.ChevronRight,
                                 contentDescription = null,
@@ -1289,16 +1292,17 @@ private fun QuickAccessSection(viewModel: RoseViewModel, onOpenPath: (String) ->
     }
 
     itemPendingRemoval?.let { item ->
+        val itemDisplayName = item.labelRes?.let { stringResource(it) } ?: item.label
         AlertDialog(
             onDismissRequest = { itemPendingRemoval = null },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.width(12.dp))
-                    Text("Remove Folder")
+                    Text(stringResource(R.string.dialog_remove_folder_title))
                 }
             },
-            text = { Text("Remove \"${item.label}\" from Quick access? You can add it back any time.") },
+            text = { Text(stringResource(R.string.dialog_remove_quick_access_message, itemDisplayName)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -1310,10 +1314,10 @@ private fun QuickAccessSection(viewModel: RoseViewModel, onOpenPath: (String) ->
                         itemPendingRemoval = null
                     },
                     shape = RoundedCornerShape(12.dp)
-                ) { Text("Remove") }
+                ) { Text(stringResource(R.string.action_remove)) }
             },
             dismissButton = {
-                TextButton(onClick = { itemPendingRemoval = null }) { Text("Cancel") }
+                TextButton(onClick = { itemPendingRemoval = null }) { Text(stringResource(R.string.action_cancel)) }
             },
             shape = RoundedCornerShape(28.dp)
         )
@@ -1341,7 +1345,7 @@ private fun StorageSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "External Storage",
+                stringResource(R.string.storage_external),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
@@ -1350,7 +1354,7 @@ private fun StorageSection(
             IconButton(onClick = { viewModel.setExternalStorageExpanded(!viewModel.externalStorageExpanded) }) {
                 Icon(
                     if (viewModel.externalStorageExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = if (viewModel.externalStorageExpanded) "Collapse" else "Expand",
+                    contentDescription = if (viewModel.externalStorageExpanded) stringResource(R.string.content_desc_collapse) else stringResource(R.string.content_desc_expand),
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
@@ -1449,13 +1453,13 @@ private fun StorageDeviceItem(
             if (device is StorageDevice.Physical) {
                 val used = device.totalBytes - device.availableBytes
                 Text(
-                    "${formatFileSize(used)} used of ${formatFileSize(device.totalBytes)}",
+                    stringResource(R.string.storage_amount_used_of_total, formatFileSize(used), formatFileSize(device.totalBytes)),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else if (device is StorageDevice.Logical) {
                 Text(
-                    if (device.treeUri.authority?.contains("com.google.android.apps.docs") == true) "Google Drive" else "Cloud Storage",
+                    if (device.treeUri.authority?.contains("com.google.android.apps.docs") == true) stringResource(R.string.storage_google_drive) else stringResource(R.string.storage_cloud),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1513,7 +1517,7 @@ private fun FolderPickerDialog(onDismiss: () -> Unit, onFolderSelected: (String)
                 TopAppBar(
                     title = {
                         Text(
-                            if (currentDir == rootDir) "Internal storage" else currentDir.name,
+                            if (currentDir == rootDir) stringResource(R.string.storage_internal) else currentDir.name,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -1524,14 +1528,14 @@ private fun FolderPickerDialog(onDismiss: () -> Unit, onFolderSelected: (String)
                         }) {
                             Icon(
                                 if (currentDir != rootDir) Icons.AutoMirrored.Filled.ArrowBack else Icons.Default.Close,
-                                contentDescription = "Back"
+                                contentDescription = stringResource(R.string.content_desc_back)
                             )
                         }
                     },
                     actions = {
                         if (currentDir != rootDir) {
                             IconButton(onClick = { currentDir = rootDir }) {
-                                Icon(Icons.Default.Home, contentDescription = "Go to Root")
+                                Icon(Icons.Default.Home, contentDescription = stringResource(R.string.content_desc_go_to_root))
                             }
                         }
                     }
@@ -1550,7 +1554,7 @@ private fun FolderPickerDialog(onDismiss: () -> Unit, onFolderSelected: (String)
                         ) {
                             Icon(Icons.Default.Check, null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Select this folder", style = MaterialTheme.typography.titleMedium)
+                            Text(stringResource(R.string.action_select_this_folder), style = MaterialTheme.typography.titleMedium)
                         }
                     }
                 }
@@ -1559,7 +1563,7 @@ private fun FolderPickerDialog(onDismiss: () -> Unit, onFolderSelected: (String)
             if (subDirs.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                     Text(
-                        "No subfolders here",
+                        stringResource(R.string.folder_picker_no_subfolders),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -1623,7 +1627,7 @@ private fun FolderPickerRow(
         supportingContent = {
             val count = item.itemCount ?: 0
             val dateStr = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault()).format(java.util.Date(item.lastModified))
-            Text("$count items | $dateStr")
+            Text(stringResource(R.string.item_count_and_date, count, dateStr))
         },
         leadingContent = {
             FileIcon(
@@ -1677,12 +1681,12 @@ private fun RecycleBinSection(onClick: () -> Unit) {
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "Recycle Bin",
+                    stringResource(R.string.home_section_recycle_bin),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    "Clean up files deleted in the last 30 days",
+                    stringResource(R.string.home_recycle_bin_subtitle),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

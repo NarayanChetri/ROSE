@@ -28,6 +28,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -62,7 +63,7 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (!isGranted) {
-            Toast.makeText(this, "Notification permission is recommended for background tasks", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.toast_notification_permission_recommended), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -73,7 +74,7 @@ class MainActivity : ComponentActivity() {
             if (Environment.isExternalStorageManager()) {
                 recreate()
             } else {
-                Toast.makeText(this, "Manage Storage permission is required", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, getString(R.string.toast_manage_storage_required), Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -119,7 +120,7 @@ class MainActivity : ComponentActivity() {
                     )
                     pendingStorageUri = uri
                 } catch (e: Exception) {
-                    Toast.makeText(this, "Failed to add storage: ${e.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.toast_failed_to_add_storage, e.message ?: ""), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -267,12 +268,12 @@ class MainActivity : ComponentActivity() {
                             }
                             Spacer(modifier = Modifier.height(20.dp))
                             Text(
-                                "Stay updated on transfers",
+                                stringResource(R.string.notif_primer_title),
                                 style = MaterialTheme.typography.titleLarge
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                "Rose can notify you with live progress while a file downloads in the background - so you always know when it's saved offline.",
+                                stringResource(R.string.notif_primer_description),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -292,12 +293,12 @@ class MainActivity : ComponentActivity() {
                                     containerColor = MaterialTheme.colorScheme.primary,
                                     contentColor = MaterialTheme.colorScheme.onPrimary
                                 )
-                            ) { Text("Allow notifications") }
+                            ) { Text(stringResource(R.string.action_allow_notifications)) }
                             Spacer(modifier = Modifier.height(4.dp))
                             TextButton(
                                 onClick = { dismissPrimer() },
                                 modifier = Modifier.fillMaxWidth()
-                            ) { Text("Not now") }
+                            ) { Text(stringResource(R.string.action_not_now)) }
                         }
                     }
                 }
@@ -400,7 +401,7 @@ class MainActivity : ComponentActivity() {
                                             screen = AppScreen.Files(startPath = tempFile.absolutePath, fromHome = true)
                                         }
                                     } catch (e: Exception) {
-                                        Toast.makeText(this@MainActivity, "Failed to open archive: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(this@MainActivity, getString(R.string.toast_failed_to_open_archive, e.message ?: ""), Toast.LENGTH_SHORT).show()
                                     }
                                 }
                                 pendingArchiveUri = null
@@ -462,14 +463,14 @@ class MainActivity : ComponentActivity() {
                                     // Naming dialog for new external storage
                                     pendingStorageUri?.let { uri ->
                                         val initialName = if (uri.authority?.contains("com.google.android.apps.docs") == true) {
-                                            "Google Drive"
+                                            stringResource(R.string.storage_google_drive)
                                         } else {
                                             // Try to get a meaningful name from the URI if possible
                                             val path = uri.path ?: ""
                                             if (path.contains(":")) {
                                                 path.substringAfterLast(":")
                                             } else {
-                                                "External Storage"
+                                                stringResource(R.string.storage_external)
                                             }
                                         }
                                         RenameDialog(
@@ -656,9 +657,9 @@ class MainActivity : ComponentActivity() {
                                         )
                                         Spacer(modifier = Modifier.width(12.dp))
                                         val jobText = when (fastJobs.firstOrNull()?.type) {
-                                            is dev.narayan.rose.filejob.FileJobType.Recycle -> "Moving to bin…"
-                                            is dev.narayan.rose.filejob.FileJobType.Restore -> "Restoring…"
-                                            else -> "Deleting…"
+                                            is dev.narayan.rose.filejob.FileJobType.Recycle -> stringResource(R.string.job_moving_to_bin_fast)
+                                            is dev.narayan.rose.filejob.FileJobType.Restore -> stringResource(R.string.job_restoring_fast)
+                                            else -> stringResource(R.string.job_deleting_fast)
                                         }
                                         Text(jobText, style = MaterialTheme.typography.bodyMedium)
                                     }
@@ -825,7 +826,7 @@ class MainActivity : ComponentActivity() {
                             return@launch
                         }
                         withContext(Dispatchers.Main) {
-                            Toast.makeText(this@MainActivity, "Failed to extract ${item.name}: ${e.message}", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@MainActivity, getString(R.string.toast_failed_to_extract, item.name, e.message ?: ""), Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
@@ -850,7 +851,7 @@ else {
             withContext(Dispatchers.Main) {
                 if (uris.isEmpty()) {
                     if (folderFound) {
-                        Toast.makeText(this@MainActivity, "Folders cannot be shared directly", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@MainActivity, getString(R.string.toast_folders_cannot_be_shared), Toast.LENGTH_SHORT).show()
                     }
                     return@withContext
                 }
@@ -868,7 +869,7 @@ else {
                     }
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-                startActivity(Intent.createChooser(intent, "Share via"))
+                startActivity(Intent.createChooser(intent, getString(R.string.action_share_via)))
             }
         }
     }
@@ -876,10 +877,10 @@ else {
     private fun openFileWith(fileItem: FileItem) {
         val intent = createViewIntent(fileItem) ?: return
         try {
-            val chooser = Intent.createChooser(intent, "Open with")
+            val chooser = Intent.createChooser(intent, getString(R.string.action_open_with))
             startActivity(chooser)
         } catch (e: Exception) {
-            Toast.makeText(this, "Couldn't open file: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.toast_couldnt_open_file, e.message ?: ""), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -892,11 +893,11 @@ else {
 
             if (!isVirtual) {
                 if (restricted && !SafManager.exists(this, path)) {
-                    Toast.makeText(this, "File no longer exists", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.toast_file_no_longer_exists), Toast.LENGTH_SHORT).show()
                     return null
                 }
                 if (!restricted && !file.exists()) {
-                    Toast.makeText(this, "File no longer exists", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.toast_file_no_longer_exists), Toast.LENGTH_SHORT).show()
                     return null
                 }
             }
@@ -926,14 +927,14 @@ else {
                         viewModel.passphrasePromptItem = fileItem
                         viewModel.passphraseAction = { pw -> openFile(fileItem, pw) }
                     } else {
-                        Toast.makeText(this, "Failed to extract file: ${e.message}", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, getString(R.string.toast_failed_to_extract_file, e.message ?: ""), Toast.LENGTH_SHORT).show()
                     }
                     return null
                 }
             }
 else if (restricted) {
                 SafManager.getContentUri(this, path) ?: run {
-                    Toast.makeText(this, "Couldn't access file", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.toast_couldnt_access_file), Toast.LENGTH_SHORT).show()
                     return null
                 }
             } else {
@@ -951,7 +952,7 @@ else if (restricted) {
                             data = Uri.parse("package:$packageName")
                         }
                         startActivity(settingsIntent)
-                        Toast.makeText(this, "Please allow installation from this source", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this, getString(R.string.toast_allow_install_source), Toast.LENGTH_LONG).show()
                         return null
                     }
                 }
@@ -999,7 +1000,7 @@ else if (restricted) {
 
             return intent
         } catch (e: Exception) {
-            Toast.makeText(this, "Couldn't prepare intent: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.toast_couldnt_prepare_intent, e.message ?: ""), Toast.LENGTH_SHORT).show()
             return null
         }
     }
@@ -1027,11 +1028,11 @@ else if (restricted) {
             try {
                 startActivity(intent)
             } catch (e: Exception) {
-                val chooser = Intent.createChooser(intent, "Open with")
+                val chooser = Intent.createChooser(intent, getString(R.string.action_open_with))
                 startActivity(chooser)
             }
         } catch (e: Exception) {
-            Toast.makeText(this, "Couldn't open file: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.toast_couldnt_open_file, e.message ?: ""), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1039,7 +1040,7 @@ else if (restricted) {
     internal fun openRecycledFile(item: RecycledItem) {
         val file = RecycleBinManager.getRecycledFile(this, item)
         if (!file.exists()) {
-            Toast.makeText(this, "File not found in recycle bin", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.toast_file_not_found_recycle_bin), Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -1071,7 +1072,7 @@ else if (restricted) {
         try {
             startActivity(intent)
         } catch (e: Exception) {
-            val chooser = Intent.createChooser(intent, "Open with")
+            val chooser = Intent.createChooser(intent, getString(R.string.action_open_with))
             startActivity(chooser)
         }
     }
@@ -1185,7 +1186,7 @@ fun PermissionPlaceholder() {
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        Text("Waiting for storage permissions...")
+        Text(stringResource(R.string.permission_placeholder_waiting))
     }
 }
 
