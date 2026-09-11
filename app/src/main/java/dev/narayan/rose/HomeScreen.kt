@@ -10,6 +10,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -436,7 +437,8 @@ fun HomeScreen(
                             onExtract = {
                                 viewModel.prepareExtraction(item.file)
                                 android.widget.Toast.makeText(context, "Archive ready. Navigate to a folder to extract.", android.widget.Toast.LENGTH_SHORT).show()
-                            }
+                            },
+                            onOpenArchive = { onOpenPath(item.file.absolutePath, null) }
                         )
                         if (viewModel.showListDividers && index != viewModel.searchResults.lastIndex) {
                             HorizontalDivider(
@@ -477,7 +479,12 @@ fun HomeScreen(
                         CategoryGrid(
                             counts = viewModel.categoryCounts,
                             isLoading = viewModel.isCategoryCountsLoading,
-                            onCategoryClick = { category -> onOpenCategory(category.type, category.label) }
+                            hasRunCountAnimation = viewModel.hasRunCategoryCountAnimation,
+                            onAnimationFinished = { viewModel.hasRunCategoryCountAnimation = true },
+                            onCategoryClick = { category ->
+                                viewModel.hasRunCategoryCountAnimation = true
+                                onOpenCategory(category.type, category.label)
+                            }
                         )
                     }
                 }
@@ -627,7 +634,8 @@ private fun SearchResultItem(
     onOpenLocation: () -> Unit,
     onCopy: () -> Unit,
     onCut: () -> Unit,
-    onExtract: () -> Unit = {}
+    onExtract: () -> Unit = {},
+    onOpenArchive: () -> Unit = {}
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
@@ -807,8 +815,21 @@ private fun StorageCapsule(
 private fun CategoryGrid(
     counts: Map<FileType, Int>,
     isLoading: Boolean,
+    hasRunCountAnimation: Boolean,
+    onAnimationFinished: () -> Unit,
     onCategoryClick: (HomeCategory) -> Unit
 ) {
+    var animationStarted by remember { mutableStateOf(hasRunCountAnimation) }
+
+    LaunchedEffect(Unit) {
+        if (!hasRunCountAnimation) {
+            kotlinx.coroutines.delay(100) // Small delay to sync with card entrance animation
+            animationStarted = true
+            kotlinx.coroutines.delay(1100) // Allow 1000ms tween to complete
+            onAnimationFinished()
+        }
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         homeCategories.chunked(3).forEachIndexed { rowIndex, row ->
             Row(
@@ -820,6 +841,8 @@ private fun CategoryGrid(
                         category = category,
                         count = counts[category.type] ?: 0,
                         isLoading = isLoading,
+                        animationStarted = animationStarted,
+                        hasRunCountAnimation = hasRunCountAnimation,
                         index = rowIndex * 3 + colIndex,
                         modifier = Modifier.weight(1f),
                         onClick = { onCategoryClick(category) }
@@ -838,13 +861,16 @@ private fun CategoryCard(
     category: HomeCategory,
     count: Int,
     isLoading: Boolean,
+    animationStarted: Boolean,
+    hasRunCountAnimation: Boolean,
     index: Int = 0,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val targetCount = if (animationStarted || hasRunCountAnimation) count else 0
     val animatedCount by androidx.compose.animation.core.animateIntAsState(
-        targetValue = count,
-        animationSpec = tween(durationMillis = 1000, easing = FastOutSlowInEasing),
+        targetValue = targetCount,
+        animationSpec = if (!hasRunCountAnimation) tween(durationMillis = 1000, easing = FastOutSlowInEasing) else snap<Int>(),
         label = "CategoryCountAnimation"
     )
 

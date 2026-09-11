@@ -367,19 +367,38 @@ class MainActivity : ComponentActivity() {
                         // Handle viewed archive
                         LaunchedEffect(pendingArchiveUri) {
                             pendingArchiveUri?.let { uri ->
-                                val extension = MimeTypeMap.getFileExtensionFromUrl(uri.toString()).lowercase()
-                                val isArchive = isArchiveUri(uri) || extension in archiveExtensions
+                                val isArchive = isArchiveUri(uri)
 
                                 if (isArchive) {
                                     viewModel.resetFiles()
-                                    // For external URIs, we need to copy to a temp file because
-                                    // java.util.zip.ZipFile requires a File object (path), not a Stream.
                                     try {
-                                        val tempFile = File(cacheDir, "view_archive_${System.currentTimeMillis()}.${if (extension.isEmpty()) "zip" else extension}")
-                                        contentResolver.openInputStream(uri)?.use { input ->
-                                            tempFile.outputStream().use { output -> input.copyTo(output) }
+                                        if (uri.scheme == "file" && uri.path != null && File(uri.path!!).exists()) {
+                                            screen = AppScreen.Files(startPath = File(uri.path!!).absolutePath, fromHome = true)
+                                        } else {
+                                            val displayName = getUriDisplayName(uri) ?: "archive"
+                                            val extFromName = displayName.substringAfterLast('.', "").lowercase()
+                                            val mime = try { contentResolver.getType(uri) } catch (e: Exception) { null }
+                                            val effectiveExt = when {
+                                                extFromName in archiveExtensions -> extFromName
+                                                mime == "application/vnd.android.package-archive" -> "apk"
+                                                mime in listOf("application/zip", "application/x-zip", "application/x-zip-compressed") -> "zip"
+                                                else -> "zip"
+                                            }
+
+                                            val baseName = if (displayName.contains(".")) displayName.substringBeforeLast('.') else displayName
+                                            val sanitizedBase = baseName.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(50)
+                                            val targetDir = File(cacheDir, "view_archives/${System.currentTimeMillis()}")
+                                            targetDir.mkdirs()
+
+                                            cleanupOldViewArchives()
+
+                                            val tempFile = File(targetDir, "$sanitizedBase.$effectiveExt")
+                                            contentResolver.openInputStream(uri)?.use { input ->
+                                                tempFile.outputStream().use { output -> input.copyTo(output) }
+                                            } ?: throw Exception("Could not read file data")
+
+                                            screen = AppScreen.Files(startPath = tempFile.absolutePath, fromHome = true)
                                         }
-                                        screen = AppScreen.Files(startPath = tempFile.absolutePath, fromHome = true)
                                     } catch (e: Exception) {
                                         Toast.makeText(this@MainActivity, "Failed to open archive: ${e.message}", Toast.LENGTH_SHORT).show()
                                     }
@@ -664,9 +683,8 @@ class MainActivity : ComponentActivity() {
 
         when (intent.action) {
             Intent.ACTION_VIEW -> {
-                intent.data?.let { uri ->
-                    pendingArchiveUri = uri
-                }
+                val uri = intent.data ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+                uri?.let { pendingArchiveUri = it }
             }
             Intent.ACTION_SEND -> {
                 val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -674,7 +692,7 @@ class MainActivity : ComponentActivity() {
                 } else {
                     @Suppress("DEPRECATION")
                     intent.getParcelableExtra(Intent.EXTRA_STREAM)
-                }
+                } ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
                 uri?.let { sharedUris = listOf(it) }
             }
             Intent.ACTION_SEND_MULTIPLE -> {
@@ -695,28 +713,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private val archiveExtensions = listOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz")
+    private val archiveExtensions = listOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "apk", "xapk", "apks")
     private val archiveMimeTypes = listOf(
-        "application/zip", "application/x-zip-compressed",
-        "application/x-7z-compressed", "application/x-rar-compressed", "application/vnd.rar",
-        "application/x-tar", "application/gzip", "application/x-bzip2", "application/x-xz"
+        "application/zip", "application/x-zip", "application/x-zip-compressed",
+        "application/x-7z-compressed", "application/x-rar-compressed", "application/rar", "application/vnd.rar",
+        "application/x-tar", "application/gzip", "application/x-bzip2", "application/x-xz",
+        "application/vnd.android.package-archive"
     )
 
-    // Content Uris shared from other apps (WhatsApp, Gmail, etc.) almost never have a
-    // real file extension in their path, so MimeTypeMap.getFileExtensionFromUrl(uri)
-    // alone silently returns "" for them - this was why sharing a .rar/.7z (and often
-    // even a .zip) here used to skip straight to "Save to..." instead of offering
-    // Archive viewer/Save as. Cross-check the resolver's reported MIME type and the
-    // provider's DISPLAY_NAME column, which reflect the real file name/type.
-    private fun isArchiveUri(uri: Uri): Boolean {
-        val mimeType = contentResolver.getType(uri)
-        if (mimeType in archiveMimeTypes) return true
-
-        val urlExtension = MimeTypeMap.getFileExtensionFromUrl(uri.toString()).lowercase()
-        if (urlExtension in archiveExtensions) return true
-
-        val displayName = try {
-            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+    private fun getUriDisplayName(uri: Uri): String? {
+        return try {
+            contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
                 if (cursor.moveToFirst()) {
                     val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
                     if (index >= 0) cursor.getString(index) else null
@@ -724,9 +731,51 @@ class MainActivity : ComponentActivity() {
             }
         } catch (e: Exception) {
             null
+        } ?: uri.lastPathSegment
+    }
+
+    private fun cleanupOldViewArchives() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val dir = File(cacheDir, "view_archives")
+                if (dir.exists() && dir.isDirectory) {
+                    val oneDayAgo = System.currentTimeMillis() - 24 * 60 * 60 * 1000
+                    dir.listFiles()?.forEach { child ->
+                        if (child.lastModified() < oneDayAgo) {
+                            child.deleteRecursively()
+                        }
+                    }
+                }
+            } catch (e: Exception) {}
         }
+    }
+
+    // Content Uris shared from other apps (WhatsApp, Gmail, etc.) almost never have a
+    // real file extension in their path, so MimeTypeMap.getFileExtensionFromUrl(uri)
+    // alone silently returns "" for them - this was why sharing a .rar/.7z (and often
+    // even a .zip or .apk) here used to skip straight to "Save to..." instead of offering
+    // Archive viewer/Save as. Cross-check the resolver's reported MIME type and the
+    // provider's DISPLAY_NAME column, which reflect the real file name/type.
+    private fun isArchiveUri(uri: Uri): Boolean {
+        val mimeType = try { contentResolver.getType(uri) } catch (e: Exception) { null }
+        if (mimeType != null && mimeType in archiveMimeTypes) return true
+
+        val urlExtension = MimeTypeMap.getFileExtensionFromUrl(uri.toString()).lowercase()
+        if (urlExtension in archiveExtensions) return true
+
+        val pathExtension = uri.path?.substringAfterLast('.', "")?.lowercase()
+        if (pathExtension != null && pathExtension.isNotEmpty() && pathExtension in archiveExtensions) return true
+
+        val displayName = getUriDisplayName(uri)
         val nameExtension = displayName?.substringAfterLast('.', "")?.lowercase()
-        return nameExtension != null && nameExtension.isNotEmpty() && nameExtension in archiveExtensions
+        if (nameExtension != null && nameExtension.isNotEmpty() && nameExtension in archiveExtensions) return true
+
+        if (uri.scheme == "file") {
+            val file = File(uri.path ?: "")
+            if (file.extension.lowercase() in archiveExtensions) return true
+        }
+
+        return false
     }
 
     private fun shareFiles(fileItems: List<FileItem>, passphrase: String? = null) {

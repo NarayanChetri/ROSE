@@ -10,6 +10,8 @@ import java.io.OutputStream
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
 
 data class RoseArchiveEntry(
     val name: String,
@@ -24,7 +26,7 @@ object ArchiveManager {
     private const val BUFFER_SIZE = 128 * 1024 // 128KB
 
     fun readEntries(file: File): List<RoseArchiveEntry> {
-        return try {
+        val entries = try {
             RandomAccessFile(file, "r").use { raf ->
                 readEntries(raf.channel)
             }
@@ -37,6 +39,31 @@ object ArchiveManager {
                 emptyList()
             }
         }
+
+        if (entries.isNotEmpty()) return entries
+
+        // Fallback to ZipFile (vital for APKs with v2/v3 signing blocks or non-standard ZIP headers)
+        return try {
+            readEntriesZipFallback(file)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun readEntriesZipFallback(file: File): List<RoseArchiveEntry> {
+        val entries = mutableListOf<RoseArchiveEntry>()
+        ZipFile(file).use { zip ->
+            val enumEntries = zip.entries()
+            while (enumEntries.hasMoreElements()) {
+                val entry = enumEntries.nextElement()
+                val name = entry.name
+                val isDir = entry.isDirectory
+                val size = if (isDir) 0L else maxOf(0L, entry.size)
+                val mtime = entry.time.takeIf { it > 0 } ?: file.lastModified()
+                entries.add(RoseArchiveEntry(name, isDir, size, mtime, false))
+            }
+        }
+        return entries
     }
 
     fun readEntries(channel: FileChannel): List<RoseArchiveEntry> {
@@ -188,12 +215,56 @@ object ArchiveManager {
     }
 
     fun extractEntry(file: File, entryPath: String, outputStream: OutputStream, passphrase: String? = null) {
+        var success = false
         try {
             RandomAccessFile(file, "r").use { raf ->
                 extractEntry(raf.channel, entryPath, outputStream, passphrase)
+                success = true
             }
         } catch (e: Exception) {
-            FileInputStream(file).use { fis -> extractEntry(fis, entryPath, outputStream, passphrase) }
+            try {
+                FileInputStream(file).use { fis ->
+                    extractEntry(fis, entryPath, outputStream, passphrase)
+                    success = true
+                }
+            } catch (e2: Exception) {
+                e2.printStackTrace()
+            }
+        }
+
+        if (!success) {
+            try {
+                extractEntryZipFallback(file, entryPath, outputStream)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                throw e
+            }
+        }
+    }
+
+    private fun extractEntryZipFallback(file: File, entryPath: String, outputStream: OutputStream) {
+        ZipFile(file).use { zip ->
+            val cleanTarget = entryPath.trimStart('/')
+            val zipEntry = zip.getEntry(cleanTarget)
+                ?: zip.getEntry("/$cleanTarget")
+                ?: zip.getEntry(entryPath)
+                ?: run {
+                    val enumEntries = zip.entries()
+                    var found: ZipEntry? = null
+                    while (enumEntries.hasMoreElements()) {
+                        val e = enumEntries.nextElement()
+                        if (e.name.trimStart('/') == cleanTarget) {
+                            found = e
+                            break
+                        }
+                    }
+                    found
+                }
+                ?: throw Exception("Entry not found in zip: $entryPath")
+
+            zip.getInputStream(zipEntry).use { input ->
+                input.copyTo(outputStream, BUFFER_SIZE)
+            }
         }
     }
 
@@ -202,14 +273,17 @@ object ArchiveManager {
         try {
             setupReadArchive(archive, channel, passphrase)
             Archive.readOpen1(archive)
+            val cleanTarget = entryPath.trimStart('/')
             while (true) {
                 val entry = Archive.readNextHeader(archive)
                 if (entry == 0L) break
-                if (getEntryName(entry) == entryPath) {
+                val name = getEntryName(entry).trimStart('/')
+                if (name == cleanTarget) {
                     copyData(archive, outputStream)
                     return
                 }
             }
+            throw Exception("Entry not found in archive: $entryPath")
         } finally {
             Archive.readFree(archive)
         }
@@ -220,79 +294,165 @@ object ArchiveManager {
         try {
             setupReadArchive(archive, inputStream, passphrase)
             Archive.readOpen1(archive)
+            val cleanTarget = entryPath.trimStart('/')
             while (true) {
                 val entry = Archive.readNextHeader(archive)
                 if (entry == 0L) break
-                if (getEntryName(entry) == entryPath) {
+                val name = getEntryName(entry).trimStart('/')
+                if (name == cleanTarget) {
                     copyData(archive, outputStream)
                     return
                 }
             }
+            throw Exception("Entry not found in archive: $entryPath")
         } finally {
             Archive.readFree(archive)
         }
     }
 
     fun extractTo(archiveFile: File, entryName: String, dest: File, passphrase: String? = null) {
-        RandomAccessFile(archiveFile, "r").use { raf ->
-            val channel = raf.channel
-            val archive = Archive.readNew()
-            try {
-                setupReadArchive(archive, channel, passphrase)
-                Archive.readOpen1(archive)
-                
-                val prefix = entryName.trimEnd('/') + "/"
-                val destCanonicalPath = dest.canonicalPath
-                
-                while (true) {
-                    val entry = Archive.readNextHeader(archive)
-                    if (entry == 0L) break
+        var extractedAny = false
+        try {
+            RandomAccessFile(archiveFile, "r").use { raf ->
+                val channel = raf.channel
+                val archive = Archive.readNew()
+                try {
+                    setupReadArchive(archive, channel, passphrase)
+                    Archive.readOpen1(archive)
                     
-                    val name = getEntryName(entry)
-                    val isDir = ArchiveEntry.filetype(entry) == ArchiveEntry.AE_IFDIR
+                    val cleanEntryName = entryName.trimStart('/')
+                    val prefix = cleanEntryName.trimEnd('/') + "/"
+                    val destCanonicalPath = dest.canonicalPath
                     
-                    if (name == entryName || name == "$entryName/") {
-                        if (!isDir) {
-                            dest.parentFile?.mkdirs()
-                            dest.outputStream().use { output -> copyData(archive, output) }
-                            return
+                    while (true) {
+                        val entry = Archive.readNextHeader(archive)
+                        if (entry == 0L) break
+                        
+                        val name = getEntryName(entry).trimStart('/')
+                        val isDir = ArchiveEntry.filetype(entry) == ArchiveEntry.AE_IFDIR
+                        
+                        if (name == cleanEntryName || name == "$cleanEntryName/") {
+                            if (!isDir) {
+                                dest.parentFile?.mkdirs()
+                                dest.outputStream().use { output -> copyData(archive, output) }
+                                extractedAny = true
+                                return
+                            }
+                        } else if (name.startsWith(prefix)) {
+                            val relative = name.removePrefix(prefix)
+                            val childDest = File(dest, relative)
+                            if (childDest.canonicalPath.startsWith(destCanonicalPath + File.separator) || childDest.canonicalPath == destCanonicalPath) {
+                                if (isDir) {
+                                    childDest.mkdirs()
+                                } else {
+                                    childDest.parentFile?.mkdirs()
+                                    childDest.outputStream().use { output -> copyData(archive, output) }
+                                }
+                                extractedAny = true
+                            }
                         }
-                    } else if (name.startsWith(prefix)) {
-                        val relative = name.removePrefix(prefix)
-                        val childDest = File(dest, relative)
-                        if (childDest.canonicalPath.startsWith(destCanonicalPath + File.separator) || childDest.canonicalPath == destCanonicalPath) {
-                            if (isDir) {
-                                childDest.mkdirs()
-                            } else {
-                                childDest.parentFile?.mkdirs()
-                                childDest.outputStream().use { output -> copyData(archive, output) }
+                    }
+                } finally {
+                    Archive.readFree(archive)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        if (!extractedAny) {
+            try {
+                extractToZipFallback(archiveFile, entryName, dest)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private fun extractToZipFallback(archiveFile: File, entryName: String, dest: File) {
+        ZipFile(archiveFile).use { zip ->
+            val cleanEntryName = entryName.trimStart('/')
+            val prefix = cleanEntryName.trimEnd('/') + "/"
+            val destCanonicalPath = dest.canonicalPath
+
+            val enumEntries = zip.entries()
+            while (enumEntries.hasMoreElements()) {
+                val entry = enumEntries.nextElement()
+                val name = entry.name.trimStart('/')
+                val isDir = entry.isDirectory
+
+                if (name == cleanEntryName || name == "$cleanEntryName/") {
+                    if (!isDir) {
+                        dest.parentFile?.mkdirs()
+                        dest.outputStream().use { output ->
+                            zip.getInputStream(entry).use { input -> input.copyTo(output, BUFFER_SIZE) }
+                        }
+                        return
+                    }
+                } else if (name.startsWith(prefix)) {
+                    val relative = name.removePrefix(prefix)
+                    val childDest = File(dest, relative)
+                    if (childDest.canonicalPath.startsWith(destCanonicalPath + File.separator) || childDest.canonicalPath == destCanonicalPath) {
+                        if (isDir) {
+                            childDest.mkdirs()
+                        } else {
+                            childDest.parentFile?.mkdirs()
+                            childDest.outputStream().use { output ->
+                                zip.getInputStream(entry).use { input -> input.copyTo(output, BUFFER_SIZE) }
                             }
                         }
                     }
                 }
-            } finally {
-                Archive.readFree(archive)
             }
         }
     }
 
     fun extractAll(archiveFile: File, passphrase: String? = null, onEntry: (name: String, isDirectory: Boolean, copyTask: (OutputStream) -> Unit) -> Unit) {
-        RandomAccessFile(archiveFile, "r").use { raf ->
-            val channel = raf.channel
-            val archive = Archive.readNew()
-            try {
-                setupReadArchive(archive, channel, passphrase)
-                Archive.readOpen1(archive)
-                while (true) {
-                    val entry = Archive.readNextHeader(archive)
-                    if (entry == 0L) break
-                    val name = getEntryName(entry)
-                    val stat = ArchiveEntry.stat(entry)
-                    val isDir = (stat.stMode and 0xf000) == 0x4000
-                    onEntry(name, isDir) { output -> copyData(archive, output) }
+        var count = 0
+        try {
+            RandomAccessFile(archiveFile, "r").use { raf ->
+                val channel = raf.channel
+                val archive = Archive.readNew()
+                try {
+                    setupReadArchive(archive, channel, passphrase)
+                    Archive.readOpen1(archive)
+                    while (true) {
+                        val entry = Archive.readNextHeader(archive)
+                        if (entry == 0L) break
+                        val name = getEntryName(entry).trimStart('/')
+                        val stat = ArchiveEntry.stat(entry)
+                        val isDir = (stat.stMode and 0xf000) == 0x4000
+                        count++
+                        onEntry(name, isDir) { output -> copyData(archive, output) }
+                    }
+                } finally {
+                    Archive.readFree(archive)
                 }
-            } finally {
-                Archive.readFree(archive)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        if (count == 0) {
+            try {
+                extractAllZipFallback(archiveFile, onEntry)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private fun extractAllZipFallback(archiveFile: File, onEntry: (name: String, isDirectory: Boolean, copyTask: (OutputStream) -> Unit) -> Unit) {
+        ZipFile(archiveFile).use { zip ->
+            val enumEntries = zip.entries()
+            while (enumEntries.hasMoreElements()) {
+                val entry = enumEntries.nextElement()
+                val name = entry.name.trimStart('/')
+                onEntry(name, entry.isDirectory) { output ->
+                    zip.getInputStream(entry).use { input ->
+                        input.copyTo(output, BUFFER_SIZE)
+                    }
+                }
             }
         }
     }
@@ -318,43 +478,85 @@ object ArchiveManager {
     }
 
     fun getEntryBytes(file: File, entryPath: String, maxSize: Long = 10 * 1024 * 1024, passphrase: String? = null): ByteArray? {
-        return try {
+        val libarchiveBytes: ByteArray? = try {
             RandomAccessFile(file, "r").use { raf ->
                 val channel = raf.channel
                 val archive = Archive.readNew()
                 try {
                     setupReadArchive(archive, channel, passphrase)
                     Archive.readOpen1(archive)
+                    val cleanTarget = entryPath.trimStart('/')
+                    var foundBytes: ByteArray? = null
                     while (true) {
                         val entry = Archive.readNextHeader(archive)
                         if (entry == 0L) break
-                        if (getEntryName(entry) == entryPath) {
+                        if (getEntryName(entry).trimStart('/') == cleanTarget) {
                             val stat = ArchiveEntry.stat(entry)
                             val size = stat.stSize
-                            if (size > maxSize || size < 0) return null
-                            val bytes = ByteArray(size.toInt())
+                            if (size > maxSize || size < 0) break
+                            val entryBytes = ByteArray(size.toInt())
                             val buffer = ByteBuffer.allocateDirect(BUFFER_SIZE)
                             var offset = 0
-                            while (offset < bytes.size) {
+                            while (offset < entryBytes.size) {
                                 buffer.clear()
                                 Archive.readData(archive, buffer)
                                 buffer.flip()
                                 val remaining = buffer.remaining()
                                 if (remaining == 0) break
-                                val toCopy = minOf(remaining, bytes.size - offset)
-                                buffer.get(bytes, offset, toCopy)
+                                val toCopy = minOf(remaining, entryBytes.size - offset)
+                                buffer.get(entryBytes, offset, toCopy)
                                 offset += toCopy
                             }
-                            return bytes
+                            foundBytes = entryBytes
+                            break
                         }
                     }
-                    null
+                    foundBytes
                 } finally {
                     Archive.readFree(archive)
                 }
             }
         } catch (e: Exception) {
             e.printStackTrace()
+            null
+        }
+
+        if (libarchiveBytes != null) return libarchiveBytes
+
+        return try {
+            getEntryBytesZipFallback(file, entryPath, maxSize)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun getEntryBytesZipFallback(file: File, entryPath: String, maxSize: Long): ByteArray? {
+        return try {
+            ZipFile(file).use { zip ->
+                val cleanTarget = entryPath.trimStart('/')
+                val zipEntry = zip.getEntry(cleanTarget)
+                    ?: zip.getEntry("/$cleanTarget")
+                    ?: zip.getEntry(entryPath)
+                    ?: run {
+                        val enumEntries = zip.entries()
+                        var found: ZipEntry? = null
+                        while (enumEntries.hasMoreElements()) {
+                            val e = enumEntries.nextElement()
+                            if (e.name.trimStart('/') == cleanTarget) {
+                                found = e
+                                break
+                            }
+                        }
+                        found
+                    }
+                    ?: return null
+
+                if (zipEntry.size > maxSize || zipEntry.size < 0) return null
+                zip.getInputStream(zipEntry).use { input ->
+                    input.readBytes()
+                }
+            }
+        } catch (e: Exception) {
             null
         }
     }

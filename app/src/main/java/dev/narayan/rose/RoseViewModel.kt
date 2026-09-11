@@ -613,6 +613,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     var hasRunDividerAnimation by mutableStateOf(false)
     var hasRunStorageAnimation by mutableStateOf(false)
     var hasRunEntranceAnimation by mutableStateOf(false)
+    var hasRunCategoryCountAnimation by mutableStateOf(false)
 
     // Home screen scroll position, saved continuously while Home is visible and
     // re-applied every time Home is (re)composed - e.g. after opening a folder
@@ -1219,7 +1220,13 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         val normalizedPath = ShizukuManager.normalize(path)
-        val archiveExtensions = listOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz")
+        val archiveExtensions = listOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "apk", "xapk", "apks")
+        val archiveMimeTypes = listOf(
+            "application/zip", "application/x-zip", "application/x-zip-compressed",
+            "application/x-7z-compressed", "application/x-rar-compressed", "application/rar", "application/vnd.rar",
+            "application/x-tar", "application/gzip", "application/x-bzip2", "application/x-xz",
+            "application/vnd.android.package-archive"
+        )
 
         // Check if it's an archive, including restricted paths and shared URIs
         val isArchive = if (path.startsWith("content://")) {
@@ -1227,7 +1234,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             val mime = getApplication<Application>().contentResolver.getType(uri)
             val displayName = getFileNameFromUri(uri)?.lowercase() ?: ""
 
-            mime in listOf("application/zip", "application/x-7z-compressed", "application/x-rar-compressed", "application/x-tar", "application/gzip", "application/x-bzip2", "application/x-xz") ||
+            mime in archiveMimeTypes ||
                     archiveExtensions.any { displayName.endsWith(".$it") } ||
                     path.lowercase().let { p -> archiveExtensions.any { p.endsWith(".$it") } }
         } else if (path.startsWith("file://")) {
@@ -1532,7 +1539,21 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         val requestGeneration = ++filesGeneration
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val tempFile = File(context.cacheDir, "shared_archive.zip")
+                val displayName = getFileNameFromUri(uri) ?: "shared_archive"
+                val extFromName = displayName.substringAfterLast('.', "").lowercase()
+                val mime = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
+                val effectiveExt = when {
+                    extFromName in listOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "apk", "xapk", "apks") -> extFromName
+                    mime == "application/vnd.android.package-archive" -> "apk"
+                    mime in listOf("application/zip", "application/x-zip", "application/x-zip-compressed") -> "zip"
+                    else -> "zip"
+                }
+                val baseName = if (displayName.contains(".")) displayName.substringBeforeLast('.') else displayName
+                val safeBase = baseName.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(50)
+
+                val targetDir = File(context.cacheDir, "view_archives/${System.currentTimeMillis()}")
+                targetDir.mkdirs()
+                val tempFile = File(targetDir, "$safeBase.$effectiveExt")
                 context.contentResolver.openInputStream(uri)?.use { input ->
                     tempFile.outputStream().use { output -> input.copyTo(output) }
                 } ?: throw Exception("Failed to open shared file.")
@@ -2286,13 +2307,21 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     var categoryBucketId by mutableStateOf<String?>(null)
         private set
 
-    var categoryCounts by mutableStateOf<Map<FileType, Int>>(emptyMap())
+    var categoryCounts by mutableStateOf<Map<FileType, Int>>(
+        settings.cachedCategoryCounts.mapNotNull { (key, count) ->
+            try {
+                FileType.valueOf(key) to count
+            } catch (e: IllegalArgumentException) {
+                null
+            }
+        }.toMap()
+    )
         private set
 
     var isCategoryCountsLoading by mutableStateOf(false)
         private set
 
-    /** Optimized counting using MediaStore query counts */
+    /** Optimized counting using a single MediaStore query */
     private var lastCategoryLoadTime = 0L
     fun loadCategoryCounts(force: Boolean = false) {
         if (isCategoryCountsLoading) return
@@ -2303,52 +2332,110 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             isCategoryCountsLoading = true
             lastCategoryLoadTime = now
-            val counts = mutableMapOf<FileType, Int>()
+            val counts = mutableMapOf(
+                FileType.IMAGE to 0,
+                FileType.VIDEO to 0,
+                FileType.AUDIO to 0,
+                FileType.PDF to 0,
+                FileType.APK to 0,
+                FileType.ZIP to 0,
+                FileType.DOCUMENT to 0
+            )
             val resolver = getApplication<Application>().contentResolver
 
-            // Helper to count by selection
-            fun countSelection(selection: String, excludeWhatsappTelegram: Boolean = true): Int {
-                val hardcodedExcluded = if (excludeWhatsappTelegram) {
-                    listOf("WhatsApp/Media", "Telegram", ".thumbnails", "Android/data", "Android/obb")
-                } else {
-                    listOf(".thumbnails", "Android/data", "Android/obb")
-                }
+            val hardcodedExcluded = listOf(".thumbnails", "Android/data", "Android/obb")
+            val userExcluded = excludedFolders.toList()
 
-                val userExcluded = excludedFolders.toList()
+            val excludeSelection = (hardcodedExcluded.map { "${MediaStore.MediaColumns.DATA} NOT LIKE '%/$it/%'" } +
+                    userExcluded.map { "(${MediaStore.MediaColumns.DATA} NOT LIKE '$it/%' AND ${MediaStore.MediaColumns.DATA} != '$it')" }).joinToString(" AND ")
 
-                val excludeSelection = (hardcodedExcluded.map { "${MediaStore.MediaColumns.DATA} NOT LIKE '%/$it/%'" } +
-                        userExcluded.map { "(${MediaStore.MediaColumns.DATA} NOT LIKE '$it/%' AND ${MediaStore.MediaColumns.DATA} != '$it')" }).joinToString(" AND ")
+            // Exclude hidden files and folders
+            val noHiddenSelection = "(${MediaStore.MediaColumns.DATA} NOT LIKE '%/.%' AND ${MediaStore.MediaColumns.DATA} NOT LIKE '.%')"
 
-                // Exclude hidden files and folders
-                val noHiddenSelection = "(${MediaStore.MediaColumns.DATA} NOT LIKE '%/.%' AND ${MediaStore.MediaColumns.DATA} NOT LIKE '.%')"
-
-                val finalSelection = if (selection.isNotEmpty()) {
-                    "($selection) AND ($excludeSelection) AND ($noHiddenSelection)"
-                } else {
-                    "($excludeSelection) AND ($noHiddenSelection)"
-                }
-
-                return try {
-                    val uri = MediaStore.Files.getContentUri("external")
-                    resolver.query(uri, arrayOf(MediaStore.Files.FileColumns._ID), finalSelection, null, null)?.use { cursor ->
-                        cursor.count
-                    } ?: 0
-                } catch (e: Throwable) { 0 }
+            val finalSelection = if (excludeSelection.isNotEmpty()) {
+                "${MediaStore.MediaColumns.DATA} IS NOT NULL AND ($excludeSelection) AND ($noHiddenSelection)"
+            } else {
+                "${MediaStore.MediaColumns.DATA} IS NOT NULL AND ($noHiddenSelection)"
             }
 
-            counts[FileType.IMAGE] = countSelection("${MediaStore.Files.FileColumns.MEDIA_TYPE} = ${MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE} OR ${MediaStore.MediaColumns.DATA} LIKE '%.jpg' OR ${MediaStore.MediaColumns.DATA} LIKE '%.jpeg' OR ${MediaStore.MediaColumns.DATA} LIKE '%.png' OR ${MediaStore.MediaColumns.DATA} LIKE '%.webp' OR ${MediaStore.MediaColumns.DATA} LIKE '%.gif' OR ${MediaStore.MediaColumns.DATA} LIKE '%.bmp' OR ${MediaStore.MediaColumns.DATA} LIKE '%.heic' OR ${MediaStore.MediaColumns.DATA} LIKE '%.heif' OR ${MediaStore.MediaColumns.DATA} LIKE '%.JPG' OR ${MediaStore.MediaColumns.DATA} LIKE '%.JPEG' OR ${MediaStore.MediaColumns.DATA} LIKE '%.PNG'")
-            counts[FileType.VIDEO] = countSelection("${MediaStore.Files.FileColumns.MEDIA_TYPE} = ${MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO} OR ${MediaStore.MediaColumns.DATA} LIKE '%.mp4' OR ${MediaStore.MediaColumns.DATA} LIKE '%.mkv' OR ${MediaStore.MediaColumns.DATA} LIKE '%.mov' OR ${MediaStore.MediaColumns.DATA} LIKE '%.avi' OR ${MediaStore.MediaColumns.DATA} LIKE '%.3gp' OR ${MediaStore.MediaColumns.DATA} LIKE '%.flv' OR ${MediaStore.MediaColumns.DATA} LIKE '%.wmv' OR ${MediaStore.MediaColumns.DATA} LIKE '%.MP4'")
-            counts[FileType.AUDIO] = countSelection("${MediaStore.Files.FileColumns.MEDIA_TYPE} = ${MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO} OR ${MediaStore.MediaColumns.DATA} LIKE '%.mp3' OR ${MediaStore.MediaColumns.DATA} LIKE '%.wav' OR ${MediaStore.MediaColumns.DATA} LIKE '%.ogg' OR ${MediaStore.MediaColumns.DATA} LIKE '%.m4a' OR ${MediaStore.MediaColumns.DATA} LIKE '%.flac' OR ${MediaStore.MediaColumns.DATA} LIKE '%.aac' OR ${MediaStore.MediaColumns.DATA} LIKE '%.MP3'")
+            val imageExts = setOf("jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif")
+            val videoExts = setOf("mp4", "mkv", "mov", "avi", "3gp", "flv", "wmv")
+            val audioExts = setOf("mp3", "wav", "ogg", "m4a", "flac", "aac")
+            val zipExts = setOf("zip", "rar", "7z", "tar", "gz")
 
-            counts[FileType.PDF] = countSelection("${MediaStore.Files.FileColumns.MIME_TYPE} = 'application/pdf' OR ${MediaStore.MediaColumns.DATA} LIKE '%.pdf' OR ${MediaStore.MediaColumns.DATA} LIKE '%.PDF'", excludeWhatsappTelegram = false)
-            counts[FileType.APK] = countSelection("${MediaStore.Files.FileColumns.MIME_TYPE} = 'application/vnd.android.package-archive' OR ${MediaStore.MediaColumns.DATA} LIKE '%.apk' OR ${MediaStore.MediaColumns.DATA} LIKE '%.APK'", excludeWhatsappTelegram = false)
-            counts[FileType.ZIP] = countSelection("${MediaStore.MediaColumns.DATA} LIKE '%.zip' OR ${MediaStore.MediaColumns.DATA} LIKE '%.rar' OR ${MediaStore.MediaColumns.DATA} LIKE '%.7z' OR ${MediaStore.MediaColumns.DATA} LIKE '%.tar' OR ${MediaStore.MediaColumns.DATA} LIKE '%.gz' OR ${MediaStore.MediaColumns.DATA} LIKE '%.ZIP'", excludeWhatsappTelegram = false)
-            counts[FileType.DOCUMENT] = countSelection("${MediaStore.Files.FileColumns.MIME_TYPE} LIKE 'text/%' OR ${MediaStore.Files.FileColumns.MIME_TYPE} LIKE 'application/vnd.ms-%' OR ${MediaStore.Files.FileColumns.MIME_TYPE} LIKE 'application/vnd.openxmlformats-officedocument%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.txt' OR ${MediaStore.MediaColumns.DATA} LIKE '%.doc%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.xls%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.ppt%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.pdf' OR ${MediaStore.MediaColumns.DATA} LIKE '%.rtf' OR ${MediaStore.MediaColumns.DATA} LIKE '%.TXT' OR ${MediaStore.MediaColumns.DATA} LIKE '%.DOC%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.PDF'", excludeWhatsappTelegram = false)
+            fun isDoc(mime: String, ext: String): Boolean {
+                if (mime.startsWith("text/", ignoreCase = true) ||
+                    mime.startsWith("application/vnd.ms-", ignoreCase = true) ||
+                    mime.startsWith("application/vnd.openxmlformats-officedocument", ignoreCase = true)
+                ) return true
+
+                return ext == "txt" || ext == "pdf" || ext == "rtf" ||
+                        ext.startsWith("doc") || ext.startsWith("xls") || ext.startsWith("ppt")
+            }
+
+            try {
+                val uri = MediaStore.Files.getContentUri("external")
+                val projection = arrayOf(
+                    MediaStore.MediaColumns.DATA,
+                    MediaStore.MediaColumns.MIME_TYPE,
+                    MediaStore.Files.FileColumns.MEDIA_TYPE
+                )
+
+                resolver.query(uri, projection, finalSelection, null, null)?.use { cursor ->
+                    val dataCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                    val mimeCol = cursor.getColumnIndex(MediaStore.MediaColumns.MIME_TYPE)
+                    val mediaTypeCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.MEDIA_TYPE)
+
+                    while (cursor.moveToNext()) {
+                        val data = if (dataCol >= 0) cursor.getString(dataCol) ?: "" else ""
+                        if (data.isEmpty()) continue
+
+                        val mimeType = if (mimeCol >= 0) cursor.getString(mimeCol) ?: "" else ""
+                        val mediaType = if (mediaTypeCol >= 0) cursor.getInt(mediaTypeCol) else 0
+
+                        val ext = data.substringAfterLast('.', "").lowercase()
+
+                        // Apply the WhatsApp/Telegram exclusion in-memory only for Image/Video/Audio
+                        val isSocialExcluded = data.contains("/WhatsApp/Media/", ignoreCase = true) ||
+                                data.contains("/Telegram/", ignoreCase = true)
+
+                        if (!isSocialExcluded) {
+                            if (mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE || ext in imageExts) {
+                                counts[FileType.IMAGE] = counts[FileType.IMAGE]!! + 1
+                            }
+                            if (mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO || ext in videoExts) {
+                                counts[FileType.VIDEO] = counts[FileType.VIDEO]!! + 1
+                            }
+                            if (mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO || ext in audioExts) {
+                                counts[FileType.AUDIO] = counts[FileType.AUDIO]!! + 1
+                            }
+                        }
+
+                        if (mimeType.equals("application/pdf", ignoreCase = true) || ext == "pdf") {
+                            counts[FileType.PDF] = counts[FileType.PDF]!! + 1
+                        }
+                        if (mimeType.equals("application/vnd.android.package-archive", ignoreCase = true) || ext == "apk") {
+                            counts[FileType.APK] = counts[FileType.APK]!! + 1
+                        }
+                        if (ext in zipExts) {
+                            counts[FileType.ZIP] = counts[FileType.ZIP]!! + 1
+                        }
+                        if (isDoc(mimeType, ext)) {
+                            counts[FileType.DOCUMENT] = counts[FileType.DOCUMENT]!! + 1
+                        }
+                    }
+                }
+            } catch (e: Throwable) {
+                // Ignore query error, counts remain default/empty
+            }
+
+            settings.cachedCategoryCounts = counts.mapKeys { it.key.name }
 
             withContext(Dispatchers.Main) {
                 categoryCounts = counts
                 isCategoryCountsLoading = false
             }
+
         }
     }
 
