@@ -1,0 +1,396 @@
+<resources>
+    <!-- Application Details -->
+    <string name="app_name">ROSE</string>
+    <string name="app_description">विश्वसनीय ओपन-सोर्स एक्सप्लोरर</string>
+    <string name="about_app_description">बनाया गया क्योंकि मुझे Shizuku सपोर्ट के साथ एक सुरक्षित, ओपन-सोर्स, तेज़ और शक्तिशाली फ़ाइल मैनेजर चाहिए था। मेरे खाली समय ने असहमति जताई। पेश है ROSE।</string>
+    <string name="about_author_name">Narayan Chetri</string>
+    <string name="about_author_role">मुख्य डेवलपर</string>
+    <string name="about_version">संस्करण</string>
+    <string name="about_view_on_github">GitHub पर देखें</string>
+    <string name="about_github_subtitle">सोर्स कोड रिपॉजिटरी</string>
+    <string name="about_contact">संपर्क</string>
+    <string name="about_contact_email">Narayanchetri.dev@gmail.com</string>
+    <string name="about_check_for_updates">अपडेट देखें</string>
+    <string name="about_checking_for_updates">अपडेट देखे जा रहे हैं…</string>
+
+    <!-- Common Actions -->
+    <string name="action_cancel">रद्द करें</string>
+    <string name="action_close">बंद करें</string>
+    <string name="action_confirm">पुष्टि करें</string>
+    <string name="action_create">बनाएं</string>
+    <string name="action_done">हो गया</string>
+    <string name="action_delete">हटाएं</string>
+    <string name="action_rename">नाम बदलें</string>
+    <string name="action_copy">कॉपी करें</string>
+    <string name="action_move">यहाँ ले जाएँ</string>
+    <string name="action_share">शेयर करें</string>
+    <string name="action_properties">विवरण</string>
+    <string name="action_compress">कंप्रेस करें</string>
+    <string name="action_extract">एक्सट्रैक्ट करें</string>
+    <string name="action_restore">रीस्टोर करें</string>
+    <string name="action_empty">खाली करें</string>
+    <string name="action_more">अधिक</string>
+    <string name="action_back">वापस</string>
+    <string name="action_search">खोजें</string>
+    <string name="action_refresh">रीफ़्रेश करें</string>
+    <string name="action_settings">सेटिंग्स</string>
+    <string name="action_open">खोलें</string>
+    <string name="action_open_with">इसमें खोलें</string>
+    <string name="action_open_location">स्थान खोलें</string>
+    <string name="action_select_all">सभी चुनें</string>
+    <string name="action_unselect_all">सभी अचयनित करें</string>
+    <string name="action_remove">निकालें</string>
+    <string name="action_remove_all">सभी निकालें</string>
+    <string name="action_move_up">ऊपर ले जाएं</string>
+    <string name="action_move_down">नीचे ले जाएं</string>
+    <string name="action_unmount">अनमाउंट करें</string>
+    <string name="action_forget">भूल जाएं</string>
+    <string name="action_retry">पुनः प्रयास करें</string>
+    <string name="action_install">इंस्टॉल करें</string>
+    <string name="action_later">बाद में</string>
+    <string name="action_new_folder">नया फ़ोल्डर</string>
+    <string name="action_hide_hidden_files">छिपी हुई फ़ाइलें छिपाएं</string>
+    <string name="action_show_hidden_files">छिपी हुई फ़ाइलें दिखाएं</string>
+    <string name="action_hide">छिपाएं</string>
+    <string name="action_see_all">सभी देखें</string>
+    <string name="action_add_storage">स्टोरेज जोड़ें</string>
+    <string name="action_clean_up">खाली करें</string>
+    <string name="action_empty_trash">ट्रैश खाली करें</string>
+    <string name="action_empty_bin">बिन खाली करें</string>
+    <string name="action_share_via">इसके ज़रिए शेयर करें</string>
+    <string name="action_allow_notifications">सूचनाओं की अनुमति दें</string>
+    <string name="action_not_now">अभी नहीं</string>
+    <string name="action_about">इसके बारे में</string>
+    <string name="action_add_folders">फ़ोल्डर जोड़ें</string>
+    <string name="action_select_this_folder">यह फ़ोल्डर चुनें</string>
+
+    <!-- Content Descriptions & Accessibility -->
+    <string name="content_desc_back">वापस</string>
+    <string name="content_desc_search">खोजें</string>
+    <string name="content_desc_folder">फ़ोल्डर</string>
+    <string name="content_desc_file_name">फ़ाइल का नाम</string>
+    <string name="content_desc_more_options">अधिक विकल्प</string>
+    <string name="content_desc_file_actions">फ़ाइल क्रियाएं</string>
+    <string name="content_desc_expand">विस्तृत करें</string>
+    <string name="content_desc_collapse">संक्षिप्त करें</string>
+    <string name="content_desc_go_to_root">रूट पर जाएं</string>
+    <string name="content_desc_encrypted">एन्क्रिप्टेड</string>
+
+    <!-- Categories -->
+    <string name="category_images">छवियां</string>
+    <string name="category_photos">तस्वीरें</string>
+    <string name="category_videos">वीडियो</string>
+    <string name="category_audio">ऑडियो</string>
+    <string name="category_documents">दस्तावेज़</string>
+    <string name="category_downloads">डाउनलोड</string>
+    <string name="folder_camera">कैमरा</string>
+    <string name="category_archives">आर्काइव</string>
+    <string name="category_apks">APKs</string>
+    <string name="category_files">फ़ाइलें</string>
+    <string name="category_all_files">सभी फ़ाइलें</string>
+    <string name="album_unknown">अज्ञात एल्बम</string>
+
+    <!-- Common Statuses -->
+    <string name="status_empty">खाली</string>
+    <string name="status_done">पूर्ण</string>
+    <string name="status_calculating">गणना हो रही है…</string>
+    <string name="status_analyzing">विश्लेषण हो रहा है…</string>
+    <string name="status_unknown_error">अज्ञात त्रुटि हुई</string>
+
+    <!-- Home Screen -->
+    <string name="storage_internal">आंतरिक स्टोरेज</string>
+    <string name="storage_drive_fallback">ड्राइव</string>
+    <string name="storage_google_drive">Google Drive</string>
+    <string name="storage_external">बाहरी स्टोरेज</string>
+    <string name="storage_free_of_total">%2$s में से %1$s खाली</string>
+    <string name="storage_used">%1$s उपयोग में</string>
+    <string name="storage_used_of_total">%1$s में से उपयोग में</string>
+    <string name="storage_amount_used_of_total">%2$s में से %1$s उपयोग में</string>
+    <string name="storage_cloud">क्लाउड स्टोरेज</string>
+    <string name="storage_percent_used">%1$d%% उपयोग में</string>
+    <string name="home_section_storage_devices">स्टोरेज डिवाइस</string>
+    <string name="home_section_categories">श्रेणियां</string>
+    <string name="home_section_recycle_bin">रीसायकल बिन</string>
+    <string name="home_section_recent_files">हाल की फ़ाइलें</string>
+    <string name="home_recent_files">हाल की फ़ाइलें</string>
+    <string name="home_section_quick_access">त्वरित एक्सेस</string>
+    <string name="home_quick_access">त्वरित एक्सेस</string>
+    <string name="recycle_bin_empty">ट्रैश खाली है</string>
+    <string name="recent_files_empty">कोई हाल की फ़ाइल नहीं</string>
+    <string name="quick_access_empty">अभी तक कोई त्वरित एक्सेस फ़ोल्डर नहीं जोड़ा गया</string>
+    <string name="manage_quick_access_title">त्वरित एक्सेस प्रबंधित करें</string>
+    <string name="remove_quick_access_title">त्वरित एक्सेस से हटाएं</string>
+    <string name="remove_quick_access_message">क्या आप वाकई \"%1$s\" को त्वरित एक्सेस से हटाना चाहते हैं?</string>
+    <string name="dialog_remove_folder_title">फ़ोल्डर हटाएं</string>
+    <string name="dialog_remove_quick_access_message">त्वरित एक्सेस से \"%1$s\" हटाएं? आप इसे कभी भी वापस जोड़ सकते हैं।</string>
+    <string name="home_recycle_bin_subtitle">पिछले 30 दिनों में हटाई गई फ़ाइलें साफ़ करें</string>
+    <string name="unmount_storage_title">स्टोरेज अनमाउंट करें</string>
+    <string name="unmount_storage_message">क्या आप वाकई इस डिवाइस को अनमाउंट करना चाहते हैं? कोई भी चालू फ़ाइल कार्य बाधित हो सकता है।</string>
+    <string name="clean_up_found">%1$s मिला</string>
+    <string name="clean_up_in_bin">बिन में %1$s</string>
+    <string name="folder_picker_no_subfolders">यहाँ कोई सबफ़ोल्डर नहीं है</string>
+
+    <!-- File Explorer Screen -->
+    <string name="search_files_placeholder">फ़ाइलें खोजें…</string>
+    <string name="no_files_found">कोई फ़ाइल नहीं मिली</string>
+    <string name="no_results_for_query">\"%1$s\" के लिए कोई परिणाम नहीं</string>
+    <string name="breadcrumbs_internal_storage">आंतरिक साझा स्टोरेज</string>
+    <string name="selection_count">%1$d चयनित</string>
+    <string name="total_items_in_total">कुल %1$d आइटम</string>
+    <string name="total_items_count">कुल %1$d आइटम</string>
+    <string name="items_count">%1$d आइटम</string>
+    <string name="item_count_and_date">%1$d आइटम | %2$s</string>
+    <string name="item_size_and_date">%1$s | %2$s</string>
+    <string name="action_extract_here">यहीं एक्सट्रैक्ट करें</string>
+    <string name="action_paste_here">यहीं पेस्ट करें</string>
+    <string name="action_move_here">यहीं ले जाएं</string>
+    <string name="action_add_to_quick_access">त्वरित एक्सेस में जोड़ें</string>
+
+    <!-- Sorting and Views -->
+    <string name="sort_title">क्रमबद्ध करें</string>
+    <string name="sort_name">नाम</string>
+    <string name="sort_type">प्रकार</string>
+    <string name="sort_size">आकार</string>
+    <string name="sort_date">दिनांक</string>
+    <string name="sort_last_modified">अंतिम संशोधित</string>
+    <string name="view_list">सूची दृश्य</string>
+    <string name="view_grid">ग्रिड दृश्य</string>
+
+    <!-- Relative Dates -->
+    <string name="date_today">आज</string>
+    <string name="date_yesterday">कल</string>
+    <string name="date_days_ago">%1$d दिन पहले</string>
+
+    <!-- Save As Screen -->
+    <string name="save_as_archive_title">आर्काइव सहेजें/एक्सट्रैक्ट करें</string>
+    <string name="save_as_title">यहाँ सहेजें…</string>
+    <string name="save_as_save_here">यहीं सहेजें</string>
+    <string name="save_as_failed_to_save">फ़ाइल सहेजने में विफल</string>
+    <string name="save_as_no_folders_found">कोई फ़ोल्डर नहीं मिला</string>
+    <string name="save_as_archive_viewer">आर्काइव व्यूअर</string>
+    <string name="save_as_archive_viewer_subtitle">आर्काइव देखें और ब्राउज़ करें</string>
+    <string name="save_as_save_as">इस रूप में सहेजें</string>
+    <string name="save_as_save_as_subtitle">आर्काइव को किसी स्थान पर एक्सट्रैक्ट करें</string>
+
+    <!-- Dialogs: Delete Confirmation -->
+    <string name="delete_large_item_title">बड़ा आइटम हटाएं?</string>
+    <string name="delete_item_title">हटाएं?</string>
+    <string name="delete_file_title">फ़ाइल हटाएं</string>
+    <string name="delete_single_confirm">\"%1$s\" हटाएं?</string>
+    <string name="delete_multi_confirm">%1$d चयनित आइटम हटाएं?</string>
+    <string name="delete_single_moved_to_bin"> इसे रीसायकल बिन में ले जाया जाएगा।</string>
+    <string name="delete_multi_moved_to_bin"> इन्हें रीसायकल बिन में ले जाया जाएगा।</string>
+    <string name="delete_cannot_be_undone"> इसे पूर्ववत नहीं किया जा सकता।</string>
+    <string name="delete_action_cannot_be_undone"> यह क्रिया पूर्ववत नहीं की जा सकती।</string>
+    <string name="delete_total_size">कुल आकार: %1$s</string>
+    <string name="delete_permanently">स्थायी रूप से हटाएं</string>
+    <string name="delete_permanently_title">स्थायी रूप से हटाएं</string>
+    <string name="delete_permanently_confirm">क्या आप वाकई \"%1$s\" को हटाना चाहते हैं? इसे पूर्ववत नहीं किया जा सकता।</string>
+    <string name="delete_permanently_bulk_confirm">क्या %1$d चयनित आइटम स्थायी रूप से हटाएं?</string>
+
+    <!-- Dialogs: Properties -->
+    <string name="prop_name">नाम</string>
+    <string name="prop_type">प्रकार</string>
+    <string name="prop_size">आकार</string>
+    <string name="prop_path">पथ</string>
+    <string name="prop_modified">संशोधित</string>
+
+    <!-- Dialogs: Compress & Extract -->
+    <string name="compress_dialog_title">Zip में कंप्रेस करें</string>
+    <string name="compress_file_name_label">Zip फ़ाइल का नाम</string>
+    <string name="compress_password_label">पासवर्ड (वैकल्पिक)</string>
+    <string name="extract_dialog_title">आर्काइव एक्सट्रैक्ट करें</string>
+    <string name="extract_dialog_message">आप \"%1$s\" को कैसे एक्सट्रैक्ट करना चाहते हैं?</string>
+    <string name="extract_here_title">यहीं एक्सट्रैक्ट करें</string>
+    <string name="extract_here_subtitle">उसी डायरेक्टरी में नए फ़ोल्डर में एक्सट्रैक्ट करें</string>
+    <string name="extract_select_location_title">स्थान चुनें</string>
+    <string name="extract_select_location_subtitle">एक्सट्रैक्ट करने के लिए एक विशिष्ट फ़ोल्डर चुनें</string>
+
+    <!-- Dialogs: Create Folder, Password, Rename -->
+    <string name="create_folder_dialog_title">नया फ़ोल्डर बनाएं</string>
+    <string name="create_folder_name_label">फ़ोल्डर का नाम</string>
+    <string name="password_dialog_title">पासवर्ड आवश्यक</string>
+    <string name="password_label">पासवर्ड</string>
+    <string name="rename_dialog_title">नाम बदलें</string>
+    <string name="rename_new_name_label">नया नाम</string>
+
+    <!-- Restricted Folder Prompts -->
+    <string name="restricted_folder_default_title">प्रतिबंधित फ़ोल्डर</string>
+    <string name="restricted_folder_default_desc">Android इस फ़ोल्डर तक पहुंच को प्रतिबंधित करता है। इन फ़ाइलों को देखने और संशोधित करने के लिए ROSE को अनुमति की आवश्यकता है।</string>
+    <string name="restricted_system_folder_title">प्रतिबंधित सिस्टम फ़ोल्डर</string>
+    <string name="drive_access_required_title">ड्राइव एक्सेस आवश्यक</string>
+    <string name="restricted_system_folder_desc">ऐप डेटा की सुरक्षा के लिए Android 11+ Android/data और Android/obb फ़ोल्डर की सामान्य पहुंच को प्रतिबंधित करता है। इन फ़ाइलों को देखने और संशोधित करने के लिए ROSE को Shizuku अनुमति की आवश्यकता है।</string>
+    <string name="drive_access_required_desc">इस USB ड्राइव या SD कार्ड को पढ़ने और संशोधित करने के लिए सामान्य Android एक्सेस अनुमति की आवश्यकता है। कृपया एक्सेस की अनुमति दें।</string>
+    <string name="action_grant_shizuku">Shizuku एक्सेस दें</string>
+    <string name="action_how_to_setup_shizuku">Shizuku कैसे सेटअप करें?</string>
+    <string name="action_grant_storage_access">स्टोरेज एक्सेस दें</string>
+    <string name="action_use_shizuku_instead">इसके बजाय Shizuku का उपयोग करें</string>
+
+    <!-- Recycle Bin Screen -->
+    <string name="recycle_bin_title">रीसायकल बिन</string>
+    <string name="recycle_bin_is_empty">रीसायकल बिन खाली है</string>
+    <string name="recycle_bin_empty_desc">आइटम 30 दिनों के बाद हटा दिए जाएंगे</string>
+    <string name="empty_recycle_bin_title">रीसायकल बिन खाली करें</string>
+    <string name="empty_recycle_bin_confirm">सभी आइटम स्थायी रूप से हटा दिए जाएंगे। क्या आप सुनिश्चित हैं?</string>
+    <string name="restore_folder_prompt_title">फ़ोल्डर रीस्टोर करें?</string>
+    <string name="restore_archive_prompt_title">आर्काइव रीस्टोर करें?</string>
+    <string name="restore_to_view_message">\"%1$s\" की सामग्री देखने के लिए, आपको पहले इसे रीस्टोर करना होगा।</string>
+    <string name="action_restore_now">अभी रीस्टोर करें</string>
+    <string name="recycled_item_subtitle">%1$s | हटाया गया: %2$s</string>
+    <string name="recycled_item_from">यहाँ से: %1$s</string>
+    <string name="recycle_prop_original_name">मूल नाम</string>
+    <string name="recycle_prop_original_path">मूल पथ</string>
+    <string name="recycle_prop_deletion_date">हटाने की तारीख</string>
+    <string name="recycle_prop_size">आकार</string>
+
+    <!-- Settings Screen -->
+    <string name="settings_title">सेटिंग्स</string>
+    <string name="settings_section_appearance">स्वरूप</string>
+    <string name="settings_theme">थीम</string>
+    <string name="settings_theme_system">सिस्टम</string>
+    <string name="settings_theme_light">लाइट</string>
+    <string name="settings_theme_dark">डार्क</string>
+    <string name="settings_amoled_mode">ब्लैक AMOLED मोड</string>
+    <string name="settings_amoled_mode_subtitle">डार्क मोड में गहरे काले बैकग्राउंड का उपयोग करें</string>
+    <string name="settings_dynamic_color">डायनामिक रंग</string>
+    <string name="settings_dynamic_color_subtitle">अपने वॉलपेपर से उत्पन्न रंगों का उपयोग करें (Android 12+)</string>
+    <string name="settings_section_browsing">ब्राउज़िंग</string>
+    <string name="settings_recent_files_limit">हाल की फ़ाइलों की सीमा</string>
+    <string name="settings_show_list_dividers">सूची विभाजक दिखाएं</string>
+    <string name="settings_show_list_dividers_subtitle">हाल की फ़ाइलों, त्वरित एक्सेस और फ़ोल्डर सूचियों में पतली रेखाएं</string>
+    <string name="settings_excluded_folders">बहिष्कृत फ़ोल्डर</string>
+    <string name="settings_excluded_folders_subtitle">हाल की फ़ाइलों और श्रेणियों से छिपाने के लिए फ़ोल्डर चुनें</string>
+    <string name="settings_section_navigation">नेविगेशन</string>
+    <string name="settings_start_page">प्रारंभ पृष्ठ</string>
+    <string name="settings_start_page_landing">मुख्य पृष्ठ</string>
+    <string name="settings_start_page_all_files">सभी फ़ाइलें</string>
+    <string name="settings_section_safety">सुरक्षा</string>
+    <string name="settings_confirm_before_delete">हटाने से पहले पुष्टि करें</string>
+    <string name="settings_confirm_before_delete_subtitle">फ़ाइलें या फ़ोल्डर हटाने से पहले पुष्टि मांगें</string>
+    <string name="settings_use_recycle_bin">रीसायकल बिन का उपयोग करें</string>
+    <string name="settings_use_recycle_bin_subtitle">हटाई गई फ़ाइलें रीसायकल बिन में भेजी जाती हैं और 30 दिनों तक रखी जाती हैं</string>
+    <string name="settings_section_home_screen">होम स्क्रीन</string>
+    <string name="settings_show_quick_access">त्वरित एक्सेस दिखाएं</string>
+    <string name="settings_show_quick_access_subtitle">मुख्य पृष्ठ पर त्वरित एक्सेस अनुभाग दिखाएं</string>
+    <string name="settings_section_storage">स्टोरेज</string>
+    <string name="settings_clear_thumbnail_cache">थंबनेल कैश साफ़ करें</string>
+    <string name="settings_clear_thumbnail_cache_subtitle">कैश्ड इमेज और वीडियो थंबनेल द्वारा उपयोग की जाने वाली मेमोरी खाली करें</string>
+    <string name="settings_toast_cache_cleared">थंबनेल कैश साफ़ किया गया</string>
+    <string name="settings_section_support">सहायता</string>
+    <string name="settings_report_issue">समस्या की रिपोर्ट करें</string>
+    <string name="settings_report_issue_subtitle">कोई बग मिला? हमें GitHub पर बताएं</string>
+    <string name="excluded_folders_dialog_title">बहिष्कृत फ़ोल्डर</string>
+    <string name="excluded_folders_dialog_subtitle">हाल की फ़ाइलों और श्रेणियों से छिपा हुआ</string>
+    <string name="excluded_folders_empty">अभी तक कोई फ़ोल्डर बहिष्कृत नहीं किया गया</string>
+    <string name="action_add_folder_to_exclude">बहिष्कृत करने के लिए फ़ोल्डर जोड़ें</string>
+    <string name="action_exclude_current_folder">वर्तमान फ़ोल्डर को बहिष्कृत करें</string>
+    <string name="excluded_folders_picker_empty">यहाँ कोई सबफ़ोल्डर नहीं है</string>
+
+    <!-- File Jobs & Operations -->
+    <string name="job_active_tasks_count">%1$d सक्रिय कार्य</string>
+    <string name="job_working">कार्य जारी है…</string>
+    <string name="job_background_hint">बैकग्राउंड में चलता है - इस डायलॉग को बंद करना सुरक्षित है।</string>
+    <string name="job_item_progress">आइटम %1$d का %2$d</string>
+    <string name="job_bytes_progress">%2$s में से %1$s</string>
+    <string name="job_label_from">से</string>
+    <string name="job_label_to">तक</string>
+    <string name="job_stat_speed">गति</string>
+    <string name="job_stat_left">शेष</string>
+    <string name="job_stat_elapsed">बीता समय</string>
+    <string name="job_locations_count">%1$d स्थान</string>
+    <string name="job_title_copying">फ़ाइलें कॉपी हो रही हैं</string>
+    <string name="job_title_moving">फ़ाइलें ले जाई जा रही हैं</string>
+    <string name="job_title_deleting">फ़ाइलें हटाई जा रही हैं</string>
+    <string name="job_title_saving_offline">ऑफ़लाइन सहेजा जा रहा है</string>
+    <string name="job_title_moving_to_recycle_bin">रीसायकल बिन में भेजा जा रहा है</string>
+    <string name="job_title_restoring">फ़ाइलें रीस्टोर हो रही हैं</string>
+    <string name="job_title_extracting">आर्काइव एक्सट्रैक्ट हो रहा है</string>
+    <string name="job_title_creating_archive">आर्काइव बनाया जा रहा है</string>
+    <string name="job_copying_files_ellipsis">फ़ाइलें कॉपी हो रही हैं…</string>
+    <string name="job_moving_files_ellipsis">फ़ाइलें ले जाई जा रही हैं…</string>
+    <string name="job_saving_offline_ellipsis">ऑफ़लाइन सहेजा जा रहा है…</string>
+    <string name="job_deleting_files_ellipsis">फ़ाइलें हटाई जा रही हैं…</string>
+    <string name="job_moving_to_bin_ellipsis">बिन में भेजा जा रहा है…</string>
+    <string name="job_restoring_files_ellipsis">फ़ाइलें रीस्टोर हो रही हैं…</string>
+    <string name="job_extracting_archive_ellipsis">आर्काइव एक्सट्रैक्ट हो रहा है…</string>
+    <string name="job_creating_archive_ellipsis">आर्काइव बनाया जा रहा है…</string>
+    <string name="job_processing_ellipsis">प्रोसेसिंग जारी है…</string>
+    <string name="job_downloading_with_bytes">डाउनलोड हो रहा है… %1$s</string>
+    <string name="job_downloading">डाउनलोड हो रहा है…</string>
+    <string name="job_progress_items_and_percent">%1$d का %2$d | %3$d%%</string>
+    <string name="job_percent_completed">%1$d%% पूर्ण</string>
+    <string name="job_moving_to_bin_fast">बिन में भेजा जा रहा है…</string>
+    <string name="job_restoring_fast">रीस्टोर हो रहा है…</string>
+    <string name="job_deleting_fast">हटाया जा रहा है…</string>
+
+    <!-- File Job Notifications -->
+    <string name="notif_channel_file_operations">फ़ाइल संचालन</string>
+    <string name="notif_channel_background_operations">बैकग्राउंड संचालन</string>
+    <string name="notif_channel_completion">फ़ाइल संचालन परिणाम</string>
+    <string name="notif_title_copying">फ़ाइलें कॉपी हो रही हैं</string>
+    <string name="notif_title_moving">फ़ाइलें ले जाई जा रही हैं</string>
+    <string name="notif_title_deleting">फ़ाइलें हटाई जा रही हैं</string>
+    <string name="notif_title_saving_offline">ऑफ़लाइन सहेजा जा रहा है</string>
+    <string name="notif_title_moving_to_recycle_bin">रीसायकल बिन में भेजा जा रहा है</string>
+    <string name="notif_title_restoring">फ़ाइलें रीस्टोर हो रही हैं</string>
+    <string name="notif_title_extracting">आर्काइव एक्सट्रैक्ट हो रहा है</string>
+    <string name="notif_title_creating_archive">आर्काइव बनाया जा रहा है</string>
+    <string name="notif_content_indeterminate_multi">प्रोसेस हो रहा है %1$d/%2$d: %3$s%4$s</string>
+    <string name="notif_content_indeterminate_single">डाउनलोड हो रहा है %1$s%2$s</string>
+    <string name="notif_content_determinate_multi">प्रोसेस हो रहा है %1$d/%2$d: %3$s (%4$d%%)</string>
+    <string name="notif_content_determinate_single">प्रोसेस हो रहा है %1$s: %2$d%%</string>
+    <string name="job_op_copy">कॉपी</string>
+    <string name="job_op_move">मूव</string>
+    <string name="job_op_delete">हटाएं</string>
+    <string name="job_op_save_offline">ऑफ़लाइन सहेजें</string>
+    <string name="job_op_moving_to_bin">बिन में भेजना</string>
+    <string name="job_op_restore">रीस्टोर</string>
+    <string name="job_op_extraction">एक्सट्रैक्शन</string>
+    <string name="job_op_compression">कंप्रेशन</string>
+    <string name="notif_completion_moved_to_bin">रीसायकल बिन में भेजा गया</string>
+    <string name="notif_completion_restored">फ़ाइलें रीस्टोर की गईं</string>
+    <string name="notif_completion_success">%1$s पूरा हुआ</string>
+    <string name="notif_completion_failure">%1$s विफल रहा</string>
+    <string name="notif_completion_couldnt_finish">%1$s पूरा नहीं हो सका</string>
+
+    <!-- Notification Primer -->
+    <string name="notif_primer_title">ट्रांसफर पर अपडेट रहें</string>
+    <string name="notif_primer_description">बैकग्राउंड में फ़ाइल डाउनलोड होते समय ROSE आपको लाइव प्रगति की सूचना दे सकता है - ताकि आपको हमेशा पता रहे कि यह कब ऑफ़लाइन सहेजी गई है।</string>
+
+    <!-- Updates -->
+    <string name="update_dialog_title">अपडेट उपलब्ध है</string>
+    <string name="update_dialog_message">एक नया संस्करण (%1$s) उपलब्ध है। क्या आप अभी अपडेट करना चाहते हैं?</string>
+    <string name="update_dialog_whats_new">नया क्या है:</string>
+    <string name="update_download_progress">%1$s / %2$s (%3$d%%)</string>
+    <string name="update_download_bytes">%1$s डाउनलोड हुआ</string>
+    <string name="update_download_ready">डाउनलोड हो गया। यदि इंस्टॉलर अपने आप नहीं खुला, तो नीचे इंस्टॉल पर टैप करें।</string>
+    <string name="update_downloading">डाउनलोड हो रहा है…</string>
+    <string name="action_download_and_install">डाउनलोड करें और इंस्टॉल करें</string>
+    <string name="action_update_now">अभी अपडेट करें</string>
+    <string name="update_check_failed_http">अपडेट जांचने में विफल रहा (HTTP %1$d)</string>
+    <string name="update_download_failed_http">डाउनलोड विफल रहा (HTTP %1$d)</string>
+    <string name="update_download_failed">डाउनलोड विफल रहा</string>
+    <string name="update_error_open_install_settings">इंस्टॉल-अनुमति सेटिंग्स नहीं खोली जा सकीं</string>
+
+    <!-- Toasts & General Feedback -->
+    <string name="toast_notification_permission_recommended">बैकग्राउंड कार्यों के लिए सूचना अनुमति की अनुशंसा की जाती है</string>
+    <string name="toast_manage_storage_required">स्टोरेज प्रबंधन अनुमति आवश्यक है</string>
+    <string name="toast_failed_to_add_storage">स्टोरेज जोड़ने में विफल: %1$s</string>
+    <string name="toast_failed_to_open_archive">आर्काइव खोलने में विफल: %1$s</string>
+    <string name="toast_failed_to_extract">%1$s को एक्सट्रैक्ट करने में विफल: %2$s</string>
+    <string name="toast_failed_to_extract_file">फ़ाइल एक्सट्रैक्ट करने में विफल: %1$s</string>
+    <string name="toast_folders_cannot_be_shared">फ़ोल्डर सीधे शेयर नहीं किए जा सकते</string>
+    <string name="toast_couldnt_open_file">फ़ाइल नहीं खोली जा सकी: %1$s</string>
+    <string name="toast_file_no_longer_exists">फ़ाइल अब मौजूद नहीं है</string>
+    <string name="toast_couldnt_access_file">फ़ाइल तक पहुंच नहीं हो सकी</string>
+    <string name="toast_allow_install_source">कृपया इस स्रोत से इंस्टॉलेशन की अनुमति दें</string>
+    <string name="toast_couldnt_prepare_intent">इंटेंट तैयार नहीं किया जा सका: %1$s</string>
+    <string name="toast_file_not_found_recycle_bin">रीसायकल बिन में फ़ाइल नहीं मिली</string>
+    <string name="toast_usb_drive_removed">USB ड्राइव हटा दी गई</string>
+    <string name="toast_archive_ready_extract">आर्काइव तैयार है। एक्सट्रैक्ट करने के लिए किसी फ़ोल्डर पर जाएं।</string>
+    <string name="toast_shizuku_not_running">Shizuku चालू नहीं है। कृपया पहले इसे शुरू करें।</string>
+    <string name="toast_added_to_quick_access">त्वरित एक्सेस में जोड़ा गया</string>
+    <string name="toast_up_to_date">आप नवीनतम संस्करण पर हैं</string>
+    <string name="permission_placeholder_waiting">स्टोरेज अनुमतियों की प्रतीक्षा की जा रही है…</string>
+</resources>
+
