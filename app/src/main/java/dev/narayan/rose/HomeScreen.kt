@@ -481,7 +481,10 @@ fun HomeScreen(
                             isLoading = viewModel.isCategoryCountsLoading,
                             hasRunCountAnimation = viewModel.hasRunCategoryCountAnimation,
                             onAnimationFinished = { viewModel.hasRunCategoryCountAnimation = true },
-                            onCategoryClick = { category -> onOpenCategory(category.type, category.label) }
+                            onCategoryClick = { category ->
+                                viewModel.hasRunCategoryCountAnimation = true
+                                onOpenCategory(category.type, category.label)
+                            }
                         )
                     }
                 }
@@ -816,6 +819,17 @@ private fun CategoryGrid(
     onAnimationFinished: () -> Unit,
     onCategoryClick: (HomeCategory) -> Unit
 ) {
+    var animationStarted by remember { mutableStateOf(hasRunCountAnimation) }
+
+    LaunchedEffect(Unit) {
+        if (!hasRunCountAnimation) {
+            kotlinx.coroutines.delay(100) // Small delay to sync with card entrance animation
+            animationStarted = true
+            kotlinx.coroutines.delay(1100) // Allow 1000ms tween to complete
+            onAnimationFinished()
+        }
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         homeCategories.chunked(3).forEachIndexed { rowIndex, row ->
             Row(
@@ -827,8 +841,8 @@ private fun CategoryGrid(
                         category = category,
                         count = counts[category.type] ?: 0,
                         isLoading = isLoading,
+                        animationStarted = animationStarted,
                         hasRunCountAnimation = hasRunCountAnimation,
-                        onAnimationFinished = onAnimationFinished,
                         index = rowIndex * 3 + colIndex,
                         modifier = Modifier.weight(1f),
                         onClick = { onCategoryClick(category) }
@@ -847,18 +861,16 @@ private fun CategoryCard(
     category: HomeCategory,
     count: Int,
     isLoading: Boolean,
+    animationStarted: Boolean,
     hasRunCountAnimation: Boolean,
-    onAnimationFinished: () -> Unit,
     index: Int = 0,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val targetCount = if (animationStarted || hasRunCountAnimation) count else 0
     val animatedCount by androidx.compose.animation.core.animateIntAsState(
-        targetValue = count,
+        targetValue = targetCount,
         animationSpec = if (!hasRunCountAnimation) tween(durationMillis = 1000, easing = FastOutSlowInEasing) else snap<Int>(),
-        finishedListener = {
-            onAnimationFinished()
-        },
         label = "CategoryCountAnimation"
     )
 

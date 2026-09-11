@@ -2436,12 +2436,6 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 isCategoryCountsLoading = false
             }
 
-            if (!hasRunCategoryCountAnimation) {
-                viewModelScope.launch {
-                    delay(1200)
-                    hasRunCategoryCountAnimation = true
-                }
-            }
         }
     }
 
