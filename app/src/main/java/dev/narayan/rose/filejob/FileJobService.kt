@@ -9,6 +9,7 @@ import android.os.IBinder
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import dev.narayan.rose.MainActivity
+import dev.narayan.rose.R
 
 @Suppress("NewApi")
 class FileJobService : Service() {
@@ -247,14 +248,14 @@ class FileJobService : Service() {
         )
 
         val title = when (job.type) {
-            is FileJobType.Copy -> "Copying Files"
-            is FileJobType.Move -> "Moving Files"
-            is FileJobType.Delete -> "Deleting Files"
-            is FileJobType.Download -> "Saving Offline"
-            is FileJobType.Recycle -> "Moving to Recycle Bin"
-            is FileJobType.Restore -> "Restoring Files"
-            is FileJobType.Extract -> "Extracting Archive"
-            is FileJobType.Compress -> "Creating Archive"
+            is FileJobType.Copy -> getString(R.string.notif_title_copying)
+            is FileJobType.Move -> getString(R.string.notif_title_moving)
+            is FileJobType.Delete -> getString(R.string.notif_title_deleting)
+            is FileJobType.Download -> getString(R.string.notif_title_saving_offline)
+            is FileJobType.Recycle -> getString(R.string.notif_title_moving_to_recycle_bin)
+            is FileJobType.Restore -> getString(R.string.notif_title_restoring)
+            is FileJobType.Extract -> getString(R.string.notif_title_extracting)
+            is FileJobType.Compress -> getString(R.string.notif_title_creating_archive)
         }
 
         val progressPercent = (job.progress * 100).toInt()
@@ -264,14 +265,14 @@ class FileJobService : Service() {
 
         val contentText = if (job.isIndeterminate) {
             if (job.totalItems > 1) {
-                "Processing ${job.processedItems}/${job.totalItems}: ${job.currentFileName}$sizeSuffix"
+                getString(R.string.notif_content_indeterminate_multi, job.processedItems, job.totalItems, job.currentFileName, sizeSuffix)
             } else {
-                "Downloading ${job.currentFileName}$sizeSuffix"
+                getString(R.string.notif_content_indeterminate_single, job.currentFileName, sizeSuffix)
             }
         } else if (job.totalItems > 1) {
-            "Processing ${job.processedItems}/${job.totalItems}: ${job.currentFileName} ($progressPercent%)"
+            getString(R.string.notif_content_determinate_multi, job.processedItems, job.totalItems, job.currentFileName, progressPercent)
         } else {
-            "Processing ${job.currentFileName}: $progressPercent%"
+            getString(R.string.notif_content_determinate_single, job.currentFileName, progressPercent)
         }
 
         return NotificationCompat.Builder(this, channelId)
@@ -298,26 +299,26 @@ class FileJobService : Service() {
         if (!hasNotificationPermission()) return
 
         val label = when (job.type) {
-            is FileJobType.Copy -> "Copy"
-            is FileJobType.Move -> "Move"
-            is FileJobType.Delete -> "Delete"
-            is FileJobType.Download -> "Save offline"
-            is FileJobType.Recycle -> "Moving to bin"
-            is FileJobType.Restore -> "Restore"
-            is FileJobType.Extract -> "Extraction"
-            is FileJobType.Compress -> "Compression"
+            is FileJobType.Copy -> getString(R.string.job_op_copy)
+            is FileJobType.Move -> getString(R.string.job_op_move)
+            is FileJobType.Delete -> getString(R.string.job_op_delete)
+            is FileJobType.Download -> getString(R.string.job_op_save_offline)
+            is FileJobType.Recycle -> getString(R.string.job_op_moving_to_bin)
+            is FileJobType.Restore -> getString(R.string.job_op_restore)
+            is FileJobType.Extract -> getString(R.string.job_op_extraction)
+            is FileJobType.Compress -> getString(R.string.job_op_compression)
         }
         val title = if (success) {
             when (job.type) {
-                is FileJobType.Recycle -> "Moved to Recycle Bin"
-                is FileJobType.Restore -> "Files restored"
-                else -> "$label complete"
+                is FileJobType.Recycle -> getString(R.string.notif_completion_moved_to_bin)
+                is FileJobType.Restore -> getString(R.string.notif_completion_restored)
+                else -> getString(R.string.notif_completion_success, label)
             }
-        } else "$label failed"
+        } else getString(R.string.notif_completion_failure, label)
         val text = if (success) {
-            job.currentFileName.ifBlank { "Done" }
+            job.currentFileName.ifBlank { getString(R.string.status_done) }
         } else {
-            "Couldn't finish ${job.currentFileName}"
+            getString(R.string.notif_completion_couldnt_finish, job.currentFileName)
         }
 
         val notification = NotificationCompat.Builder(this, COMPLETION_CHANNEL_ID)
@@ -347,15 +348,15 @@ class FileJobService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "File Operations", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(CHANNEL_ID, getString(R.string.notif_channel_file_operations), NotificationManager.IMPORTANCE_LOW)
             )
             manager.createNotificationChannel(
-                NotificationChannel(SILENT_CHANNEL_ID, "Background Operations", NotificationManager.IMPORTANCE_MIN).apply {
+                NotificationChannel(SILENT_CHANNEL_ID, getString(R.string.notif_channel_background_operations), NotificationManager.IMPORTANCE_MIN).apply {
                     setShowBadge(false)
                 }
             )
             manager.createNotificationChannel(
-                NotificationChannel(COMPLETION_CHANNEL_ID, "File Operation Results", NotificationManager.IMPORTANCE_DEFAULT)
+                NotificationChannel(COMPLETION_CHANNEL_ID, getString(R.string.notif_channel_completion), NotificationManager.IMPORTANCE_DEFAULT)
             )
         }
     }

@@ -109,6 +109,9 @@ Contributions are welcome!
 
 Whether it's fixing bugs, improving the UI, or suggesting new features—every contribution is appreciated.
 
+### 🌐 Translations
+Want to help translate ROSE into your language? Check out our [Translation Guide](TRANSLATING.md) to get started!
+
 ---
 
 ## 📄 License

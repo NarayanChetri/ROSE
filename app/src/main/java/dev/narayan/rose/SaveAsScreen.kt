@@ -21,6 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.io.File
@@ -68,14 +69,14 @@ fun SaveAsScreen(
                     TopAppBar(
                         title = {
                             Text(
-                                if (isZip) "Save/Extract Archive" else "Save to...",
+                                if (isZip) stringResource(R.string.save_as_archive_title) else stringResource(R.string.save_as_title),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold
                             )
                         },
                         navigationIcon = {
                             IconButton(onClick = onDismiss) {
-                                Icon(Icons.Default.Close, contentDescription = "Cancel")
+                                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.action_cancel))
                             }
                         }
                     )
@@ -97,14 +98,14 @@ fun SaveAsScreen(
                 ) {
                     SaveAsOption(
                         icon = Icons.Default.Save,
-                        title = "Save Here",
+                        title = stringResource(R.string.save_as_save_here),
                         subtitle = null,
                         onClick = {
                             viewModel.saveSharedFiles(uris, currentDir.absolutePath) { success ->
                                 if (success) {
                                     onSaved(currentDir.absolutePath)
                                 } else {
-                                    android.widget.Toast.makeText(context, "Failed to save file", android.widget.Toast.LENGTH_SHORT).show()
+                                    android.widget.Toast.makeText(context, context.getString(R.string.save_as_failed_to_save), android.widget.Toast.LENGTH_SHORT).show()
                                 }
                             }
                         }
@@ -118,7 +119,7 @@ fun SaveAsScreen(
             Column(modifier = Modifier.fillMaxSize()) {
                 if (items.isEmpty()) {
                     Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        Text("No folders found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.save_as_no_folders_found), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
                     LazyColumn(
@@ -193,8 +194,8 @@ fun SaveAsScreen(
 
                             SaveAsOption(
                                 icon = Icons.Default.Search,
-                                title = "Archive viewer",
-                                subtitle = "Preview and browse archive",
+                                title = stringResource(R.string.save_as_archive_viewer),
+                                subtitle = stringResource(R.string.save_as_archive_viewer_subtitle),
                                 onClick = { onArchiveView(uris[0]) }
                             )
 
@@ -206,8 +207,8 @@ fun SaveAsScreen(
 
                             SaveAsOption(
                                 icon = Icons.Default.FileDownload,
-                                title = "Save as",
-                                subtitle = "Extract archive to a location",
+                                title = stringResource(R.string.save_as_save_as),
+                                subtitle = stringResource(R.string.save_as_save_as_subtitle),
                                 onClick = { showOptions = false }
                             )
                         }

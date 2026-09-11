@@ -1,3 +1,395 @@
 <resources>
+    <!-- Application Details -->
     <string name="app_name">ROSE</string>
+    <string name="app_description">Reliable Open-Source Explorer</string>
+    <string name="about_app_description">Made because I wanted a secure, open-source, fast, and powerful file manager with Shizuku support. My free time disagreed. Here\'s ROSE.</string>
+    <string name="about_author_name">Narayan Chetri</string>
+    <string name="about_author_role">Lead Developer</string>
+    <string name="about_version">Version</string>
+    <string name="about_view_on_github">View on GitHub</string>
+    <string name="about_github_subtitle">Source Code Repository</string>
+    <string name="about_contact">Contact</string>
+    <string name="about_contact_email">Narayanchetri.dev@gmail.com</string>
+    <string name="about_check_for_updates">Check for updates</string>
+    <string name="about_checking_for_updates">Checking for updates…</string>
+
+    <!-- Common Actions -->
+    <string name="action_cancel">Cancel</string>
+    <string name="action_close">Close</string>
+    <string name="action_confirm">Confirm</string>
+    <string name="action_create">Create</string>
+    <string name="action_done">Done</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_rename">Rename</string>
+    <string name="action_copy">Copy</string>
+    <string name="action_move">Move</string>
+    <string name="action_share">Share</string>
+    <string name="action_properties">Properties</string>
+    <string name="action_compress">Compress</string>
+    <string name="action_extract">Extract</string>
+    <string name="action_restore">Restore</string>
+    <string name="action_empty">Empty</string>
+    <string name="action_more">More</string>
+    <string name="action_back">Back</string>
+    <string name="action_search">Search</string>
+    <string name="action_refresh">Refresh</string>
+    <string name="action_settings">Settings</string>
+    <string name="action_open">Open</string>
+    <string name="action_open_with">Open with</string>
+    <string name="action_open_location">Open location</string>
+    <string name="action_select_all">Select All</string>
+    <string name="action_unselect_all">Unselect All</string>
+    <string name="action_remove">Remove</string>
+    <string name="action_remove_all">Remove All</string>
+    <string name="action_move_up">Move Up</string>
+    <string name="action_move_down">Move Down</string>
+    <string name="action_unmount">Unmount</string>
+    <string name="action_forget">Forget</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_install">Install</string>
+    <string name="action_later">Later</string>
+    <string name="action_new_folder">New Folder</string>
+    <string name="action_hide_hidden_files">Hide Hidden Files</string>
+    <string name="action_show_hidden_files">Show Hidden Files</string>
+    <string name="action_hide">Hide</string>
+    <string name="action_see_all">See All</string>
+    <string name="action_add_storage">Add Storage</string>
+    <string name="action_clean_up">Clean Up</string>
+    <string name="action_empty_trash">Empty Trash</string>
+    <string name="action_empty_bin">Empty bin</string>
+    <string name="action_share_via">Share via</string>
+    <string name="action_allow_notifications">Allow notifications</string>
+    <string name="action_not_now">Not now</string>
+    <string name="action_about">About</string>
+    <string name="action_add_folders">Add folders</string>
+    <string name="action_select_this_folder">Select this folder</string>
+
+    <!-- Content Descriptions & Accessibility -->
+    <string name="content_desc_back">Back</string>
+    <string name="content_desc_search">Search</string>
+    <string name="content_desc_folder">Folder</string>
+    <string name="content_desc_file_name">File name</string>
+    <string name="content_desc_more_options">More options</string>
+    <string name="content_desc_file_actions">File actions</string>
+    <string name="content_desc_expand">Expand</string>
+    <string name="content_desc_collapse">Collapse</string>
+    <string name="content_desc_go_to_root">Go to Root</string>
+    <string name="content_desc_encrypted">Encrypted</string>
+
+    <!-- Categories -->
+    <string name="category_images">Images</string>
+    <string name="category_photos">Photos</string>
+    <string name="category_videos">Videos</string>
+    <string name="category_audio">Audio</string>
+    <string name="category_documents">Documents</string>
+    <string name="category_downloads">Downloads</string>
+    <string name="folder_camera">Camera</string>
+    <string name="category_archives">Archives</string>
+    <string name="category_apks">APKs</string>
+    <string name="category_files">Files</string>
+    <string name="category_all_files">All Files</string>
+    <string name="album_unknown">Unknown Album</string>
+
+    <!-- Common Statuses -->
+    <string name="status_empty">Empty</string>
+    <string name="status_done">Done</string>
+    <string name="status_calculating">Calculating…</string>
+    <string name="status_analyzing">Analyzing…</string>
+    <string name="status_unknown_error">Unknown error occurred</string>
+
+    <!-- Home Screen -->
+    <string name="storage_internal">Internal Storage</string>
+    <string name="storage_drive_fallback">Drive</string>
+    <string name="storage_google_drive">Google Drive</string>
+    <string name="storage_external">External Storage</string>
+    <string name="storage_free_of_total">%1$s free of %2$s</string>
+    <string name="storage_used">%1$s used</string>
+    <string name="storage_used_of_total">used of %1$s</string>
+    <string name="storage_amount_used_of_total">%1$s used of %2$s</string>
+    <string name="storage_cloud">Cloud Storage</string>
+    <string name="storage_percent_used">%1$d%% used</string>
+    <string name="home_section_storage_devices">Storage Devices</string>
+    <string name="home_section_categories">Categories</string>
+    <string name="home_section_recycle_bin">Recycle Bin</string>
+    <string name="home_section_recent_files">Recent Files</string>
+    <string name="home_recent_files">Recent files</string>
+    <string name="home_section_quick_access">Quick Access</string>
+    <string name="home_quick_access">Quick access</string>
+    <string name="recycle_bin_empty">Trash empty</string>
+    <string name="recent_files_empty">No recent files</string>
+    <string name="quick_access_empty">No quick access folders added yet</string>
+    <string name="manage_quick_access_title">Manage Quick Access</string>
+    <string name="remove_quick_access_title">Remove from Quick Access</string>
+    <string name="remove_quick_access_message">Are you sure you want to remove \"%1$s\" from Quick Access?</string>
+    <string name="dialog_remove_folder_title">Remove Folder</string>
+    <string name="dialog_remove_quick_access_message">Remove \"%1$s\" from Quick access? You can add it back any time.</string>
+    <string name="home_recycle_bin_subtitle">Clean up files deleted in the last 30 days</string>
+    <string name="unmount_storage_title">Unmount Storage</string>
+    <string name="unmount_storage_message">Are you sure you want to unmount this device? Any ongoing file operations may be interrupted.</string>
+    <string name="clean_up_found">%1$s found</string>
+    <string name="clean_up_in_bin">%1$s in bin</string>
+    <string name="folder_picker_no_subfolders">No subfolders here</string>
+
+    <!-- File Explorer Screen -->
+    <string name="search_files_placeholder">Search files…</string>
+    <string name="no_files_found">No files found</string>
+    <string name="no_results_for_query">No results for \"%1$s\"</string>
+    <string name="breadcrumbs_internal_storage">Internal shared storage</string>
+    <string name="selection_count">%1$d selected</string>
+    <string name="total_items_in_total">%1$d items in total</string>
+    <string name="total_items_count">%1$d items total</string>
+    <string name="items_count">%1$d items</string>
+    <string name="item_count_and_date">%1$d items | %2$s</string>
+    <string name="item_size_and_date">%1$s | %2$s</string>
+    <string name="action_extract_here">Extract Here</string>
+    <string name="action_paste_here">Paste Here</string>
+    <string name="action_move_here">Move Here</string>
+    <string name="action_add_to_quick_access">Add to Quick access</string>
+
+    <!-- Sorting and Views -->
+    <string name="sort_title">Sort</string>
+    <string name="sort_name">Name</string>
+    <string name="sort_type">Type</string>
+    <string name="sort_size">Size</string>
+    <string name="sort_date">Date</string>
+    <string name="sort_last_modified">Last modified</string>
+    <string name="view_list">List view</string>
+    <string name="view_grid">Grid view</string>
+
+    <!-- Relative Dates -->
+    <string name="date_today">Today</string>
+    <string name="date_yesterday">Yesterday</string>
+    <string name="date_days_ago">%1$d days ago</string>
+
+    <!-- Save As Screen -->
+    <string name="save_as_archive_title">Save/Extract Archive</string>
+    <string name="save_as_title">Save to…</string>
+    <string name="save_as_save_here">Save Here</string>
+    <string name="save_as_failed_to_save">Failed to save file</string>
+    <string name="save_as_no_folders_found">No folders found</string>
+    <string name="save_as_archive_viewer">Archive viewer</string>
+    <string name="save_as_archive_viewer_subtitle">Preview and browse archive</string>
+    <string name="save_as_save_as">Save as</string>
+    <string name="save_as_save_as_subtitle">Extract archive to a location</string>
+
+    <!-- Dialogs: Delete Confirmation -->
+    <string name="delete_large_item_title">Delete Large Item?</string>
+    <string name="delete_item_title">Delete?</string>
+    <string name="delete_file_title">Delete File</string>
+    <string name="delete_single_confirm">Delete \"%1$s\"?</string>
+    <string name="delete_multi_confirm">Delete %1$d selected item(s)?</string>
+    <string name="delete_single_moved_to_bin"> It will be moved to the bin.</string>
+    <string name="delete_multi_moved_to_bin"> They will be moved to the bin.</string>
+    <string name="delete_cannot_be_undone"> This can\'t be undone.</string>
+    <string name="delete_action_cannot_be_undone"> This action cannot be undone.</string>
+    <string name="delete_total_size">Total size: %1$s</string>
+    <string name="delete_permanently">Delete permanently</string>
+    <string name="delete_permanently_title">Delete Permanently</string>
+    <string name="delete_permanently_confirm">Are you sure you want to delete \"%1$s\"? This cannot be undone.</string>
+    <string name="delete_permanently_bulk_confirm">Delete %1$d selected item(s) permanently?</string>
+
+    <!-- Dialogs: Properties -->
+    <string name="prop_name">Name</string>
+    <string name="prop_type">Type</string>
+    <string name="prop_size">Size</string>
+    <string name="prop_path">Path</string>
+    <string name="prop_modified">Modified</string>
+
+    <!-- Dialogs: Compress & Extract -->
+    <string name="compress_dialog_title">Compress to Zip</string>
+    <string name="compress_file_name_label">Zip file name</string>
+    <string name="compress_password_label">Password (Optional)</string>
+    <string name="extract_dialog_title">Extract Archive</string>
+    <string name="extract_dialog_message">How would you like to extract \"%1$s\"?</string>
+    <string name="extract_here_title">Extract here</string>
+    <string name="extract_here_subtitle">Extract to a new folder in the same directory</string>
+    <string name="extract_select_location_title">Select location</string>
+    <string name="extract_select_location_subtitle">Choose a specific folder to extract to</string>
+
+    <!-- Dialogs: Create Folder, Password, Rename -->
+    <string name="create_folder_dialog_title">Create Folder</string>
+    <string name="create_folder_name_label">Folder Name</string>
+    <string name="password_dialog_title">Password Required</string>
+    <string name="password_label">Password</string>
+    <string name="rename_dialog_title">Rename</string>
+    <string name="rename_new_name_label">New Name</string>
+
+    <!-- Restricted Folder Prompts -->
+    <string name="restricted_folder_default_title">Restricted Folder</string>
+    <string name="restricted_folder_default_desc">Android restricts access to this folder. To view and modify these files, ROSE needs permission.</string>
+    <string name="restricted_system_folder_title">Restricted System Folder</string>
+    <string name="drive_access_required_title">Drive Access Required</string>
+    <string name="restricted_system_folder_desc">Android 11+ restricts standard access to Android/data and Android/obb folders to protect app data. To view and modify these files, ROSE requires Shizuku permission.</string>
+    <string name="drive_access_required_desc">This USB drive or SD card requires standard Android access permission to be read and modified. Please grant access.</string>
+    <string name="action_grant_shizuku">Grant Shizuku Access</string>
+    <string name="action_how_to_setup_shizuku">How to setup Shizuku?</string>
+    <string name="action_grant_storage_access">Grant Storage Access</string>
+    <string name="action_use_shizuku_instead">Use Shizuku instead</string>
+
+    <!-- Recycle Bin Screen -->
+    <string name="recycle_bin_title">Recycle Bin</string>
+    <string name="recycle_bin_is_empty">Recycle bin is empty</string>
+    <string name="recycle_bin_empty_desc">Items will be deleted after 30 days</string>
+    <string name="empty_recycle_bin_title">Empty Recycle Bin</string>
+    <string name="empty_recycle_bin_confirm">All items will be permanently deleted. Are you sure?</string>
+    <string name="restore_folder_prompt_title">Restore Folder?</string>
+    <string name="restore_archive_prompt_title">Restore Archive?</string>
+    <string name="restore_to_view_message">To view the contents of \"%1$s\", you need to restore it first.</string>
+    <string name="action_restore_now">Restore Now</string>
+    <string name="recycled_item_subtitle">%1$s | Deleted: %2$s</string>
+    <string name="recycled_item_from">From: %1$s</string>
+    <string name="recycle_prop_original_name">Original Name</string>
+    <string name="recycle_prop_original_path">Original Path</string>
+    <string name="recycle_prop_deletion_date">Deletion Date</string>
+    <string name="recycle_prop_size">Size</string>
+
+    <!-- Settings Screen -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_system">System</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_amoled_mode">Black AMOLED mode</string>
+    <string name="settings_amoled_mode_subtitle">Use true black backgrounds while in dark mode</string>
+    <string name="settings_dynamic_color">Dynamic color</string>
+    <string name="settings_dynamic_color_subtitle">Use colors generated from your wallpaper (Android 12+)</string>
+    <string name="settings_section_browsing">Browsing</string>
+    <string name="settings_recent_files_limit">Recent files limit</string>
+    <string name="settings_show_list_dividers">Show list dividers</string>
+    <string name="settings_show_list_dividers_subtitle">Thin lines between items in Recent files, Quick access, and folder lists</string>
+    <string name="settings_excluded_folders">Excluded folders</string>
+    <string name="settings_excluded_folders_subtitle">Select folders to hide from recents and categories</string>
+    <string name="settings_section_navigation">Navigation</string>
+    <string name="settings_start_page">Start page</string>
+    <string name="settings_start_page_landing">Landing page</string>
+    <string name="settings_start_page_all_files">All files</string>
+    <string name="settings_section_safety">Safety</string>
+    <string name="settings_confirm_before_delete">Confirm before delete</string>
+    <string name="settings_confirm_before_delete_subtitle">Ask for confirmation before deleting files or folders</string>
+    <string name="settings_use_recycle_bin">Use Recycle Bin</string>
+    <string name="settings_use_recycle_bin_subtitle">Deleted files are moved to Recycle Bin and kept for 30 days</string>
+    <string name="settings_section_home_screen">Home Screen</string>
+    <string name="settings_show_quick_access">Show Quick Access</string>
+    <string name="settings_show_quick_access_subtitle">Show the Quick Access section on the landing page</string>
+    <string name="settings_section_storage">Storage</string>
+    <string name="settings_clear_thumbnail_cache">Clear thumbnail cache</string>
+    <string name="settings_clear_thumbnail_cache_subtitle">Free up space used by cached image and video thumbnails</string>
+    <string name="settings_toast_cache_cleared">Thumbnail cache cleared</string>
+    <string name="settings_section_support">Support</string>
+    <string name="settings_report_issue">Report an issue</string>
+    <string name="settings_report_issue_subtitle">Found a bug? Let us know on GitHub</string>
+    <string name="excluded_folders_dialog_title">Excluded Folders</string>
+    <string name="excluded_folders_dialog_subtitle">Hidden from Recents and Categories</string>
+    <string name="excluded_folders_empty">No folders excluded yet</string>
+    <string name="action_add_folder_to_exclude">Add Folder to Exclude</string>
+    <string name="action_exclude_current_folder">Exclude Current Folder</string>
+    <string name="excluded_folders_picker_empty">No subfolders here</string>
+
+    <!-- File Jobs & Operations -->
+    <string name="job_active_tasks_count">%1$d active tasks</string>
+    <string name="job_working">Working…</string>
+    <string name="job_background_hint">Runs in the background - safe to close this dialog.</string>
+    <string name="job_item_progress">Item %1$d of %2$d</string>
+    <string name="job_bytes_progress">%1$s of %2$s</string>
+    <string name="job_label_from">FROM</string>
+    <string name="job_label_to">TO</string>
+    <string name="job_stat_speed">Speed</string>
+    <string name="job_stat_left">Left</string>
+    <string name="job_stat_elapsed">Elapsed</string>
+    <string name="job_locations_count">%1$d locations</string>
+    <string name="job_title_copying">Copying files</string>
+    <string name="job_title_moving">Moving files</string>
+    <string name="job_title_deleting">Deleting files</string>
+    <string name="job_title_saving_offline">Saving offline</string>
+    <string name="job_title_moving_to_recycle_bin">Moving to Recycle Bin</string>
+    <string name="job_title_restoring">Restoring files</string>
+    <string name="job_title_extracting">Extracting archive</string>
+    <string name="job_title_creating_archive">Creating archive</string>
+    <string name="job_copying_files_ellipsis">Copying files…</string>
+    <string name="job_moving_files_ellipsis">Moving files…</string>
+    <string name="job_saving_offline_ellipsis">Saving offline…</string>
+    <string name="job_deleting_files_ellipsis">Deleting files…</string>
+    <string name="job_moving_to_bin_ellipsis">Moving to Bin…</string>
+    <string name="job_restoring_files_ellipsis">Restoring files…</string>
+    <string name="job_extracting_archive_ellipsis">Extracting archive…</string>
+    <string name="job_creating_archive_ellipsis">Creating archive…</string>
+    <string name="job_processing_ellipsis">Processing…</string>
+    <string name="job_downloading_with_bytes">Downloading… %1$s</string>
+    <string name="job_downloading">Downloading…</string>
+    <string name="job_progress_items_and_percent">%1$d of %2$d | %3$d%%</string>
+    <string name="job_percent_completed">%1$d%% completed</string>
+    <string name="job_moving_to_bin_fast">Moving to bin…</string>
+    <string name="job_restoring_fast">Restoring…</string>
+    <string name="job_deleting_fast">Deleting…</string>
+
+    <!-- File Job Notifications -->
+    <string name="notif_channel_file_operations">File Operations</string>
+    <string name="notif_channel_background_operations">Background Operations</string>
+    <string name="notif_channel_completion">File Operation Results</string>
+    <string name="notif_title_copying">Copying Files</string>
+    <string name="notif_title_moving">Moving Files</string>
+    <string name="notif_title_deleting">Deleting Files</string>
+    <string name="notif_title_saving_offline">Saving Offline</string>
+    <string name="notif_title_moving_to_recycle_bin">Moving to Recycle Bin</string>
+    <string name="notif_title_restoring">Restoring Files</string>
+    <string name="notif_title_extracting">Extracting Archive</string>
+    <string name="notif_title_creating_archive">Creating Archive</string>
+    <string name="notif_content_indeterminate_multi">Processing %1$d/%2$d: %3$s%4$s</string>
+    <string name="notif_content_indeterminate_single">Downloading %1$s%2$s</string>
+    <string name="notif_content_determinate_multi">Processing %1$d/%2$d: %3$s (%4$d%%)</string>
+    <string name="notif_content_determinate_single">Processing %1$s: %2$d%%</string>
+    <string name="job_op_copy">Copy</string>
+    <string name="job_op_move">Move</string>
+    <string name="job_op_delete">Delete</string>
+    <string name="job_op_save_offline">Save offline</string>
+    <string name="job_op_moving_to_bin">Moving to bin</string>
+    <string name="job_op_restore">Restore</string>
+    <string name="job_op_extraction">Extraction</string>
+    <string name="job_op_compression">Compression</string>
+    <string name="notif_completion_moved_to_bin">Moved to Recycle Bin</string>
+    <string name="notif_completion_restored">Files restored</string>
+    <string name="notif_completion_success">%1$s complete</string>
+    <string name="notif_completion_failure">%1$s failed</string>
+    <string name="notif_completion_couldnt_finish">Couldn\'t finish %1$s</string>
+
+    <!-- Notification Primer -->
+    <string name="notif_primer_title">Stay updated on transfers</string>
+    <string name="notif_primer_description">Rose can notify you with live progress while a file downloads in the background - so you always know when it\'s saved offline.</string>
+
+    <!-- Updates -->
+    <string name="update_dialog_title">Update Available</string>
+    <string name="update_dialog_message">A new version (%1$s) is available. Do you want to update now?</string>
+    <string name="update_dialog_whats_new">What\'s new:</string>
+    <string name="update_download_progress">%1$s / %2$s (%3$d%%)</string>
+    <string name="update_download_bytes">%1$s downloaded</string>
+    <string name="update_download_ready">Downloaded. If the installer didn\'t open automatically, tap Install below.</string>
+    <string name="update_downloading">Downloading…</string>
+    <string name="action_download_and_install">Download &amp; Install</string>
+    <string name="action_update_now">Update Now</string>
+    <string name="update_check_failed_http">Failed to check for updates (HTTP %1$d)</string>
+    <string name="update_download_failed_http">Download failed (HTTP %1$d)</string>
+    <string name="update_download_failed">Download failed</string>
+    <string name="update_error_open_install_settings">Couldn\'t open install-permission settings</string>
+
+    <!-- Toasts & General Feedback -->
+    <string name="toast_notification_permission_recommended">Notification permission is recommended for background tasks</string>
+    <string name="toast_manage_storage_required">Manage Storage permission is required</string>
+    <string name="toast_failed_to_add_storage">Failed to add storage: %1$s</string>
+    <string name="toast_failed_to_open_archive">Failed to open archive: %1$s</string>
+    <string name="toast_failed_to_extract">Failed to extract %1$s: %2$s</string>
+    <string name="toast_failed_to_extract_file">Failed to extract file: %1$s</string>
+    <string name="toast_folders_cannot_be_shared">Folders cannot be shared directly</string>
+    <string name="toast_couldnt_open_file">Couldn\'t open file: %1$s</string>
+    <string name="toast_file_no_longer_exists">File no longer exists</string>
+    <string name="toast_couldnt_access_file">Couldn\'t access file</string>
+    <string name="toast_allow_install_source">Please allow installation from this source</string>
+    <string name="toast_couldnt_prepare_intent">Couldn\'t prepare intent: %1$s</string>
+    <string name="toast_file_not_found_recycle_bin">File not found in recycle bin</string>
+    <string name="toast_usb_drive_removed">USB drive was removed</string>
+    <string name="toast_archive_ready_extract">Archive ready. Navigate to a folder to extract.</string>
+    <string name="toast_shizuku_not_running">Shizuku not running. Please start it first.</string>
+    <string name="toast_added_to_quick_access">Added to Quick access</string>
+    <string name="toast_up_to_date">You\'re on the latest version</string>
+    <string name="permission_placeholder_waiting">Waiting for storage permissions…</string>
 </resources>

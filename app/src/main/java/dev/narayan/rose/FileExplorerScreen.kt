@@ -43,6 +43,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -377,7 +378,7 @@ fun FileExplorerScreen(
         // Show a Toast so the user understands why the screen changed
         android.widget.Toast.makeText(
             context,
-            "USB drive was removed",
+            context.getString(R.string.toast_usb_drive_removed),
             android.widget.Toast.LENGTH_SHORT
         ).show()
         // Navigate back to Home
@@ -424,7 +425,7 @@ fun FileExplorerScreen(
             }
         } else if (currentView == "Category") {
             if (viewModel.categoryBucketId != null) {
-                viewModel.browseCategory(FileType.IMAGE, "Photos")
+                viewModel.browseCategory(FileType.IMAGE, context.getString(R.string.category_photos))
             } else {
                 viewModel.exitCategoryMode()
                 onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
@@ -768,7 +769,7 @@ fun FileExplorerScreen(
                                                 }
                                             } else if (currentView == "Category") {
                                                 if (viewModel.categoryBucketId != null) {
-                                                    viewModel.browseCategory(FileType.IMAGE, "Photos")
+                                                    viewModel.browseCategory(FileType.IMAGE, context.getString(R.string.category_photos))
                                                 } else {
                                                     viewModel.exitCategoryMode()
                                                     onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
@@ -788,9 +789,9 @@ fun FileExplorerScreen(
 
                                         MainTopBar(
                                             title = when (currentView) {
-                                                "Recent" -> "Recent"
-                                                "Category" -> viewModel.categoryTitle ?: "Category"
-                                                else -> "All Files"
+                                                "Recent" -> stringResource(R.string.home_section_recent_files)
+                                                "Category" -> viewModel.categoryTitle ?: stringResource(R.string.category_files)
+                                                else -> stringResource(R.string.category_all_files)
                                             },
                                             path = if (currentView == "Files") viewModel.currentPath else null,
                                             archiveName = viewModel.currentZipFile?.name?.let { zipName ->
@@ -852,7 +853,7 @@ fun FileExplorerScreen(
                                         if (currentView == "Category" || currentView == "Recent") {
                                             viewModel.prepareExtraction(fileItem.file)
                                             viewModel.exitSelectionMode()
-                                            Toast.makeText(context, "Archive ready. Navigate to a folder to extract.", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, context.getString(R.string.toast_archive_ready_extract), Toast.LENGTH_SHORT).show()
                                         } else {
                                             showExtractionDialog = fileItem
                                         }
@@ -906,7 +907,7 @@ fun FileExplorerScreen(
                                         ) {
                                             Icon(
                                                 Icons.Default.Close,
-                                                contentDescription = "Cancel",
+                                                contentDescription = stringResource(R.string.action_cancel),
                                                 tint = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f),
                                                 modifier = Modifier.size(20.dp)
                                             )
@@ -941,7 +942,7 @@ fun FileExplorerScreen(
                                             )
                                             Spacer(modifier = Modifier.width(10.dp))
                                             Text(
-                                                "Extract Here",
+                                                stringResource(R.string.action_extract_here),
                                                 style = MaterialTheme.typography.labelLarge,
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.onTertiaryContainer
@@ -972,7 +973,7 @@ fun FileExplorerScreen(
                                         ) {
                                             Icon(
                                                 Icons.Default.Close,
-                                                contentDescription = "Cancel",
+                                                contentDescription = stringResource(R.string.action_cancel),
                                                 tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                                                 modifier = Modifier.size(20.dp)
                                             )
@@ -1006,7 +1007,7 @@ fun FileExplorerScreen(
                                             )
                                             Spacer(modifier = Modifier.width(10.dp))
                                             Text(
-                                                if (viewModel.isCopyOperation) "Paste Here" else "Move Here",
+                                                if (viewModel.isCopyOperation) stringResource(R.string.action_paste_here) else stringResource(R.string.action_move_here),
                                                 style = MaterialTheme.typography.labelLarge,
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -1059,16 +1060,16 @@ fun FileExplorerScreen(
                                 RestrictedFolderView(
                                     path = viewModel.currentPath,
                                     isShizukuAuthorized = hasShizuku,
-                                    title = if (isSystemRestricted) "Restricted System Folder" else "Drive Access Required",
-                                    description = if (isSystemRestricted) "Android 11+ restricts standard access to Android/data and Android/obb folders to protect app data. To view and modify these files, ROSE requires Shizuku permission."
-                                    else "This USB drive or SD card requires standard Android access permission to be read and modified. Please grant access.",
+                                    title = if (isSystemRestricted) stringResource(R.string.restricted_system_folder_title) else stringResource(R.string.drive_access_required_title),
+                                    description = if (isSystemRestricted) stringResource(R.string.restricted_system_folder_desc)
+                                    else stringResource(R.string.drive_access_required_desc),
                                     onGrantShizuku = {
                                         if (ShizukuManager.isAvailable()) {
                                             viewModel.onShizukuResult(false, viewModel.currentPath) // Reset
                                             viewModel.retryShizuku(viewModel.currentPath)
                                         } else {
                                             ShizukuManager.requestBinder(context)
-                                            Toast.makeText(context, "Shizuku not running. Please start it first.", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(context, context.getString(R.string.toast_shizuku_not_running), Toast.LENGTH_LONG).show()
                                         }
                                     },
                                     onGrantSaf = {
@@ -1154,7 +1155,7 @@ fun FileExplorerScreen(
                                             if (!shouldGroup) emptyList<ListItemType>()
                                             else {
                                                 val list = mutableListOf<ListItemType>()
-                                                displayedFilesFinal.groupBy { formatDateHeader(it.lastModified) }
+                                                displayedFilesFinal.groupBy { formatDateHeader(context, it.lastModified) }
                                                     .forEach { (header, files) ->
                                                         list.add(ListItemType.Header(header, files.size))
                                                         files.forEach { list.add(ListItemType.File(it)) }
@@ -1165,7 +1166,7 @@ fun FileExplorerScreen(
 
                                         if (displayedFilesFinal.isEmpty() && !viewModel.isLoading && !viewModel.isRecursiveSearching) {
                                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                                Text(if (searchQuery.isEmpty()) "No files found" else "No results for \"$searchQuery\"")
+                                                Text(if (searchQuery.isEmpty()) stringResource(R.string.no_files_found) else stringResource(R.string.no_results_for_query, searchQuery))
                                             }
                                         } else if (if (currentView == "Category") viewModel.isCategoryGridView else viewModel.isGridView) {
                                             LazyVerticalGrid(
@@ -1413,7 +1414,7 @@ fun FileExplorerScreen(
                                                                         val entries = if (fileItem.zipEntryPath != null) listOf(fileItem.zipEntryPath) else null
                                                                         if (currentView == "Category" || currentView == "Recent") {
                                                                             viewModel.prepareExtraction(fileItem.file, entries)
-                                                                            Toast.makeText(context, "Archive ready. Navigate to a folder to extract.", Toast.LENGTH_SHORT).show()
+                                                                            Toast.makeText(context, context.getString(R.string.toast_archive_ready_extract), Toast.LENGTH_SHORT).show()
                                                                         } else {
                                                                             // If inside a zip, we want to extract the selected entry
                                                                             if (entries != null) {
@@ -1528,7 +1529,7 @@ fun FileExplorerScreen(
                                                             onExtract = {
                                                                 if (currentView == "Category" || currentView == "Recent") {
                                                                     viewModel.prepareExtraction(fileItem.file)
-                                                                    Toast.makeText(context, "Archive ready. Navigate to a folder to extract.", Toast.LENGTH_SHORT).show()
+                                                                    Toast.makeText(context, context.getString(R.string.toast_archive_ready_extract), Toast.LENGTH_SHORT).show()
                                                                 } else {
                                                                     showExtractionDialog = fileItem
                                                                 }
@@ -1695,23 +1696,22 @@ fun DeleteConfirmationDialog(
                     tint = MaterialTheme.colorScheme.error
                 )
                 Spacer(modifier = Modifier.width(12.dp))
-                Text(if (isLarge) "Delete Large Item?" else "Delete?")
+                Text(if (isLarge) stringResource(R.string.delete_large_item_title) else stringResource(R.string.delete_item_title))
             }
         },
         text = {
             Column {
-                Text(
-                    when (pending) {
-                        is PendingDelete.Single -> "Delete \"${pending.fileItem.name}\"?"
-                        is PendingDelete.Selection -> "Delete ${pending.count} selected item(s)?"
-                    } + if (useRecycleBin && !permanently) {
-                        if (pending is PendingDelete.Single) " It will be moved to the bin." else " They will be moved to the bin."
-                    } else " This can't be undone."
-                )
+                val message = when (pending) {
+                    is PendingDelete.Single -> stringResource(R.string.delete_single_confirm, pending.fileItem.name)
+                    is PendingDelete.Selection -> stringResource(R.string.delete_multi_confirm, pending.count)
+                } + if (useRecycleBin && !permanently) {
+                    if (pending is PendingDelete.Single) stringResource(R.string.delete_single_moved_to_bin) else stringResource(R.string.delete_multi_moved_to_bin)
+                } else stringResource(R.string.delete_cannot_be_undone)
+                Text(message)
 
                 if (isLarge) {
                     Text(
-                        "Total size: ${formatFileSize(totalSize)}",
+                        stringResource(R.string.delete_total_size, formatFileSize(totalSize)),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(top = 4.dp)
@@ -1736,7 +1736,7 @@ fun DeleteConfirmationDialog(
                             onCheckedChange = { permanently = it }
                         )
                         Text(
-                            "Delete permanently",
+                            stringResource(R.string.delete_permanently),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -1749,11 +1749,11 @@ fun DeleteConfirmationDialog(
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Text("Delete")
+                Text(stringResource(R.string.action_delete))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         },
         shape = RoundedCornerShape(28.dp)
     )
@@ -1775,7 +1775,7 @@ fun AboutScreen(
 
     LaunchedEffect(updateResult) {
         if (updateResult is UpdateCheckResult.UpToDate) {
-            Toast.makeText(context, "You're on the latest version", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.toast_up_to_date), Toast.LENGTH_SHORT).show()
             viewModel.resetUpdateCheck()
         } else if (updateResult is UpdateCheckResult.Error) {
             Toast.makeText(context, updateResult.message, Toast.LENGTH_SHORT).show()
@@ -1811,9 +1811,9 @@ fun AboutScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("About", fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(R.string.action_about), fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.content_desc_back)) }
                 }
             )
         }
@@ -1844,13 +1844,13 @@ fun AboutScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                "ROSE",
+                stringResource(R.string.app_name),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.ExtraBold,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                "Reliable Open-Source Explorer",
+                stringResource(R.string.app_description),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Medium
@@ -1858,7 +1858,7 @@ fun AboutScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                "Made because I wanted a secure, open-source, fast, and powerful file manager with Shizuku support. My free time disagreed. Here's ROSE.",
+                stringResource(R.string.about_app_description),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -1876,8 +1876,8 @@ fun AboutScreen(
                 )
             ) {
                 Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                    AboutItem(Icons.Default.Info, "Version", BuildConfig.VERSION_NAME)
-                    AboutItem(Icons.Default.Code, "View on GitHub", "Source Code Repository") {
+                    AboutItem(Icons.Default.Info, stringResource(R.string.about_version), BuildConfig.VERSION_NAME)
+                    AboutItem(Icons.Default.Code, stringResource(R.string.about_view_on_github), stringResource(R.string.about_github_subtitle)) {
                         uriHandler.openUri("https://github.com/NarayanChetri/ROSE")
                     }
 
@@ -1887,8 +1887,8 @@ fun AboutScreen(
                         color = MaterialTheme.colorScheme.outlineVariant
                     )
 
-                    AboutItem(Icons.Default.Person, "Narayan Chetri", "Lead Developer")
-                    AboutItem(Icons.Default.Email, "Contact", "Narayanchetri.dev@gmail.com") {
+                    AboutItem(Icons.Default.Person, stringResource(R.string.about_author_name), stringResource(R.string.about_author_role))
+                    AboutItem(Icons.Default.Email, stringResource(R.string.about_contact), stringResource(R.string.about_contact_email)) {
                         uriHandler.openUri("mailto:Narayanchetri.dev@gmail.com")
                     }
                 }
@@ -1921,11 +1921,11 @@ fun AboutScreen(
                             color = MaterialTheme.colorScheme.onPrimary
                         )
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text("Checking for updates...", style = MaterialTheme.typography.labelLarge)
+                        Text(stringResource(R.string.about_checking_for_updates), style = MaterialTheme.typography.labelLarge)
                     } else {
                         Icon(Icons.Default.Update, null, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text("Check for updates", style = MaterialTheme.typography.labelLarge)
+                        Text(stringResource(R.string.about_check_for_updates), style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }
@@ -2016,7 +2016,7 @@ fun UpdateDialog(
         },
         title = {
             Text(
-                "Update Available",
+                stringResource(R.string.update_dialog_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold
             )
@@ -2024,13 +2024,13 @@ fun UpdateDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "A new version (${info.tagName}) is available. Do you want to update now?",
+                    stringResource(R.string.update_dialog_message, info.tagName),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 if (info.releaseNotes.isNotBlank()) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "What's new:",
+                        stringResource(R.string.update_dialog_whats_new),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -2076,9 +2076,17 @@ fun UpdateDialog(
                         }
                         Text(
                             if (downloadState.totalBytes > 0) {
-                                "${formatFileSize(downloadState.downloadedBytes)} / ${formatFileSize(downloadState.totalBytes)} (${(downloadState.progress * 100).toInt()}%)"
+                                stringResource(
+                                    R.string.update_download_progress,
+                                    formatFileSize(downloadState.downloadedBytes),
+                                    formatFileSize(downloadState.totalBytes),
+                                    (downloadState.progress * 100).toInt()
+                                )
                             } else {
-                                "${formatFileSize(downloadState.downloadedBytes)} downloaded"
+                                stringResource(
+                                    R.string.update_download_bytes,
+                                    formatFileSize(downloadState.downloadedBytes)
+                                )
                             },
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -2086,7 +2094,7 @@ fun UpdateDialog(
                     }
                     is UpdateDownloadState.ReadyToInstall -> {
                         Text(
-                            "Downloaded. If the installer didn't open automatically, tap Install below.",
+                            stringResource(R.string.update_download_ready),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -2115,7 +2123,7 @@ fun UpdateDialog(
                             strokeWidth = 2.dp
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Downloading...")
+                        Text(stringResource(R.string.update_downloading))
                     }
                 }
                 is UpdateDownloadState.ReadyToInstall -> {
@@ -2124,7 +2132,7 @@ fun UpdateDialog(
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
-                        Text("Install")
+                        Text(stringResource(R.string.action_install))
                     }
                 }
                 is UpdateDownloadState.Error -> {
@@ -2133,7 +2141,7 @@ fun UpdateDialog(
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
-                        Text("Retry")
+                        Text(stringResource(R.string.action_retry))
                     }
                 }
                 UpdateDownloadState.Idle -> {
@@ -2142,14 +2150,14 @@ fun UpdateDialog(
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
-                        Text(if (info.apkUrl != null) "Download & Install" else "Update Now")
+                        Text(if (info.apkUrl != null) stringResource(R.string.action_download_and_install) else stringResource(R.string.action_update_now))
                     }
                 }
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(if (downloadState is UpdateDownloadState.Downloading) "Cancel" else "Later")
+                Text(if (downloadState is UpdateDownloadState.Downloading) stringResource(R.string.action_cancel) else stringResource(R.string.action_later))
             }
         },
         shape = RoundedCornerShape(28.dp)
@@ -2182,7 +2190,7 @@ fun MainTopBar(
             title = {
                 val isAlbum = viewModel.categoryBucketId != null
                 Column {
-                    if (title == "All Files" && sharedTransitionScope != null && animatedVisibilityScope != null) {
+                    if (title == stringResource(R.string.category_all_files) && sharedTransitionScope != null && animatedVisibilityScope != null) {
                         with(sharedTransitionScope) {
                             Text(
                                 title,
@@ -2208,7 +2216,7 @@ fun MainTopBar(
                     }
                     if (totalItems != null) {
                         Text(
-                            "$totalItems items in total",
+                            stringResource(R.string.total_items_in_total, totalItems),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
                         )
@@ -2217,7 +2225,7 @@ fun MainTopBar(
             },
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.content_desc_back))
                 }
             },
             actions = {
@@ -2235,7 +2243,7 @@ fun MainTopBar(
                         ) {
                             if (currentView != "Category" && viewModel.currentZipFile == null) {
                                 DropdownMenuItem(
-                                    text = { Text("New Folder", modifier = Modifier.padding(vertical = 4.dp)) },
+                                    text = { Text(stringResource(R.string.action_new_folder), modifier = Modifier.padding(vertical = 4.dp)) },
                                     onClick = { onNewFolderClick(); showMoreMenu = false },
                                     leadingIcon = { Icon(Icons.Default.CreateNewFolder, null) },
                                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
@@ -2243,21 +2251,21 @@ fun MainTopBar(
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             }
                             DropdownMenuItem(
-                                text = { Text(if (viewModel.showHiddenFiles) "Hide Hidden Files" else "Show Hidden Files", modifier = Modifier.padding(vertical = 4.dp)) },
+                                text = { Text(if (viewModel.showHiddenFiles) stringResource(R.string.action_hide_hidden_files) else stringResource(R.string.action_show_hidden_files), modifier = Modifier.padding(vertical = 4.dp)) },
                                 onClick = { viewModel.toggleHiddenFiles(); showMoreMenu = false },
                                 leadingIcon = { Icon(if (viewModel.showHiddenFiles) Icons.Default.VisibilityOff else Icons.Default.Visibility, null) },
                                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                             )
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             DropdownMenuItem(
-                                text = { Text("Refresh", modifier = Modifier.padding(vertical = 4.dp)) },
+                                text = { Text(stringResource(R.string.action_refresh), modifier = Modifier.padding(vertical = 4.dp)) },
                                 onClick = { onRefreshClick(); showMoreMenu = false },
                                 leadingIcon = { Icon(Icons.Default.Refresh, null) },
                                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                             )
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             DropdownMenuItem(
-                                text = { Text("Settings", modifier = Modifier.padding(vertical = 4.dp)) },
+                                text = { Text(stringResource(R.string.action_settings), modifier = Modifier.padding(vertical = 4.dp)) },
                                 onClick = { onSettingsClick(); showMoreMenu = false },
                                 leadingIcon = { Icon(Icons.Default.Settings, null) },
                                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
@@ -2279,8 +2287,9 @@ fun MainTopBar(
 @Composable
 fun Breadcrumbs(path: String, onNavigate: (File) -> Unit) {
     val rootPath = Environment.getExternalStorageDirectory().absolutePath
+    val internalStorageLabel = stringResource(R.string.breadcrumbs_internal_storage)
     val relativePath = if (path.startsWith(rootPath)) {
-        "Internal shared storage" + path.removePrefix(rootPath)
+        internalStorageLabel + path.removePrefix(rootPath)
     } else {
         path
     }
@@ -2301,7 +2310,7 @@ fun Breadcrumbs(path: String, onNavigate: (File) -> Unit) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (index == parts.lastIndex) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.clickable {
-                    val targetPath = if (relativePath.startsWith("Internal shared storage")) {
+                    val targetPath = if (relativePath.startsWith(internalStorageLabel)) {
                         val subParts = parts.subList(1, index + 1)
                         if (subParts.isEmpty()) {
                             File(Environment.getExternalStorageDirectory().absolutePath)
@@ -2337,7 +2346,7 @@ fun SelectionTopBar(viewModel: RoseViewModel) {
     TopAppBar(
         title = {
             Text(
-                "${viewModel.selectedFiles.size} selected",
+                stringResource(R.string.selection_count, viewModel.selectedFiles.size),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
@@ -2390,26 +2399,26 @@ fun SelectionBottomBar(
         ) {
             SelectionBottomBarItem(
                 icon = Icons.Outlined.Share,
-                label = "Share",
+                label = stringResource(R.string.action_share),
                 onClick = onShare,
                 modifier = Modifier.weight(1f)
             )
             SelectionBottomBarItem(
                 icon = Icons.Outlined.ContentCopy,
-                label = "Copy",
+                label = stringResource(R.string.action_copy),
                 onClick = { viewModel.copySelected() },
                 modifier = Modifier.weight(1f)
             )
             SelectionBottomBarItem(
                 icon = Icons.AutoMirrored.Outlined.DriveFileMove,
-                label = "Move",
+                label = stringResource(R.string.action_move),
                 onClick = { viewModel.moveSelected() },
                 modifier = Modifier.weight(1f),
                 enabled = viewModel.currentZipFile == null
             )
             SelectionBottomBarItem(
                 icon = Icons.Outlined.Delete,
-                label = "Delete",
+                label = stringResource(R.string.action_delete),
                 onClick = onDeleteClick,
                 modifier = Modifier.weight(1f),
                 enabled = viewModel.currentZipFile == null
@@ -2419,7 +2428,7 @@ fun SelectionBottomBar(
             Box(modifier = Modifier.weight(1f)) {
                 SelectionBottomBarItem(
                     icon = Icons.Default.MoreVert,
-                    label = "More",
+                    label = stringResource(R.string.action_more),
                     onClick = { showMoreMenu = true },
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -2431,7 +2440,7 @@ fun SelectionBottomBar(
                     offset = androidx.compose.ui.unit.DpOffset(x = (-8).dp, y = 0.dp)
                 ) {
                     DropdownMenuItem(
-                        text = { Text(if (isAllSelected) "Unselect All" else "Select All") },
+                        text = { Text(if (isAllSelected) stringResource(R.string.action_unselect_all) else stringResource(R.string.action_select_all)) },
                         onClick = {
                             onSelectAllClick()
                             showMoreMenu = false
@@ -2441,7 +2450,7 @@ fun SelectionBottomBar(
                     if (currentView != "Recent" && viewModel.currentZipFile == null) {
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                         DropdownMenuItem(
-                            text = { Text("Compress") },
+                            text = { Text(stringResource(R.string.action_compress)) },
                             onClick = {
                                 onCompressClick()
                                 showMoreMenu = false
@@ -2454,7 +2463,7 @@ fun SelectionBottomBar(
                         if (viewModel.currentZipFile == null) {
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             DropdownMenuItem(
-                                text = { Text("Rename") },
+                                text = { Text(stringResource(R.string.action_rename)) },
                                 onClick = {
                                     onRenameClick()
                                     showMoreMenu = false
@@ -2465,10 +2474,10 @@ fun SelectionBottomBar(
                         if (fileItem.isDirectory && viewModel.currentZipFile == null) {
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             DropdownMenuItem(
-                                text = { Text("Add to Quick access") },
+                                text = { Text(stringResource(R.string.action_add_to_quick_access)) },
                                 onClick = {
                                     viewModel.addQuickAccessFolder(fileItem.file.absolutePath)
-                                    Toast.makeText(context, "Added to Quick access", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.toast_added_to_quick_access), Toast.LENGTH_SHORT).show()
                                     viewModel.exitSelectionMode()
                                     showMoreMenu = false
                                 },
@@ -2478,7 +2487,7 @@ fun SelectionBottomBar(
                         if (fileItem.fileType == FileType.ZIP && viewModel.currentZipFile == null) {
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             DropdownMenuItem(
-                                text = { Text("Extract") },
+                                text = { Text(stringResource(R.string.action_extract)) },
                                 onClick = {
                                     onExtractClick()
                                     showMoreMenu = false
@@ -2488,7 +2497,7 @@ fun SelectionBottomBar(
                         }
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                         DropdownMenuItem(
-                            text = { Text("Properties") },
+                            text = { Text(stringResource(R.string.action_properties)) },
                             onClick = {
                                 viewModel.showProperties(fileItem)
                                 viewModel.exitSelectionMode()
@@ -2547,7 +2556,7 @@ fun SearchTopBar(query: String, onQueryChange: (String) -> Unit, onBack: () -> U
             TextField(
                 value = query,
                 onValueChange = onQueryChange,
-                placeholder = { Text("Search files...") },
+                placeholder = { Text(stringResource(R.string.search_files_placeholder)) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(focusRequester),
@@ -2577,20 +2586,20 @@ fun SortMenu(expanded: Boolean, viewModel: RoseViewModel, currentView: String, o
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         offset = androidx.compose.ui.unit.DpOffset(x = (-8).dp, y = 0.dp)
     ) {
-        SortMenuItem("Name", RoseViewModel.SortBy.NAME, viewModel)
+        SortMenuItem(stringResource(R.string.sort_name), RoseViewModel.SortBy.NAME, viewModel)
         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-        SortMenuItem("Type", RoseViewModel.SortBy.TYPE, viewModel)
+        SortMenuItem(stringResource(R.string.sort_type), RoseViewModel.SortBy.TYPE, viewModel)
         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-        SortMenuItem("Size", RoseViewModel.SortBy.SIZE, viewModel)
+        SortMenuItem(stringResource(R.string.sort_size), RoseViewModel.SortBy.SIZE, viewModel)
         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-        SortMenuItem("Last modified", RoseViewModel.SortBy.DATE, viewModel)
+        SortMenuItem(stringResource(R.string.sort_last_modified), RoseViewModel.SortBy.DATE, viewModel)
 
         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
 
         val isGridView = if (currentView == "Category") viewModel.isCategoryGridView else viewModel.isGridView
 
         DropdownMenuItem(
-            text = { Text(if (isGridView) "List view" else "Grid view") },
+            text = { Text(if (isGridView) stringResource(R.string.view_list) else stringResource(R.string.view_grid)) },
             onClick = {
                 if (currentView == "Category") {
                     viewModel.setCategoryGridView(!isGridView)
@@ -2710,7 +2719,7 @@ fun FileGridItem(
         if (showDetails) {
             if (fileItem.isDirectory) {
                 Text(
-                    "${fileItem.itemCount ?: 0} items",
+                    stringResource(R.string.items_count, fileItem.itemCount ?: 0),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -2818,9 +2827,9 @@ fun FileListItem(
                 val dateStr = formatItemDate(fileItem.lastModified)
                 if (fileItem.isDirectory) {
                     val count = fileItem.itemCount ?: 0
-                    Text("$count items | $dateStr")
+                    Text(stringResource(R.string.item_count_and_date, count, dateStr))
                 } else if (showDetails) {
-                    Text("${formatFileSize(fileItem.size)} | $dateStr")
+                    Text(stringResource(R.string.item_size_and_date, formatFileSize(fileItem.size), dateStr))
                 }
             },
             leadingContent = {
@@ -2874,7 +2883,7 @@ fun FileListItem(
                         IconButton(onClick = { showMenu = true }) {
                             Icon(
                                 Icons.Default.MoreVert,
-                                contentDescription = "More options",
+                                contentDescription = stringResource(R.string.content_desc_more_options),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                             )
                         }
@@ -2886,47 +2895,47 @@ fun FileListItem(
                         ) {
                             if (onOpenLocation != null) {
                                 DropdownMenuItem(
-                                    text = { Text("Open location") },
+                                    text = { Text(stringResource(R.string.action_open_location)) },
                                     onClick = { showMenu = false; onOpenLocation() },
                                     leadingIcon = { Icon(Icons.Default.FolderOpen, null) }
                                 )
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             }
                             DropdownMenuItem(
-                                text = { Text("Open with") },
+                                text = { Text(stringResource(R.string.action_open_with)) },
                                 onClick = { showMenu = false; onOpenWith?.invoke() },
                                 leadingIcon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, null) }
                             )
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             DropdownMenuItem(
-                                text = { Text("Share") },
+                                text = { Text(stringResource(R.string.action_share)) },
                                 onClick = { showMenu = false; onShare() },
                                 leadingIcon = { Icon(Icons.Default.Share, null) }
                             )
                             if (!isVirtual) {
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                 DropdownMenuItem(
-                                    text = { Text("Rename") },
+                                    text = { Text(stringResource(R.string.action_rename)) },
                                     onClick = { showMenu = false; onRenameRequest() },
                                     leadingIcon = { Icon(Icons.Default.Edit, null) }
                                 )
                             }
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             DropdownMenuItem(
-                                text = { Text("Copy") },
+                                text = { Text(stringResource(R.string.action_copy)) },
                                 onClick = { showMenu = false; onCopy() },
                                 leadingIcon = { Icon(Icons.Default.ContentCopy, null) }
                             )
                             if (!isVirtual) {
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                 DropdownMenuItem(
-                                    text = { Text("Move") },
+                                    text = { Text(stringResource(R.string.action_move)) },
                                     onClick = { showMenu = false; onCut() },
                                     leadingIcon = { Icon(Icons.Default.ContentCut, null) }
                                 )
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                 DropdownMenuItem(
-                                    text = { Text("Delete") },
+                                    text = { Text(stringResource(R.string.action_delete)) },
                                     onClick = { showMenu = false; onDelete() },
                                     leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
                                     colors = MenuDefaults.itemColors(textColor = MaterialTheme.colorScheme.error)
@@ -2935,14 +2944,14 @@ fun FileListItem(
                             if ((fileItem.fileType == FileType.ZIP || isVirtual) && !isVirtual) {
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                 DropdownMenuItem(
-                                    text = { Text("Extract") },
+                                    text = { Text(stringResource(R.string.action_extract)) },
                                     onClick = { showMenu = false; onExtract?.invoke() },
                                     leadingIcon = { Icon(Icons.Outlined.Unarchive, null) }
                                 )
                             }
                             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                             DropdownMenuItem(
-                                text = { Text("Properties") },
+                                text = { Text(stringResource(R.string.action_properties)) },
                                 onClick = { showMenu = false; onProperties() },
                                 leadingIcon = { Icon(Icons.Default.Info, null) }
                             )
@@ -3266,7 +3275,7 @@ fun FileIcon(
             ) {
                 Icon(
                     Icons.Default.Lock,
-                    contentDescription = "Encrypted",
+                    contentDescription = stringResource(R.string.content_desc_encrypted),
                     modifier = Modifier.size(iconSize * 0.22f),
                     tint = MaterialTheme.colorScheme.primary
                 )
@@ -3328,23 +3337,23 @@ fun PropertiesDialog(fileItem: FileItem, onDismiss: () -> Unit, viewModel: RoseV
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.width(12.dp))
-                Text("Properties", fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.action_properties), fontWeight = FontWeight.Bold)
             }
         },
         text = {
             Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                PropertyRow("Name", fileItem.name)
-                PropertyRow("Type", fileItem.fileType.name)
-                PropertyRow("Size", if (fileItem.isDirectory) viewModel.folderSize?.let { formatFileSize(it) } ?: "Calculating..." else formatFileSize(fileItem.size))
-                PropertyRow("Path", fileItem.file.absolutePath)
-                PropertyRow("Modified", SimpleDateFormat("MMM dd, yyyy HH:mm:ss", Locale.getDefault()).format(Date(fileItem.lastModified)))
+                PropertyRow(stringResource(R.string.prop_name), fileItem.name)
+                PropertyRow(stringResource(R.string.prop_type), fileItem.fileType.name)
+                PropertyRow(stringResource(R.string.prop_size), if (fileItem.isDirectory) viewModel.folderSize?.let { formatFileSize(it) } ?: stringResource(R.string.status_calculating) else formatFileSize(fileItem.size))
+                PropertyRow(stringResource(R.string.prop_path), fileItem.file.absolutePath)
+                PropertyRow(stringResource(R.string.prop_modified), SimpleDateFormat("MMM dd, yyyy HH:mm:ss", Locale.getDefault()).format(Date(fileItem.lastModified)))
             }
         },
         confirmButton = {
             Button(
                 onClick = { onDismiss() },
                 shape = RoundedCornerShape(12.dp)
-            ) { Text("Close") }
+            ) { Text(stringResource(R.string.action_close)) }
         },
         shape = RoundedCornerShape(28.dp)
     )
@@ -3366,7 +3375,7 @@ fun CompressDialog(onDismiss: () -> Unit, onConfirm: (String, String?) -> Unit) 
                     tint = MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.width(12.dp))
-                Text("Compress to Zip")
+                Text(stringResource(R.string.compress_dialog_title))
             }
         },
         text = {
@@ -3374,7 +3383,7 @@ fun CompressDialog(onDismiss: () -> Unit, onConfirm: (String, String?) -> Unit) 
                 TextField(
                     value = folderName,
                     onValueChange = { folderName = it },
-                    label = { Text("Zip file name") },
+                    label = { Text(stringResource(R.string.compress_file_name_label)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     suffix = { Text(".zip") }
@@ -3383,7 +3392,7 @@ fun CompressDialog(onDismiss: () -> Unit, onConfirm: (String, String?) -> Unit) 
                 TextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Password (Optional)") },
+                    label = { Text(stringResource(R.string.compress_password_label)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
@@ -3406,10 +3415,10 @@ fun CompressDialog(onDismiss: () -> Unit, onConfirm: (String, String?) -> Unit) 
                     }
                 },
                 shape = RoundedCornerShape(12.dp)
-            ) { Text("Compress") }
+            ) { Text(stringResource(R.string.action_compress)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         },
         shape = RoundedCornerShape(24.dp)
     )
@@ -3447,11 +3456,11 @@ private fun ExtractionDialog(
                 )
             }
         },
-        title = { Text("Extract Archive") },
+        title = { Text(stringResource(R.string.extract_dialog_title)) },
         text = {
             Column {
                 Text(
-                    "How would you like to extract \"${item.name}\"?",
+                    stringResource(R.string.extract_dialog_message, item.name),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(modifier = Modifier.height(16.dp))
@@ -3470,8 +3479,8 @@ private fun ExtractionDialog(
                         Icon(Icons.Default.Folder, null, tint = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
-                            Text("Extract here", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                            Text("Extract to a new folder in the same directory", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.extract_here_title), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.extract_here_subtitle), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -3492,8 +3501,8 @@ private fun ExtractionDialog(
                         Icon(Icons.Default.FolderOpen, null, tint = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
-                            Text("Select location", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                            Text("Choose a specific folder to extract to", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.extract_select_location_title), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.extract_select_location_subtitle), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -3501,7 +3510,7 @@ private fun ExtractionDialog(
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         },
         shape = RoundedCornerShape(28.dp)
     )
@@ -3516,14 +3525,14 @@ fun CreateFolderDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.CreateNewFolder, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.width(12.dp))
-                Text("Create Folder")
+                Text(stringResource(R.string.create_folder_dialog_title))
             }
         },
         text = {
             TextField(
                 value = folderName,
                 onValueChange = { folderName = it },
-                label = { Text("Folder Name") },
+                label = { Text(stringResource(R.string.create_folder_name_label)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -3532,10 +3541,10 @@ fun CreateFolderDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
             Button(
                 onClick = { if (folderName.isNotBlank()) onCreate(folderName) },
                 shape = RoundedCornerShape(12.dp)
-            ) { Text("Create") }
+            ) { Text(stringResource(R.string.action_create)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         },
         shape = RoundedCornerShape(28.dp)
     )
@@ -3556,14 +3565,14 @@ fun PasswordDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.width(12.dp))
-                Text("Password Required")
+                Text(stringResource(R.string.password_dialog_title))
             }
         },
         text = {
             TextField(
                 value = password,
                 onValueChange = { password = it },
-                label = { Text("Password") },
+                label = { Text(stringResource(R.string.password_label)) },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -3576,10 +3585,10 @@ fun PasswordDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
             Button(
                 onClick = { if (password.isNotBlank()) onConfirm(password) },
                 shape = RoundedCornerShape(12.dp)
-            ) { Text("Confirm") }
+            ) { Text(stringResource(R.string.action_confirm)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         },
         shape = RoundedCornerShape(28.dp)
     )
@@ -3609,14 +3618,14 @@ fun RenameDialog(initialName: String, onDismiss: () -> Unit, onRename: (String) 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.width(12.dp))
-                Text("Rename")
+                Text(stringResource(R.string.rename_dialog_title))
             }
         },
         text = {
             TextField(
                 value = textFieldValue,
                 onValueChange = { textFieldValue = it },
-                label = { Text("New Name") },
+                label = { Text(stringResource(R.string.rename_new_name_label)) },
                 singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -3627,10 +3636,10 @@ fun RenameDialog(initialName: String, onDismiss: () -> Unit, onRename: (String) 
             Button(
                 onClick = { if (textFieldValue.text.isNotBlank()) onRename(textFieldValue.text) },
                 shape = RoundedCornerShape(12.dp)
-            ) { Text("Rename") }
+            ) { Text(stringResource(R.string.action_rename)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         },
         shape = RoundedCornerShape(28.dp)
     )
@@ -3691,15 +3700,15 @@ fun ActiveJobsCard(activeJobs: List<FileJob>, onClick: () -> Unit = {}) {
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 val operationText = when (job.type) {
-                    is FileJobType.Copy -> "Copying files..."
-                    is FileJobType.Move -> "Moving files..."
-                    is FileJobType.Download -> "Saving offline..."
-                    is FileJobType.Delete -> "Deleting files..."
-                    is FileJobType.Recycle -> "Moving to Bin..."
-                    is FileJobType.Restore -> "Restoring files..."
-                    is FileJobType.Extract -> "Extracting archive..."
-                    is FileJobType.Compress -> "Creating archive..."
-                    else -> "Processing..."
+                    is FileJobType.Copy -> stringResource(R.string.job_copying_files_ellipsis)
+                    is FileJobType.Move -> stringResource(R.string.job_moving_files_ellipsis)
+                    is FileJobType.Download -> stringResource(R.string.job_saving_offline_ellipsis)
+                    is FileJobType.Delete -> stringResource(R.string.job_deleting_files_ellipsis)
+                    is FileJobType.Recycle -> stringResource(R.string.job_moving_to_bin_ellipsis)
+                    is FileJobType.Restore -> stringResource(R.string.job_restoring_files_ellipsis)
+                    is FileJobType.Extract -> stringResource(R.string.job_extracting_archive_ellipsis)
+                    is FileJobType.Compress -> stringResource(R.string.job_creating_archive_ellipsis)
+                    else -> stringResource(R.string.job_processing_ellipsis)
                 }
                 Text(
                     text = operationText,
@@ -3712,11 +3721,11 @@ fun ActiveJobsCard(activeJobs: List<FileJob>, onClick: () -> Unit = {}) {
                         job.processedBytes > 0 -> "%.0f KB".format(job.processedBytes / 1024.0)
                         else -> null
                     }
-                    if (bytesLabel != null) "Downloading… $bytesLabel" else "Downloading…"
+                    if (bytesLabel != null) stringResource(R.string.job_downloading_with_bytes, bytesLabel) else stringResource(R.string.job_downloading)
                 } else if (job.totalItems > 1) {
-                    "${job.processedItems + 1} of ${job.totalItems} | ${(job.progress * 100).toInt()}%"
+                    stringResource(R.string.job_progress_items_and_percent, job.processedItems + 1, job.totalItems, (job.progress * 100).toInt())
                 } else {
-                    "${(job.progress * 100).toInt()}% completed"
+                    stringResource(R.string.job_percent_completed, (job.progress * 100).toInt())
                 }
                 Text(
                     text = progressText,
@@ -3742,7 +3751,7 @@ fun ActiveJobsCard(activeJobs: List<FileJob>, onClick: () -> Unit = {}) {
             // the "minimise" affordance of the dialog's own close/back action.
             Icon(
                 imageVector = Icons.Default.KeyboardArrowUp,
-                contentDescription = "Expand",
+                contentDescription = stringResource(R.string.content_desc_expand),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .padding(start = 4.dp)
@@ -3816,7 +3825,7 @@ private fun DateHeader(title: String, count: Int) {
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-            text = "$count items",
+            text = stringResource(R.string.items_count, count),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -3824,7 +3833,7 @@ private fun DateHeader(title: String, count: Int) {
 }
 
 
-private fun formatDateHeader(timestamp: Long): String {
+private fun formatDateHeader(context: Context, timestamp: Long): String {
     val now = Calendar.getInstance()
     val itemDate = Calendar.getInstance().apply { timeInMillis = timestamp }
 
@@ -3845,9 +3854,9 @@ private fun formatDateHeader(timestamp: Long): String {
     val actualDiffDays = ((nowCalendar.timeInMillis - itemCalendar.timeInMillis) / (24 * 60 * 60 * 1000)).toInt()
 
     return when {
-        actualDiffDays == 0 -> "Today"
-        actualDiffDays == 1 -> "Yesterday"
-        actualDiffDays in 2..3 -> "$actualDiffDays days ago"
+        actualDiffDays == 0 -> context.getString(R.string.date_today)
+        actualDiffDays == 1 -> context.getString(R.string.date_yesterday)
+        actualDiffDays in 2..3 -> context.getString(R.string.date_days_ago, actualDiffDays)
         else -> SimpleDateFormat("dd-MM-yy", Locale.getDefault()).format(Date(timestamp))
     }
 }
@@ -3859,8 +3868,8 @@ fun RestrictedFolderView(
     isShizukuAuthorized: Boolean = false,
     onGrantShizuku: () -> Unit,
     onGrantSaf: () -> Unit,
-    title: String = "Restricted Folder",
-    description: String = "Android restricts access to this folder. To view and modify these files, ROSE needs permission."
+    title: String = stringResource(R.string.restricted_folder_default_title),
+    description: String = stringResource(R.string.restricted_folder_default_desc)
 ) {
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
 
@@ -3919,7 +3928,7 @@ fun RestrictedFolderView(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Outlined.VerifiedUser, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(12.dp))
-                            Text("Grant Shizuku Access", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.action_grant_shizuku), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -3929,7 +3938,7 @@ fun RestrictedFolderView(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.AutoMirrored.Outlined.HelpOutline, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("How to setup Shizuku?", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                            Text(stringResource(R.string.action_how_to_setup_shizuku), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 } else {
@@ -3942,14 +3951,14 @@ fun RestrictedFolderView(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Outlined.FolderSpecial, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(12.dp))
-                            Text("Grant Storage Access", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.action_grant_storage_access), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                         }
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
                     TextButton(onClick = onGrantShizuku, modifier = Modifier.alpha(0.7f)) {
-                        Text("Use Shizuku instead", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.action_use_shizuku_instead), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

@@ -2545,7 +2545,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
                         if (type == FileType.IMAGE && bucketId == null) {
                             val id = bId ?: "unknown"
-                            val bName = cursor.getString(bucketNameCol) ?: "Unknown Album"
+                            val bName = cursor.getString(bucketNameCol) ?: getApplication<Application>().getString(R.string.album_unknown)
                             val current = albumMap.getOrDefault(id, bName to 0)
                             albumMap[id] = bName to (current.second + 1)
                             if (date > (albumLastModified[id] ?: 0L)) {
@@ -2943,13 +2943,13 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 } else {
                     withContext(Dispatchers.Main) {
-                        updateCheckResult = UpdateCheckResult.Error("Failed to check for updates (HTTP ${connection.responseCode})")
+                        updateCheckResult = UpdateCheckResult.Error(getApplication<Application>().getString(R.string.update_check_failed_http, connection.responseCode))
                     }
                 }
                 connection.disconnect()
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    updateCheckResult = UpdateCheckResult.Error(e.message ?: "Unknown error occurred")
+                    updateCheckResult = UpdateCheckResult.Error(e.message ?: getApplication<Application>().getString(R.string.status_unknown_error))
                 }
             }
         }
@@ -3004,7 +3004,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
                 if (connection.responseCode !in 200..299) {
                     withContext(Dispatchers.Main) {
-                        updateDownloadState = UpdateDownloadState.Error("Download failed (HTTP ${connection.responseCode})")
+                        updateDownloadState = UpdateDownloadState.Error(getApplication<Application>().getString(R.string.update_download_failed_http, connection.responseCode))
                     }
                     return@launch
                 }
@@ -3061,7 +3061,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 apkFile.delete()
                 withContext(Dispatchers.Main) {
-                    updateDownloadState = UpdateDownloadState.Error(e.message ?: "Download failed")
+                    updateDownloadState = UpdateDownloadState.Error(e.message ?: getApplication<Application>().getString(R.string.update_download_failed))
                 }
             } finally {
                 connection?.disconnect()
@@ -3104,7 +3104,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 context.startActivity(settingsIntent)
             } catch (e: Exception) {
-                updateDownloadState = UpdateDownloadState.Error("Couldn't open install-permission settings")
+                updateDownloadState = UpdateDownloadState.Error(context.getString(R.string.update_error_open_install_settings))
             }
             // Deliberately leave updateDownloadState as ReadyToInstall - the UI
             // keeps showing "Install" so the user can tap it again once they're

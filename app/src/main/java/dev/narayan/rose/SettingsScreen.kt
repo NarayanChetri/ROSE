@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -78,10 +79,10 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings", fontWeight = FontWeight.SemiBold) },
+                title = { Text(stringResource(R.string.settings_title), fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.content_desc_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -101,19 +102,19 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             // ---------- Appearance ----------
-            SettingsSection(title = "Appearance", icon = Icons.Default.Palette) {
+            SettingsSection(title = stringResource(R.string.settings_section_appearance), icon = Icons.Default.Palette) {
                 SettingsGroup {
                     SettingsChoiceRow(
-                        title = "Theme",
-                        options = listOf("System" to ThemeMode.SYSTEM, "Light" to ThemeMode.LIGHT, "Dark" to ThemeMode.DARK),
+                        title = stringResource(R.string.settings_theme),
+                        options = listOf(stringResource(R.string.settings_theme_system) to ThemeMode.SYSTEM, stringResource(R.string.settings_theme_light) to ThemeMode.LIGHT, stringResource(R.string.settings_theme_dark) to ThemeMode.DARK),
                         selected = viewModel.themeMode,
                         onSelect = { viewModel.setThemeMode(it) }
                     )
                     SettingsDivider()
                     SettingsSwitchRow(
                         icon = Icons.Default.Contrast,
-                        title = "Black AMOLED mode",
-                        subtitle = "Use true black backgrounds while in dark mode",
+                        title = stringResource(R.string.settings_amoled_mode),
+                        subtitle = stringResource(R.string.settings_amoled_mode_subtitle),
                         checked = viewModel.amoledMode,
                         onCheckedChange = { viewModel.setAmoledMode(it) }
                     )
@@ -121,8 +122,8 @@ fun SettingsScreen(
                         SettingsDivider()
                         SettingsSwitchRow(
                             icon = Icons.Default.ColorLens,
-                            title = "Dynamic color",
-                            subtitle = "Use colors generated from your wallpaper (Android 12+)",
+                            title = stringResource(R.string.settings_dynamic_color),
+                            subtitle = stringResource(R.string.settings_dynamic_color_subtitle),
                             checked = viewModel.dynamicColorEnabled,
                             onCheckedChange = { viewModel.setDynamicColor(it) }
                         )
@@ -131,10 +132,10 @@ fun SettingsScreen(
             }
 
             // ---------- Browsing ----------
-            SettingsSection(title = "Browsing", icon = Icons.Default.Folder) {
+            SettingsSection(title = stringResource(R.string.settings_section_browsing), icon = Icons.Default.Folder) {
                 SettingsGroup {
                     SettingsChoiceRow(
-                        title = "Recent files limit",
+                        title = stringResource(R.string.settings_recent_files_limit),
                         options = listOf("50" to 50, "100" to 100, "150" to 150, "200" to 200),
                         selected = viewModel.recentFilesLimit,
                         onSelect = { viewModel.setRecentFilesLimit(it) }
@@ -142,8 +143,8 @@ fun SettingsScreen(
                     SettingsDivider()
                     SettingsSwitchRow(
                         icon = Icons.Default.HorizontalRule,
-                        title = "Show list dividers",
-                        subtitle = "Thin lines between items in Recent files, Quick access, and folder lists",
+                        title = stringResource(R.string.settings_show_list_dividers),
+                        subtitle = stringResource(R.string.settings_show_list_dividers_subtitle),
                         checked = viewModel.showListDividers,
                         onCheckedChange = { viewModel.setShowListDividers(it) }
                     )
@@ -151,19 +152,19 @@ fun SettingsScreen(
                     SettingsActionRow(
                         icon = Icons.Default.VisibilityOff,
                         iconTint = MaterialTheme.colorScheme.primary,
-                        title = "Excluded folders",
-                        subtitle = "Select folders to hide from recents and categories",
+                        title = stringResource(R.string.settings_excluded_folders),
+                        subtitle = stringResource(R.string.settings_excluded_folders_subtitle),
                         onClick = { showExclusionDialog = true }
                     )
                 }
             }
 
             // ---------- Navigation ----------
-            SettingsSection(title = "Navigation", icon = Icons.Default.Explore) {
+            SettingsSection(title = stringResource(R.string.settings_section_navigation), icon = Icons.Default.Explore) {
                 SettingsGroup {
                     SettingsChoiceRow(
-                        title = "Start page",
-                        options = listOf("Landing page" to StartPage.HOME, "All files" to StartPage.ALL_FILES),
+                        title = stringResource(R.string.settings_start_page),
+                        options = listOf(stringResource(R.string.settings_start_page_landing) to StartPage.HOME, stringResource(R.string.settings_start_page_all_files) to StartPage.ALL_FILES),
                         selected = viewModel.startPage,
                         onSelect = { viewModel.setStartPage(it) }
                     )
@@ -171,20 +172,20 @@ fun SettingsScreen(
             }
 
             // ---------- Safety ----------
-            SettingsSection(title = "Safety", icon = Icons.Default.Shield) {
+            SettingsSection(title = stringResource(R.string.settings_section_safety), icon = Icons.Default.Shield) {
                 SettingsGroup {
                     SettingsSwitchRow(
                         icon = Icons.Default.WarningAmber,
-                        title = "Confirm before delete",
-                        subtitle = "Ask for confirmation before deleting files or folders",
+                        title = stringResource(R.string.settings_confirm_before_delete),
+                        subtitle = stringResource(R.string.settings_confirm_before_delete_subtitle),
                         checked = viewModel.confirmBeforeDelete,
                         onCheckedChange = { viewModel.setConfirmBeforeDelete(it) }
                     )
                     SettingsDivider()
                     SettingsSwitchRow(
                         icon = Icons.Default.RestoreFromTrash,
-                        title = "Use Recycle Bin",
-                        subtitle = "Deleted files are moved to Recycle Bin and kept for 30 days",
+                        title = stringResource(R.string.settings_use_recycle_bin),
+                        subtitle = stringResource(R.string.settings_use_recycle_bin_subtitle),
                         checked = viewModel.useRecycleBin,
                         onCheckedChange = { viewModel.setUseRecycleBin(it) }
                     )
@@ -192,12 +193,12 @@ fun SettingsScreen(
             }
 
             // ---------- Home Screen ----------
-            SettingsSection(title = "Home Screen", icon = Icons.Default.Home) {
+            SettingsSection(title = stringResource(R.string.settings_section_home_screen), icon = Icons.Default.Home) {
                 SettingsGroup {
                     SettingsSwitchRow(
                         icon = Icons.Default.Bolt,
-                        title = "Show Quick Access",
-                        subtitle = "Show the Quick Access section on the landing page",
+                        title = stringResource(R.string.settings_show_quick_access),
+                        subtitle = stringResource(R.string.settings_show_quick_access_subtitle),
                         checked = viewModel.showQuickAccess,
                         onCheckedChange = { viewModel.setShowQuickAccess(it) }
                     )
@@ -206,20 +207,20 @@ fun SettingsScreen(
 
 
             // ---------- Storage ----------
-            SettingsSection(title = "Storage", icon = Icons.Default.Storage) {
+            SettingsSection(title = stringResource(R.string.settings_section_storage), icon = Icons.Default.Storage) {
                 SettingsGroup {
                     SettingsActionRow(
                         icon = Icons.Default.CleaningServices,
                         iconTint = MaterialTheme.colorScheme.primary,
-                        title = "Clear thumbnail cache",
-                        subtitle = "Free up space used by cached image and video thumbnails",
+                        title = stringResource(R.string.settings_clear_thumbnail_cache),
+                        subtitle = stringResource(R.string.settings_clear_thumbnail_cache_subtitle),
                         onClick = {
                             scope.launch {
                                 withContext(Dispatchers.IO) {
                                     context.imageLoader.memoryCache?.clear()
                                     context.imageLoader.diskCache?.clear()
                                 }
-                                Toast.makeText(context, "Thumbnail cache cleared", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.settings_toast_cache_cleared), Toast.LENGTH_SHORT).show()
                             }
                         }
                     )
@@ -227,13 +228,13 @@ fun SettingsScreen(
             }
 
             // ---------- Support ----------
-            SettingsSection(title = "Support", icon = Icons.Default.Favorite) {
+            SettingsSection(title = stringResource(R.string.settings_section_support), icon = Icons.Default.Favorite) {
                 SettingsGroup {
                     SettingsActionRow(
                         icon = Icons.Default.BugReport,
                         iconTint = MaterialTheme.colorScheme.error,
-                        title = "Report an issue",
-                        subtitle = "Found a bug? Let us know on GitHub",
+                        title = stringResource(R.string.settings_report_issue),
+                        subtitle = stringResource(R.string.settings_report_issue_subtitle),
                         onClick = { uriHandler.openUri("https://github.com/NarayanChetri/ROSE/issues") }
                     )
                 }
@@ -435,18 +436,18 @@ private fun ExcludedFoldersDialog(
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "Excluded Folders",
+                        stringResource(R.string.excluded_folders_dialog_title),
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        "Hidden from Recents and Categories",
+                        stringResource(R.string.excluded_folders_dialog_subtitle),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close")
+                    Icon(Icons.Default.Close, contentDescription = stringResource(R.string.action_close))
                 }
             }
 
@@ -466,7 +467,7 @@ private fun ExcludedFoldersDialog(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            "No folders excluded yet",
+                            stringResource(R.string.excluded_folders_empty),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                         )
@@ -480,7 +481,8 @@ private fun ExcludedFoldersDialog(
                 ) {
                     items(excludedFolders.sorted()) { folder ->
                         val rootPath = Environment.getExternalStorageDirectory().absolutePath
-                        val displayPath = folder.replace(rootPath, "Internal Storage")
+                        val internalStorageName = stringResource(R.string.storage_internal)
+                        val displayPath = folder.replace(rootPath, internalStorageName)
                         
                         Surface(
                             color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -527,7 +529,7 @@ private fun ExcludedFoldersDialog(
                                     ),
                                     modifier = Modifier.size(32.dp)
                                 ) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Remove", modifier = Modifier.size(18.dp))
+                                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.action_remove), modifier = Modifier.size(18.dp))
                                 }
                             }
                         }
@@ -545,7 +547,7 @@ private fun ExcludedFoldersDialog(
             ) {
                 Icon(Icons.Default.Add, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Add Folder to Exclude", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.action_add_folder_to_exclude), style = MaterialTheme.typography.titleMedium)
             }
         }
     }
@@ -595,7 +597,7 @@ private fun FolderPickerDialog(
                 TopAppBar(
                     title = {
                         Text(
-                            if (currentDir == rootDir) "Internal storage" else currentDir.name,
+                            if (currentDir == rootDir) stringResource(R.string.storage_internal) else currentDir.name,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -610,14 +612,14 @@ private fun FolderPickerDialog(
                         }) {
                             Icon(
                                 if (currentDir != rootDir) Icons.AutoMirrored.Filled.ArrowBack else Icons.Default.Close,
-                                contentDescription = "Back"
+                                contentDescription = stringResource(R.string.content_desc_back)
                             )
                         }
                     },
                     actions = {
                         if (currentDir != rootDir) {
                             IconButton(onClick = { currentDir = rootDir }) {
-                                Icon(Icons.Default.Home, contentDescription = "Go to Root")
+                                Icon(Icons.Default.Home, contentDescription = stringResource(R.string.content_desc_go_to_root))
                             }
                         }
                     }
@@ -637,7 +639,7 @@ private fun FolderPickerDialog(
                         ) {
                             Icon(Icons.Default.Check, null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Exclude Current Folder", style = MaterialTheme.typography.titleMedium)
+                            Text(stringResource(R.string.action_exclude_current_folder), style = MaterialTheme.typography.titleMedium)
                         }
                     }
                 }
@@ -646,7 +648,7 @@ private fun FolderPickerDialog(
             if (subDirs.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                     Text(
-                        "No subfolders here",
+                        stringResource(R.string.excluded_folders_picker_empty),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -710,7 +712,7 @@ private fun FolderPickerRow(
         supportingContent = {
             val count = item.itemCount ?: 0
             val dateStr = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault()).format(java.util.Date(item.lastModified))
-            Text("$count items | $dateStr")
+            Text(stringResource(R.string.item_count_and_date, count, dateStr))
         },
         leadingContent = {
             FileIcon(

@@ -1,5 +1,7 @@
 package dev.narayan.rose.filejob
 
+import android.content.Context
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,11 +28,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import dev.narayan.rose.R
 import kotlinx.coroutines.delay
 
 /**
@@ -68,14 +73,14 @@ fun FileJobProgressDialog(activeJobs: List<FileJob>, onDismissRequest: () -> Uni
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (activeJobs.size > 1) "${activeJobs.size} active tasks" else "Working…",
+                        text = if (activeJobs.size > 1) stringResource(R.string.job_active_tasks_count, activeJobs.size) else stringResource(R.string.job_working),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
                     IconButton(onClick = onDismissRequest) {
                         Icon(
                             imageVector = Icons.Filled.Close,
-                            contentDescription = "Hide",
+                            contentDescription = stringResource(R.string.action_hide),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -83,7 +88,7 @@ fun FileJobProgressDialog(activeJobs: List<FileJob>, onDismissRequest: () -> Uni
 
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Runs in the background - safe to close this dialog.",
+                    text = stringResource(R.string.job_background_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -138,8 +143,9 @@ private fun JobDetailCard(job: FileJob, onCancel: () -> Unit) {
         }
     }
 
-    val paths = remember(job.type) { jobPaths(job) }
-    val (icon, title) = remember(job.type) { jobIconAndTitle(job) }
+    val context = LocalContext.current
+    val paths = remember(job.type) { jobPaths(job, context) }
+    val (icon, titleRes) = remember(job.type) { jobIconAndTitle(job) }
 
     val elapsedSec = ((now - job.startTime).coerceAtLeast(0L)) / 1000.0
     val remainingBytes = (job.totalBytes - job.processedBytes).coerceAtLeast(0L)
@@ -179,10 +185,10 @@ private fun JobDetailCard(job: FileJob, onCancel: () -> Unit) {
                 }
                 Spacer(modifier = Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(text = title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(text = stringResource(titleRes), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     if (job.totalItems > 1) {
                         Text(
-                            text = "Item ${(job.processedItems + 1).coerceAtMost(job.totalItems)} of ${job.totalItems}",
+                            text = stringResource(R.string.job_item_progress, (job.processedItems + 1).coerceAtMost(job.totalItems), job.totalItems),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -202,11 +208,11 @@ private fun JobDetailCard(job: FileJob, onCancel: () -> Unit) {
 
             // -- From / To --------------------------------------------------
             if (paths.from != null) {
-                PathRow(label = "FROM", value = paths.from)
+                PathRow(label = stringResource(R.string.job_label_from), value = paths.from)
             }
             if (paths.to != null) {
                 Spacer(modifier = Modifier.height(6.dp))
-                PathRow(label = "TO", value = paths.to)
+                PathRow(label = stringResource(R.string.job_label_to), value = paths.to)
             }
 
             if (job.currentFileName.isNotBlank()) {
@@ -268,11 +274,11 @@ private fun JobDetailCard(job: FileJob, onCancel: () -> Unit) {
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = if (job.totalBytes > 0) {
-                    "${formatBytes(job.processedBytes)} of ${formatBytes(job.totalBytes)}"
+                    stringResource(R.string.job_bytes_progress, formatBytes(job.processedBytes), formatBytes(job.totalBytes))
                 } else if (job.processedBytes > 0) {
                     formatBytes(job.processedBytes)
                 } else {
-                    "Calculating…"
+                    stringResource(R.string.status_calculating)
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -288,19 +294,19 @@ private fun JobDetailCard(job: FileJob, onCancel: () -> Unit) {
                 StatChip(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Filled.Speed,
-                    label = "Speed",
+                    label = stringResource(R.string.job_stat_speed),
                     value = if (smoothedSpeedBps >= 1.0) formatSpeed(smoothedSpeedBps) else "—"
                 )
                 StatChip(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Filled.Timer,
-                    label = "Left",
+                    label = stringResource(R.string.job_stat_left),
                     value = etaSec?.let { formatDuration(it) } ?: "—"
                 )
                 StatChip(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Filled.Schedule,
-                    label = "Elapsed",
+                    label = stringResource(R.string.job_stat_elapsed),
                     value = formatDuration(elapsedSec)
                 )
             }
@@ -319,7 +325,7 @@ private fun JobDetailCard(job: FileJob, onCancel: () -> Unit) {
             ) {
                 Icon(imageVector = Icons.Filled.Close, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Cancel", fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.action_cancel), fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -378,26 +384,26 @@ private data class JobPaths(val from: String?, val to: String?)
  * from different folders, falls back to naming how many distinct locations
  * are involved rather than guessing one.
  */
-private fun sourceFolderPath(sourcePaths: List<String>): String? {
+private fun sourceFolderPath(sourcePaths: List<String>, context: Context): String? {
     val parents = sourcePaths.mapNotNull { java.io.File(it).parent }.distinct()
     return when {
         parents.size == 1 -> parents[0]
-        parents.size > 1 -> "${parents.size} locations"
+        parents.size > 1 -> context.getString(R.string.job_locations_count, parents.size)
         else -> null
     }
 }
 
-private fun jobPaths(job: FileJob): JobPaths = when (val type = job.type) {
+private fun jobPaths(job: FileJob, context: Context): JobPaths = when (val type = job.type) {
     is FileJobType.Copy -> JobPaths(
-        from = sourceFolderPath(type.sources.map { it.path }),
+        from = sourceFolderPath(type.sources.map { it.path }, context),
         to = type.targetDir.toString()
     )
     is FileJobType.Move -> JobPaths(
-        from = sourceFolderPath(type.sources.map { it.path }),
+        from = sourceFolderPath(type.sources.map { it.path }, context),
         to = type.targetDir.toString()
     )
     is FileJobType.Delete -> JobPaths(
-        from = sourceFolderPath(type.targets.map { it.toString() }),
+        from = sourceFolderPath(type.targets.map { it.toString() }, context),
         to = null
     )
     is FileJobType.Download -> JobPaths(
@@ -405,11 +411,11 @@ private fun jobPaths(job: FileJob): JobPaths = when (val type = job.type) {
         to = type.targetFile.toString()
     )
     is FileJobType.Recycle -> JobPaths(
-        from = sourceFolderPath(type.sources.map { it.path }),
-        to = "Recycle Bin"
+        from = sourceFolderPath(type.sources.map { it.path }, context),
+        to = context.getString(R.string.home_section_recycle_bin)
     )
     is FileJobType.Restore -> JobPaths(
-        from = "Recycle Bin",
+        from = context.getString(R.string.home_section_recycle_bin),
         to = job.currentFileName.ifBlank { null }
     )
     is FileJobType.Extract -> JobPaths(
@@ -417,20 +423,20 @@ private fun jobPaths(job: FileJob): JobPaths = when (val type = job.type) {
         to = type.targetDir.toString()
     )
     is FileJobType.Compress -> JobPaths(
-        from = sourceFolderPath(type.sources.map { it.path }),
+        from = sourceFolderPath(type.sources.map { it.path }, context),
         to = type.targetFile.toString()
     )
 }
 
-private fun jobIconAndTitle(job: FileJob): Pair<ImageVector, String> = when (job.type) {
-    is FileJobType.Copy -> Icons.Filled.ContentCopy to "Copying files"
-    is FileJobType.Move -> Icons.Filled.DriveFileMove to "Moving files"
-    is FileJobType.Delete -> Icons.Filled.Delete to "Deleting files"
-    is FileJobType.Download -> Icons.Filled.Download to "Saving offline"
-    is FileJobType.Recycle -> Icons.Filled.DeleteSweep to "Moving to Recycle Bin"
-    is FileJobType.Restore -> Icons.Filled.RestoreFromTrash to "Restoring files"
-    is FileJobType.Extract -> Icons.Filled.FolderZip to "Extracting archive"
-    is FileJobType.Compress -> Icons.Filled.FolderZip to "Creating archive"
+private fun jobIconAndTitle(job: FileJob): Pair<ImageVector, Int> = when (job.type) {
+    is FileJobType.Copy -> Icons.Filled.ContentCopy to R.string.job_title_copying
+    is FileJobType.Move -> Icons.Filled.DriveFileMove to R.string.job_title_moving
+    is FileJobType.Delete -> Icons.Filled.Delete to R.string.job_title_deleting
+    is FileJobType.Download -> Icons.Filled.Download to R.string.job_title_saving_offline
+    is FileJobType.Recycle -> Icons.Filled.DeleteSweep to R.string.job_title_moving_to_recycle_bin
+    is FileJobType.Restore -> Icons.Filled.RestoreFromTrash to R.string.job_title_restoring
+    is FileJobType.Extract -> Icons.Filled.FolderZip to R.string.job_title_extracting
+    is FileJobType.Compress -> Icons.Filled.FolderZip to R.string.job_title_creating_archive
 }
 
 private fun formatBytes(bytes: Long): String {
