@@ -7,7 +7,17 @@ All base English strings are located in:
 
 ---
 
-## 📖 How to Contribute via GitHub
+## 🌐 Translate Online via Hosted Weblate (Recommended)
+
+The easiest way to translate ROSE is directly in your web browser using **Hosted Weblate**. You don't need to touch Git or XML files!
+
+👉 **[Start Translating ROSE on Weblate](https://hosted.weblate.org/engage/rose/)**
+
+[![Translation status](https://hosted.weblate.org/widgets/rose/-/app/multi-auto.svg)](https://hosted.weblate.org/engage/rose/)
+
+---
+
+## 📖 How to Contribute via GitHub (For Developers)
 
 ### 1. Fork & Clone
 Fork the [ROSE repository](https://github.com/NarayanChetri/ROSE) and clone it locally:

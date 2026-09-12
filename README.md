@@ -16,6 +16,7 @@ Made because I wanted a file manager that was clean, privacy-friendly, and actua
 ![License](https://img.shields.io/badge/License-GPL--3.0-blue)
 ![Status](https://img.shields.io/badge/Status-Active%20Development-success)
 ![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-brightgreen)
+[![Translation status](https://hosted.weblate.org/widgets/rose/-/app/svg-badge.svg)](https://hosted.weblate.org/engage/rose/)
 
 [![Latest Release](https://img.shields.io/github/v/release/NarayanChetri/ROSE?label=Download%20Latest&style=for-the-badge)](https://github.com/NarayanChetri/ROSE/releases/latest)
 
@@ -110,7 +111,11 @@ Contributions are welcome!
 Whether it's fixing bugs, improving the UI, or suggesting new features—every contribution is appreciated.
 
 ### 🌐 Translations
-Want to help translate ROSE into your language? Check out our [Translation Guide](TRANSLATING.md) to get started!
+You can help translate ROSE into your language directly in your browser on **[Hosted Weblate](https://hosted.weblate.org/engage/rose/)**!
+
+[![Translation status](https://hosted.weblate.org/widgets/rose/-/app/multi-auto.svg)](https://hosted.weblate.org/engage/rose/)
+
+For offline or Git-based contributions, check out our [Translation Guide](TRANSLATING.md).
 
 ---
 
