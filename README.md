@@ -94,13 +94,8 @@ A fast, modern, beautiful, and privacy-first Android file manager built with **K
 ## 📸 Screenshots
 
 <p align="center">
-  <img width="210" src="https://github.com/user-attachments/assets/04eea0d5-9915-4635-a234-71cdf7d61bba" alt="ROSE Home Screen" />
-  &nbsp;
-  <img width="210" src="https://github.com/user-attachments/assets/44510e7d-3e73-4d37-a1e0-4a2fcd5fb8b9" alt="ROSE File Explorer" />
-  &nbsp;
-  <img width="210" src="https://github.com/user-attachments/assets/f39d7209-4ae3-48be-87a2-feb8e179dbe7" alt="ROSE Archive Viewer" />
-  &nbsp;
-  <img width="210" src="https://github.com/user-attachments/assets/4011b923-6c9d-4877-ac24-871d37d3deb3" alt="ROSE Settings" />
+<img width="1448" height="1086" alt="ChatGPT Image Sep 13, 2026, 08_07_48 PM" src="https://github.com/user-attachments/assets/da89f0d8-dc08-432a-99bf-c0f69f81340e" />
+
 </p>
 
 ---
