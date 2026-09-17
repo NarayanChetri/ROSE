@@ -423,60 +423,22 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun restoreRecycleBinItems(context: android.content.Context, items: Set<RecycledItem>) {
-        val ids = items.map { it.id }
+        if (items.isEmpty()) return
+        val ids = items.map { it.id }.toSet()
         val names = items.map { it.originalName }
         recycleBinBulkOperationActive = true
 
-        // Restoration runs in a background Service (it needs to survive the
-        // screen closing/app backgrounding), but the UI used to fake its own
-        // "one item disappears every 60ms" animation completely disconnected
-        // from that real work. If the actual restore took longer than the
-        // fake animation + the 1s grace period below, recycleBinBulkOperationActive
-        // flipped back to false while files were still physically sitting in
-        // the bin - the next 2s poll (see RecycleBinScreen) would then reload
-        // the real on-disk list, making those not-yet-restored items pop back
-        // into view, only to vanish again a few seconds later once the
-        // background job actually finished them. That's the "disappears, a
-        // few reappear, then disappear again" glitch.
-        //
-        // Fixed by tracking the exact job we just started (via a caller-
-        // supplied id) and only ever removing a row from the UI the instant
-        // that job's own completedPaths says that specific file has truly
-        // been restored - and only clearing the "bulk operation in progress"
-        // guard once that real job is done, not on a guessed timer.
-        val jobId = dev.narayan.rose.filejob.FileJobService.startRestore(context, ids, names)
+        // Optimistic removal gives instant visual feedback with live item animation in RecycleBinScreen
+        recycleBinItems = recycleBinItems.filter { it.id !in ids }
 
-        viewModelScope.launch(Dispatchers.Main) {
-            val pendingIds = ids.toMutableSet()
-            try {
-                withTimeoutOrNull(120_000) {
-                    var seenJob = false
-                    while (isActive) {
-                        val job = JobManager.activeJobs.value[jobId]
-                        if (job != null) {
-                            seenJob = true
-                            if (job.completedPaths.isNotEmpty()) {
-                                val doneSoFar = job.completedPaths
-                                pendingIds.removeAll(doneSoFar)
-                                recycleBinItems = recycleBinItems.filter { it.id !in doneSoFar }
-                            }
-                        } else if (seenJob || pendingIds.isEmpty()) {
-                            // Job finished and was removed from JobManager (or every
-                            // requested item is already accounted for) - nothing left
-                            // to wait on.
-                            break
-                        }
-                        delay(50)
-                    }
-                }
-            } finally {
-                // Whether the job finished normally, timed out, or errored, make
-                // sure every item that was asked to be restored is gone from the
-                // list by the time we're done - the job itself is the source of
-                // truth for *when* each item disappears, this is only a final
-                // safety net.
-                recycleBinItems = recycleBinItems.filter { it.id !in ids.toSet() }
+        dev.narayan.rose.filejob.FileJobService.startRestore(context, ids.toList(), names)
+
+        // Safety watchdog: ensures bulk operation guard is cleared even if the job fails unexpectedly
+        viewModelScope.launch {
+            delay(120_000)
+            if (recycleBinBulkOperationActive) {
                 recycleBinBulkOperationActive = false
+                loadRecycleBin()
             }
         }
     }
@@ -912,6 +874,10 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 if (!result.success) {
                     withContext(Dispatchers.Main) {
                         errorMessage = "Operation failed: ${result.error ?: "Unknown error"}"
+                        if (job.type is dev.narayan.rose.filejob.FileJobType.Restore) {
+                            recycleBinBulkOperationActive = false
+                            loadRecycleBin()
+                        }
                     }
                 }
 
@@ -970,6 +936,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         // If a recycle/restore happened, refresh the bin items too
                         if (job.type is dev.narayan.rose.filejob.FileJobType.Recycle ||
                             job.type is dev.narayan.rose.filejob.FileJobType.Restore) {
+                            recycleBinBulkOperationActive = false
                             loadRecycleBin()
                         }
                     }
