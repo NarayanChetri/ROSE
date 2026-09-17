@@ -241,7 +241,8 @@ fun RecycleBinScreen(
                     actions = {
                         Button(
                             onClick = {
-                                viewModel.restoreRecycleBinItems(context, selectedItems)
+                                val toRestore = selectedItems
+                                viewModel.restoreRecycleBinItems(context, toRestore)
                                 exitSelection()
                             },
                             modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
@@ -311,7 +312,7 @@ fun RecycleBinScreen(
                         isSelected = isSelected,
                         isSelectionMode = isSelectionMode,
                         onRestore = {
-                            dev.narayan.rose.filejob.FileJobService.startRestore(context, listOf(item.id), listOf(item.originalName))
+                            viewModel.restoreRecycleBinItems(context, setOf(item))
                         },
                         onDeletePermanently = { showDeleteConfirm = item },
                         onProperties = { propertyItem = item },
@@ -447,7 +448,7 @@ fun RecycleBinScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        dev.narayan.rose.filejob.FileJobService.startRestore(context, listOf(item.id), listOf(item.originalName))
+                        viewModel.restoreRecycleBinItems(context, setOf(item))
                         showRestoreToViewPrompt = null
                     }
                 ) {
