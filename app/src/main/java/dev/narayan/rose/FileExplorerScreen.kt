@@ -1073,11 +1073,19 @@ fun FileExplorerScreen(
                                             viewModel.retryShizuku(viewModel.currentPath)
                                         } else {
                                             ShizukuManager.requestBinder(context)
+                                            val launchIntent = context.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")
+                                            if (launchIntent != null) {
+                                                context.startActivity(launchIntent)
+                                            }
                                             Toast.makeText(context, context.getString(R.string.toast_shizuku_not_running), Toast.LENGTH_LONG).show()
                                         }
                                     },
                                     onGrantSaf = {
                                         viewModel.retrySaf(viewModel.currentPath)
+                                    },
+                                    onRefresh = {
+                                        ShizukuManager.requestBinder(context)
+                                        viewModel.loadFiles(viewModel.currentPath, isManualRefresh = true)
                                     }
                                 )
                             } else {
@@ -3882,7 +3890,8 @@ fun RestrictedFolderView(
     onGrantShizuku: () -> Unit,
     onGrantSaf: () -> Unit,
     title: String = stringResource(R.string.restricted_folder_default_title),
-    description: String = stringResource(R.string.restricted_folder_default_desc)
+    description: String = stringResource(R.string.restricted_folder_default_desc),
+    onRefresh: (() -> Unit)? = null
 ) {
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
 
@@ -3932,6 +3941,7 @@ fun RestrictedFolderView(
                 val isSystemRestricted = path.contains("/Android/data") || path.contains("/Android/obb")
 
                 if (isSystemRestricted) {
+                    val isShizukuRunning = ShizukuManager.isAvailable()
                     Button(
                         onClick = onGrantShizuku,
                         modifier = Modifier.fillMaxWidth().height(56.dp),
@@ -3939,9 +3949,28 @@ fun RestrictedFolderView(
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.VerifiedUser, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Icon(
+                                if (isShizukuRunning) Icons.Outlined.VerifiedUser else Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
                             Spacer(modifier = Modifier.width(12.dp))
-                            Text(stringResource(R.string.action_grant_shizuku), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                            Text(
+                                if (isShizukuRunning) stringResource(R.string.action_grant_shizuku) else "Start Shizuku Service",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    if (!isShizukuRunning && onRefresh != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        TextButton(onClick = onRefresh) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Check Again", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                            }
                         }
                     }
 

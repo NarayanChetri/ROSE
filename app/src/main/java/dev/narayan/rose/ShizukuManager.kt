@@ -112,67 +112,169 @@ object ShizukuManager {
         val searchPrefix = if (cleanPath == "/") "" else cleanPath
 
         try {
-            // NFile's listing command: efficient and handles hidden files correctly.
-            // Modified to also include child count for directories.
-            // searchPrefix is escaped since it's a real filesystem path that can
-            // contain shell metacharacters - see shellEscape() for why this matters.
             val escapedPrefix = shellEscape(searchPrefix)
-            val cmd = "for f in $escapedPrefix/* $escapedPrefix/.*; do [ -e \"\$f\" ] && [ \"\${f##*/}\" != \".\" ] && [ \"\${f##*/}\" != \"..\" ] && { count=0; [ -d \"\$f\" ] && count=$(ls -1A \"\$f\" 2>/dev/null | wc -l); (stat -L -c \"%F|%s|%Y|\$count|%n\" \"\$f\" 2>/dev/null || stat -c \"%F|%s|%Y|\$count|%n\" \"\$f\"); }; done"
+
+            // Step 1: Pre-calculate immediate child counts for all subdirectories in a single fast command (~15-20ms).
+            // -mindepth 2 -maxdepth 2 visits only the immediate children of the subdirectories and stops there.
+            val childCounts = mutableMapOf<String, Int>()
+            try {
+                val countCmd = "find $escapedPrefix -mindepth 2 -maxdepth 2 2>/dev/null"
+                val countProc = runShizukuCommand(countCmd)
+                BufferedReader(InputStreamReader(countProc.inputStream)).useLines { lines ->
+                    lines.forEach { line ->
+                        val trimmed = line.trim()
+                        if (trimmed.isNotEmpty()) {
+                            val name = File(trimmed).name
+                            if (showHiddenFiles || !name.startsWith(".")) {
+                                val parent = File(trimmed).parent
+                                if (parent != null) {
+                                    childCounts[parent] = (childCounts[parent] ?: 0) + 1
+                                }
+                            }
+                        }
+                    }
+                }
+                countProc.waitFor()
+            } catch (e: Throwable) {
+                Log.w(TAG, "Error pre-counting subfolder items for $searchPrefix", e)
+            }
+
+            // Step 2: High-performance batch stat.
+            // Using safe globbing that matches non-hidden files and hidden files without ever matching "." or "..":
+            // $escapedPrefix/* $escapedPrefix/.[!.]* $escapedPrefix/..?*
+            // stat -c (without -L) stats files and symlinks directly without failing on broken symlinks.
+            val cmd = "stat -c '%F|%s|%Y|%n' $escapedPrefix/* $escapedPrefix/.[!.]* $escapedPrefix/..?* 2>/dev/null"
+
+            fun parseLines(reader: BufferedReader) {
+                reader.useLines { lines ->
+                    lines.forEach { line ->
+                        val trimmed = line.trim()
+                        if (trimmed.isEmpty()) return@forEach
+                        val parts = trimmed.split('|', limit = 4)
+                        if (parts.size < 4) return@forEach
+
+                        val typeStr = parts[0]
+                        val sizeStr = parts[1]
+                        val timeStr = parts[2]
+                        val fullPath = parts[3]
+
+                        val file = File(fullPath)
+                        val name = file.name
+
+                        if (name == "." || name == ".." || name.isEmpty()) return@forEach
+                        if (!showHiddenFiles && name.startsWith(".")) return@forEach
+
+                        val isDir = typeStr.contains("directory", ignoreCase = true)
+                        val size = if (isDir) 0L else (sizeStr.toLongOrNull() ?: 0L)
+                        val seconds = timeStr.toLongOrNull() ?: 0L
+                        val timestamp = seconds * 1000
+                        val itemCount = if (isDir) (childCounts[file.absolutePath] ?: 0) else null
+
+                        results.add(
+                            FileItem(
+                                file = file,
+                                isDirectory = isDir,
+                                name = name,
+                                size = size,
+                                lastModified = timestamp,
+                                extension = if (isDir) "" else name.substringAfterLast('.', "").lowercase(),
+                                itemCount = itemCount
+                            )
+                        )
+                    }
+                }
+            }
 
             val process = runShizukuCommand(cmd)
-            val reader = BufferedReader(InputStreamReader(process.inputStream))
-
-            reader.useLines { lines ->
-                lines.forEach { line ->
-                    if (line.trim().isEmpty()) return@forEach
-                    val parts = line.split('|')
-                    if (parts.size < 5) return@forEach
-
-                    val typeStr = parts[0]
-                    val sizeStr = parts[1]
-                    val timeStr = parts[2]
-                    val countStr = parts[3]
-                    // Path might contain '|'
-                    val fullPath = parts.subList(4, parts.size).joinToString("|")
-
-                    val file = File(fullPath)
-                    val name = file.name
-
-                    if (!showHiddenFiles && name.startsWith(".") && name != "." && name != "..") {
-                        return@forEach
-                    }
-
-                    val isDir = typeStr.contains("directory", ignoreCase = true)
-                    val size = sizeStr.toLongOrNull() ?: 0L
-                    val seconds = timeStr.toLongOrNull() ?: 0L
-                    val timestamp = seconds * 1000
-                    val itemCount = if (isDir) countStr.toIntOrNull() else null
-
-                    results.add(
-                        FileItem(
-                            file = file,
-                            isDirectory = isDir,
-                            name = name,
-                            size = size,
-                            lastModified = timestamp,
-                            extension = if (isDir) "" else name.substringAfterLast('.', "").lowercase(),
-                            itemCount = itemCount
-                        )
-                    )
-                }
-            }
+            parseLines(BufferedReader(InputStreamReader(process.inputStream)))
             process.waitFor()
 
+            // Fallback: If wildcard batch produced no items, check if a directory has thousands of entries exceeding ARG_MAX
             if (results.isEmpty()) {
-                val errText = process.errorStream.bufferedReader().readText().trim()
-                if (errText.isNotEmpty()) {
-                    Log.w(TAG, "listFiles(\"$searchPrefix\") returned 0 items, shell stderr: $errText")
-                }
+                val fallbackCmd = "for f in $escapedPrefix/* $escapedPrefix/.[!.]* $escapedPrefix/..?*; do [ -e \"\$f\" ] || [ -L \"\$f\" ] && stat -c '%F|%s|%Y|%n' \"\$f\" 2>/dev/null; done"
+                val fallbackProc = runShizukuCommand(fallbackCmd)
+                parseLines(BufferedReader(InputStreamReader(fallbackProc.inputStream)))
+                fallbackProc.waitFor()
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Error listing files for $searchPrefix", e)
         }
-        results
+        // Crucial safety guarantee: ensure every file item has a unique absolutePath.
+        // Prevents Compose LazyColumn/LazyVerticalGrid crashes (IllegalArgumentException: Key already used).
+        results.distinctBy { it.file.absolutePath }
+    }
+
+    /**
+     * Accurately calculates folder size recursively via Shizuku using native du command.
+     */
+    fun getFolderSize(path: String): Long {
+        if (!isAvailable() || !hasPermission()) return 0L
+        val clean = normalize(path)
+        val escaped = shellEscape(clean)
+        return try {
+            val process = runShizukuCommand("du -sk $escaped 2>/dev/null")
+            val output = process.inputStream.bufferedReader().readText().trim()
+            process.waitFor()
+            val kb = output.split(Regex("\\s+")).firstOrNull()?.toLongOrNull() ?: 0L
+            kb * 1024L
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error calculating folder size for $path", e)
+            0L
+        }
+    }
+
+    /**
+     * Gets accurate file size via Shizuku stat command.
+     */
+    fun getFileSize(path: String): Long {
+        if (!isAvailable() || !hasPermission()) return 0L
+        val clean = normalize(path)
+        val escaped = shellEscape(clean)
+        return try {
+            val process = runShizukuCommand("stat -c '%s' $escaped 2>/dev/null")
+            val output = process.inputStream.bufferedReader().readText().trim()
+            process.waitFor()
+            output.toLongOrNull() ?: 0L
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error getting file size for $path", e)
+            0L
+        }
+    }
+
+    /**
+     * Checks if a file or directory exists via Shizuku.
+     */
+    fun exists(path: String): Boolean {
+        if (!isAvailable() || !hasPermission()) return false
+        val clean = normalize(path)
+        val escaped = shellEscape(clean)
+        return try {
+            val process = runShizukuCommand("[ -e $escaped ]")
+            process.waitFor() == 0
+        } catch (e: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Streams file contents from a restricted path to a local destination file.
+     */
+    fun copyToFile(srcPath: String, destFile: File): Boolean {
+        if (!isAvailable() || !hasPermission()) return false
+        val clean = normalize(srcPath)
+        val escaped = shellEscape(clean)
+        return try {
+            destFile.parentFile?.mkdirs()
+            val process = runShizukuCommand("cat $escaped")
+            destFile.outputStream().use { out ->
+                process.inputStream.copyTo(out)
+            }
+            val code = process.waitFor()
+            code == 0 && destFile.exists()
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error copying $srcPath to $destFile via Shizuku", e)
+            false
+        }
     }
 
     /** Matches NFile's runCommand logic. Returns true if exit code is 0. */
