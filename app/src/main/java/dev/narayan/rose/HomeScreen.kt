@@ -48,6 +48,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import coil.decode.VideoFrameDecoder
 import coil.request.videoFrameMillis
 import java.io.File
@@ -821,13 +823,13 @@ private fun CategoryGrid(
     onAnimationFinished: () -> Unit,
     onCategoryClick: (HomeCategory) -> Unit
 ) {
-    var animationStarted by remember { mutableStateOf(hasRunCountAnimation) }
+    var animationStarted by remember(hasRunCountAnimation) { mutableStateOf(hasRunCountAnimation) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(hasRunCountAnimation) {
         if (!hasRunCountAnimation) {
-            kotlinx.coroutines.delay(100) // Small delay to sync with card entrance animation
+            kotlinx.coroutines.delay(60)
             animationStarted = true
-            kotlinx.coroutines.delay(1100) // Allow 1000ms tween to complete
+            kotlinx.coroutines.delay(750)
             onAnimationFinished()
         }
     }
@@ -842,7 +844,6 @@ private fun CategoryGrid(
                     CategoryCard(
                         category = category,
                         count = counts[category.type] ?: 0,
-                        isLoading = isLoading,
                         animationStarted = animationStarted,
                         hasRunCountAnimation = hasRunCountAnimation,
                         index = rowIndex * 3 + colIndex,
@@ -862,7 +863,6 @@ private fun CategoryGrid(
 private fun CategoryCard(
     category: HomeCategory,
     count: Int,
-    isLoading: Boolean,
     animationStarted: Boolean,
     hasRunCountAnimation: Boolean,
     index: Int = 0,
@@ -872,7 +872,7 @@ private fun CategoryCard(
     val targetCount = if (animationStarted || hasRunCountAnimation) count else 0
     val animatedCount by androidx.compose.animation.core.animateIntAsState(
         targetValue = targetCount,
-        animationSpec = if (!hasRunCountAnimation) tween(durationMillis = 1000, easing = FastOutSlowInEasing) else snap<Int>(),
+        animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
         label = "CategoryCountAnimation"
     )
 
@@ -881,10 +881,12 @@ private fun CategoryCard(
     // Modifier.animateItem(), which only works inside a Lazy scope and
     // would blank the screen here since this grid is a regular Column/Row).
     val density = LocalDensity.current
-    val animatedProgress = remember { Animatable(0f) }
+    val animatedProgress = remember { Animatable(if (hasRunCountAnimation) 1f else 0f) }
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay((index * 25).toLong())
-        animatedProgress.animateTo(1f, tween(durationMillis = 220, easing = LinearOutSlowInEasing))
+        if (!hasRunCountAnimation) {
+            kotlinx.coroutines.delay((index * 25).toLong())
+            animatedProgress.animateTo(1f, tween(durationMillis = 220, easing = LinearOutSlowInEasing))
+        }
     }
 
     Card(
@@ -924,7 +926,7 @@ private fun CategoryCard(
             )
             Spacer(modifier = Modifier.height(1.dp))
             Text(
-                if (isLoading && count == 0) "…" else animatedCount.toString(),
+                animatedCount.toString(),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

@@ -786,7 +786,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     // silentRefresh; it has no business invalidating loadFiles or vice versa.
     private var silentRefreshGeneration = 0
     private var categoryGeneration = 0
-    private fun getItemCount(file: File, showHiddenFiles: Boolean): Int? {
+    internal fun getItemCount(file: File, showHiddenFiles: Boolean): Int? {
         if (!file.isDirectory) return null
         // File.list() (names only) is cheaper than File.listFiles() (stats every
         // entry into a File object) when all we need here is a count.
@@ -2179,25 +2179,34 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             isLoading = true
             var success = true
+            var highlightFile: FileItem? = null
             try {
                 val restrictedDest = SafManager.isRestrictedPath(destPath)
-                uris.forEach { uri ->
+                uris.forEachIndexed { index, uri ->
                     val fileName = getFileNameFromUri(uri) ?: "shared_file_${System.currentTimeMillis()}"
                     val resolver = getApplication<Application>().contentResolver
+                    val file = File(destPath, fileName)
                     resolver.openInputStream(uri)?.use { input ->
                         val output = if (restrictedDest) {
                             SafManager.openOutputStreamForNewFile(getApplication(), "${destPath.trimEnd('/')}/$fileName")
                         } else {
-                            File(destPath, fileName).outputStream()
+                            file.outputStream()
                         }
                         output?.use { out -> input.copyTo(out) } ?: run { success = false }
                     } ?: run { success = false }
+
+                    if (success && index == 0) {
+                        highlightFile = FileItem(file)
+                    }
                 }
             } catch (e: Exception) {
                 success = false
             } finally {
                 withContext(Dispatchers.Main) {
                     isLoading = false
+                    if (success && highlightFile != null) {
+                        highlightedFile = highlightFile
+                    }
                     onComplete(success)
                     if (currentPath == destPath) loadFiles(destPath)
                 }
