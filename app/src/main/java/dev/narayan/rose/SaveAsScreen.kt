@@ -24,6 +24,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -39,15 +45,70 @@ fun SaveAsScreen(
     val rootDir = remember { Environment.getExternalStorageDirectory() }
     var currentDir by remember { mutableStateOf(rootDir) }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var showCreateFolderDialog by remember { mutableStateOf(false) }
     
     // Initial state: show options menu if it's a single ZIP file
     var showOptions by remember { mutableStateOf(isZip && uris.size == 1) }
 
-    val items = remember(currentDir) {
-        currentDir.listFiles { f -> !f.name.startsWith(".") && f.isDirectory }
-            ?.map { FileItem(it) }
-            ?.sortedBy { it.name.lowercase() }
-            ?: emptyList()
+    fun createNewFolder(name: String) {
+        val path = if (currentDir.absolutePath.endsWith("/")) "${currentDir.absolutePath}$name" else "${currentDir.absolutePath}/$name"
+        if (SafManager.isRestrictedPath(path)) {
+            scope.launch(Dispatchers.IO) {
+                val success = if (SafManager.hasPermission(context, currentDir.absolutePath)) {
+                    SafManager.createDirectory(context, path)
+                } else if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
+                    ShizukuManager.createFolder(currentDir.absolutePath, name)
+                } else false
+
+                withContext(Dispatchers.Main) {
+                    if (success) {
+                        currentDir = File(path)
+                    } else {
+                        android.widget.Toast.makeText(context, "Access denied or failed to create folder", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        } else {
+            val newFolder = File(currentDir, name)
+            if (newFolder.mkdir()) {
+                currentDir = newFolder
+            } else {
+                android.widget.Toast.makeText(context, "Failed to create folder", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    if (showCreateFolderDialog) {
+        CreateFolderDialog(
+            onDismiss = { showCreateFolderDialog = false },
+            onCreate = { folderName ->
+                showCreateFolderDialog = false
+                createNewFolder(folderName)
+            }
+        )
+    }
+
+    val items by produceState<List<FileItem>>(initialValue = emptyList(), currentDir, viewModel.showHiddenFiles) {
+        value = withContext(Dispatchers.IO) {
+            if (SafManager.isRestrictedPath(currentDir.absolutePath)) {
+                return@withContext SafManager.listFiles(context, currentDir.absolutePath)
+                    .filter { it.isDirectory && (viewModel.showHiddenFiles || !it.name.startsWith(".")) }
+                    .sortedBy { it.name.lowercase() }
+            }
+
+            val rawDirs = currentDir.listFiles { f ->
+                (viewModel.showHiddenFiles || !f.name.startsWith(".")) && f.isDirectory
+            } ?: emptyArray()
+
+            coroutineScope {
+                rawDirs.map { file ->
+                    async {
+                        FileItem(file, itemCount = viewModel.getItemCount(file, viewModel.showHiddenFiles))
+                    }
+                }.awaitAll()
+            }.sortedBy { it.name.lowercase() }
+        }
     }
 
     BackHandler {
@@ -78,39 +139,39 @@ fun SaveAsScreen(
                             IconButton(onClick = onDismiss) {
                                 Icon(Icons.Default.Close, contentDescription = stringResource(R.string.action_cancel))
                             }
+                        },
+                        actions = {
+                            if (!showOptions) {
+                                IconButton(onClick = { showCreateFolderDialog = true }) {
+                                    Icon(Icons.Default.CreateNewFolder, contentDescription = stringResource(R.string.create_folder_dialog_title))
+                                }
+                            }
                         }
                     )
                     Breadcrumbs(path = currentDir.absolutePath, onNavigate = { currentDir = it })
                 }
             }
         },
-        floatingActionButtonPosition = FabPosition.Center,
+        floatingActionButtonPosition = FabPosition.End,
         floatingActionButton = {
             if (!showOptions) {
-                Surface(
-                    shape = RoundedCornerShape(32.dp),
-                    color = Color(0xFF1C1B1F),
-                    shadowElevation = 8.dp,
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp)
-                        .padding(bottom = 12.dp)
-                        .fillMaxWidth()
-                ) {
-                    SaveAsOption(
-                        icon = Icons.Default.Save,
-                        title = stringResource(R.string.save_as_save_here),
-                        subtitle = null,
-                        onClick = {
-                            viewModel.saveSharedFiles(uris, currentDir.absolutePath) { success ->
-                                if (success) {
-                                    onSaved(currentDir.absolutePath)
-                                } else {
-                                    android.widget.Toast.makeText(context, context.getString(R.string.save_as_failed_to_save), android.widget.Toast.LENGTH_SHORT).show()
-                                }
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        viewModel.saveSharedFiles(uris, currentDir.absolutePath) { success ->
+                            if (success) {
+                                onSaved(currentDir.absolutePath)
+                            } else {
+                                android.widget.Toast.makeText(context, context.getString(R.string.save_as_failed_to_save), android.widget.Toast.LENGTH_SHORT).show()
                             }
                         }
-                    )
-                }
+                    },
+                    icon = { Icon(Icons.Default.Save, contentDescription = null) },
+                    text = { Text(stringResource(R.string.save_as_save_here), fontWeight = FontWeight.Bold) },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
             }
         }
     ) { padding ->
@@ -193,6 +254,7 @@ fun SaveAsScreen(
                             Spacer(modifier = Modifier.height(20.dp))
 
                             SaveAsOption(
+                                modifier = Modifier.fillMaxWidth(),
                                 icon = Icons.Default.Search,
                                 title = stringResource(R.string.save_as_archive_viewer),
                                 subtitle = stringResource(R.string.save_as_archive_viewer_subtitle),
@@ -206,6 +268,7 @@ fun SaveAsScreen(
                             )
 
                             SaveAsOption(
+                                modifier = Modifier.fillMaxWidth(),
                                 icon = Icons.Default.FileDownload,
                                 title = stringResource(R.string.save_as_save_as),
                                 subtitle = stringResource(R.string.save_as_save_as_subtitle),
@@ -223,12 +286,12 @@ fun SaveAsScreen(
 private fun SaveAsOption(
     icon: ImageVector,
     title: String,
+    modifier: Modifier = Modifier,
     subtitle: String? = null,
     onClick: () -> Unit
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = modifier
             .clickable(onClick = onClick)
             .padding(horizontal = 24.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically

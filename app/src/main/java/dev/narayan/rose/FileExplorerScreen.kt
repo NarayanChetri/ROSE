@@ -662,8 +662,8 @@ fun FileExplorerScreen(
                 // Slight delay to ensure list is settled for smoother animation
                 kotlinx.coroutines.delay(100)
                 listState.animateScrollToItem(index)
-                // Clear highlight after 3 seconds
-                kotlinx.coroutines.delay(3000)
+                // Clear highlight after 2 seconds
+                kotlinx.coroutines.delay(2000)
                 viewModel.highlightedFile = null
             }
         }
