@@ -135,8 +135,8 @@ class MainActivity : ComponentActivity() {
             val path = viewModel.pendingShizukuPath ?: viewModel.currentPath
             val granted = grantResult == PackageManager.PERMISSION_GRANTED
             viewModel.onShizukuResult(granted, path)
-            if (!granted) {
-                // If Shizuku denied, fallback to SAF
+            if (!granted && !viewModel.isShizukuRestrictedPath(path)) {
+                // If Shizuku denied, fallback to SAF only for non-Android/data paths
                 viewModel.retrySaf(path)
             }
         }
@@ -146,6 +146,9 @@ class MainActivity : ComponentActivity() {
         val currentPath = viewModel.currentPath
         if (SafManager.isRestrictedPath(currentPath)) {
             viewModel.loadFiles(currentPath, showLoading = false)
+        }
+        if (viewModel.isShizukuRestrictedPath(currentPath) && ShizukuManager.hasPermission()) {
+            viewModel.loadFiles(currentPath, showLoading = true)
         }
     }
 
@@ -324,12 +327,16 @@ class MainActivity : ComponentActivity() {
                                     Shizuku.requestPermission(SHIZUKU_PERMISSION_REQUEST_CODE)
                                 } catch (e: Exception) {
                                     viewModel.onShizukuResult(false, path)
-                                    viewModel.retrySaf(path)
+                                    if (!viewModel.isShizukuRestrictedPath(path)) {
+                                        viewModel.retrySaf(path)
+                                    }
                                 }
                             }
                         } else {
                             viewModel.onShizukuResult(false, path)
-                            viewModel.retrySaf(path)
+                            if (!viewModel.isShizukuRestrictedPath(path)) {
+                                viewModel.retrySaf(path)
+                            }
                         }
                     }
                 }
@@ -835,9 +842,23 @@ class MainActivity : ComponentActivity() {
 else {
                     val path = item.file.absolutePath
                     if (SafManager.isRestrictedPath(path)) {
-                        // Files here don't exist from java.io.File's point of view - only the
-                        // SAF DocumentFile's own content:// Uri can be opened by another app.
-                        SafManager.getContentUri(this@MainActivity, path)?.let { uris.add(it) } ?: run { folderFound = true }
+                        // Files here don't exist from java.io.File's point of view
+                        val safUri = if (SafManager.hasPermission(this@MainActivity, path)) SafManager.getContentUri(this@MainActivity, path) else null
+                        if (safUri != null) {
+                            uris.add(safUri)
+                        } else if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
+                            val targetDir = externalCacheDir ?: cacheDir
+                            val cacheFile = File(targetDir, "shared_restricted_${item.name}")
+                            if (ShizukuManager.copyToFile(path, cacheFile)) {
+                                uris.add(FileProvider.getUriForFile(
+                                    this@MainActivity,
+                                    "${applicationContext.packageName}.provider",
+                                    cacheFile
+                                ))
+                            }
+                        } else {
+                            folderFound = true
+                        }
                     } else if (item.file.isFile) {
                         uris.add(FileProvider.getUriForFile(
                             this@MainActivity,
@@ -894,11 +915,14 @@ else {
             val isVirtual = fileItem.virtualZipSource != null
 
             if (!isVirtual) {
-                if (restricted && !SafManager.exists(this, path)) {
-                    Toast.makeText(this, getString(R.string.toast_file_no_longer_exists), Toast.LENGTH_SHORT).show()
-                    return null
+                val exists = if (restricted) {
+                    (SafManager.hasPermission(this, path) && SafManager.exists(this, path)) ||
+                            (ShizukuManager.isAvailable() && ShizukuManager.hasPermission() && ShizukuManager.exists(path)) ||
+                            file.exists()
+                } else {
+                    file.exists()
                 }
-                if (!restricted && !file.exists()) {
+                if (!exists) {
                     Toast.makeText(this, getString(R.string.toast_file_no_longer_exists), Toast.LENGTH_SHORT).show()
                     return null
                 }
@@ -933,9 +957,27 @@ else {
                     }
                     return null
                 }
-            }
-else if (restricted) {
-                SafManager.getContentUri(this, path) ?: run {
+            } else if (restricted) {
+                val safUri = if (SafManager.hasPermission(this, path)) SafManager.getContentUri(this, path) else null
+                if (safUri != null) {
+                    safUri
+                } else if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
+                    val targetDir = externalCacheDir ?: cacheDir
+                    val cacheFile = File(targetDir, "open_restricted_${fileItem.name}")
+                    if (cacheFile.exists()) {
+                        cacheFile.delete()
+                    }
+                    if (ShizukuManager.copyToFile(path, cacheFile)) {
+                        FileProvider.getUriForFile(
+                            this,
+                            "${applicationContext.packageName}.provider",
+                            cacheFile
+                        )
+                    } else {
+                        Toast.makeText(this, getString(R.string.toast_couldnt_access_file), Toast.LENGTH_SHORT).show()
+                        return null
+                    }
+                } else {
                     Toast.makeText(this, getString(R.string.toast_couldnt_access_file), Toast.LENGTH_SHORT).show()
                     return null
                 }
@@ -1127,6 +1169,16 @@ else if (restricted) {
             registerReceiver(storageReceiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
         } else {
             registerReceiver(storageReceiver, filter)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val currentPath = viewModel.currentPath
+        if (viewModel.isShizukuRestrictedPath(currentPath) && viewModel.accessDenied) {
+            if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
+                viewModel.onShizukuResult(true, currentPath)
+            }
         }
     }
 

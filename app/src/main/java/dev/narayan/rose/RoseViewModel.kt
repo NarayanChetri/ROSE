@@ -339,11 +339,37 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun isShizukuRestrictedPath(path: String): Boolean {
+        if (SafManager.isSafUri(path)) return false
+        val lowPath = try { File(path).canonicalPath.lowercase() } catch (e: Exception) { path.lowercase() }
+        return lowPath.endsWith("/android/data") || lowPath.contains("/android/data/") ||
+                lowPath.endsWith("/android/obb") || lowPath.contains("/android/obb/")
+    }
+
+    private val directoryCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<FileItem>>>()
+
+    fun invalidateDirectoryCache(path: String? = null) {
+        if (path == null) {
+            directoryCache.clear()
+        } else {
+            val norm = ShizukuManager.normalize(path)
+            directoryCache.remove(norm)
+            File(norm).parent?.let { directoryCache.remove(ShizukuManager.normalize(it)) }
+        }
+    }
+
     fun onShizukuResult(granted: Boolean, path: String) {
         pendingShizukuPath = null
         if (granted) {
             setUseShizuku(true)
-            loadFiles(path, showLoading = path != currentPath)
+            accessDenied = false
+            isLoading = true
+            files = emptyList()
+            invalidateDirectoryCache(path)
+            loadFiles(path, showLoading = true)
+        } else {
+            accessDenied = true
+            isLoading = false
         }
     }
 
@@ -478,6 +504,15 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch(Dispatchers.IO) {
                 folderSize = calculateFolderSize(fileItem.file)
             }
+        } else if (fileItem.size <= 0L && isShizukuRestrictedPath(fileItem.file.absolutePath)) {
+            viewModelScope.launch(Dispatchers.IO) {
+                val accurateSize = ShizukuManager.getFileSize(fileItem.file.absolutePath)
+                if (accurateSize > 0) {
+                    withContext(Dispatchers.Main) {
+                        propertiesFile = propertiesFile?.copy(size = accurateSize)
+                    }
+                }
+            }
         }
     }
 
@@ -488,13 +523,21 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
     @Suppress("NewApi")
     private fun calculateFolderSize(directory: File): Long {
+        val path = directory.absolutePath
+        if (isShizukuRestrictedPath(path)) {
+            if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
+                val size = ShizukuManager.getFolderSize(path)
+                if (size > 0L) return size
+            }
+            return 0L
+        }
         return try {
-            val path = java.nio.file.Paths.get(directory.absolutePath)
+            val p = java.nio.file.Paths.get(path)
             var totalSize = 0L
-            java.nio.file.Files.walk(path).use { stream ->
-                stream.forEach { p ->
-                    if (java.nio.file.Files.isRegularFile(p)) {
-                        totalSize += java.nio.file.Files.size(p)
+            java.nio.file.Files.walk(p).use { stream ->
+                stream.forEach { f ->
+                    if (java.nio.file.Files.isRegularFile(f)) {
+                        totalSize += java.nio.file.Files.size(f)
                     }
                 }
             }
@@ -1131,6 +1174,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         // Material Files style: changing sort should reset scroll positions for
         // the current navigation session, as the list layout has changed.
         pathScrollPositions.clear()
+        invalidateDirectoryCache()
 
         // If we're in a virtual view (Category or Zip), we don't reload from currentPath
         // but instead just re-sort the existing lists.
@@ -1143,15 +1187,13 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             // Recent files should not be manually sorted as per requirements
         } else {
             // Re-sort what's already in memory right away so the change is visible
-            // instantly, every time - relying only on the async loadFiles() below
-            // meant this update could lose a race against the live folder
-            // watcher/poll's own silentRefresh() landing at a similar time, which
-            // is what made sorting feel like it "sometimes" needed a manual
-            // refresh to actually show. The full reload still runs after this to
-            // pick up authoritative sizes/metadata (e.g. real folder sizes for
-            // Sort by Size), but the visible order is correct immediately.
+            // instantly, every time. Only Sort by Size needs a background reload
+            // to fetch recursive folder sizes; for all other sorts, in-memory re-sort
+            // is authoritative, instant, and prevents laggy double-animation.
             files = sortFileList(files)
-            loadFiles(currentPath, showLoading = false)
+            if (sortBy == SortBy.SIZE) {
+                loadFiles(currentPath, showLoading = false, isManualRefresh = true)
+            }
         }
     }
 
@@ -1227,6 +1269,18 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        // Directory Cache: strictly for restricted paths (Android/data and obb) to make back-and-forth navigation instant.
+        // Normal paths (Downloads, DCIM, etc.) are never cached to guarantee fresh results and prevent double-animation.
+        val isRestrictedFolder = isShizukuRestrictedPath(normalizedPath)
+        val cached = if (!isManualRefresh && isRestrictedFolder) directoryCache[normalizedPath] else null
+        if (cached != null && System.currentTimeMillis() - cached.first < 60_000L) {
+            currentPath = normalizedPath
+            files = sortFileList(cached.second)
+            isLoading = false
+            accessDenied = false
+            return
+        }
+
         // Material Files style: if navigating to a new path, open it instantly, clear
         // current files, and show a loading spinner if the scan takes more than a moment.
         loadJob?.cancel()
@@ -1239,6 +1293,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             if (isManualRefresh) isRefreshing = true else if (showLoading) isLoading = true
         }
 
+        loadJob?.cancel()
         val requestGeneration = ++filesGeneration
         loadJob = viewModelScope.launch {
             try {
@@ -1247,13 +1302,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
                 // Android/data and Android/obb can never be reached via raw java.io.File,
                 // even with MANAGE_EXTERNAL_STORAGE, on Android 12+ - that block is
-                // hardcoded at the filesystem layer. They go through SafManager's single
-                // root-level SAF grant instead (see SafManager.kt for why that's the
-                // correct, current, no-root way - it's what Material Files does too).
-                //
-                // Shizuku support: if SAF is not granted, we can try using Shizuku
-                // to list files smoothly without the system picker if authorized.
-                val isRestricted = SafManager.isRestrictedPath(normalizedPath)
+                // hardcoded at the filesystem layer.
+                val isRestricted = isShizukuRestrictedPath(normalizedPath)
 
                 val result = withContext(Dispatchers.IO) {
                     val directory = File(normalizedPath)
@@ -1292,66 +1342,70 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         }
 
                         sortFileList(sizedFileList)
-                    } else {
-                        // Normal access failed or path is restricted (Android/data or obb)
+                    } else if (isRestricted) {
+                        // Restricted path (Android/data or obb)
 
                         // Ditto NFile style: request binder if not available
                         if (!ShizukuManager.isAvailable()) {
                             ShizukuManager.requestBinder(getApplication())
                         }
 
-                        // Wait a bit longer for binder (CX File Explorer/NFile style smoothness)
-                        if (isRestricted && !ShizukuManager.isAvailable()) {
-                            repeat(10) {
+                        // Wait a short moment for binder (CX File Explorer/NFile style smoothness)
+                        if (!ShizukuManager.isAvailable()) {
+                            repeat(6) {
                                 if (ShizukuManager.isAvailable()) return@repeat
-                                kotlinx.coroutines.delay(100)
+                                kotlinx.coroutines.delay(60)
                             }
                         }
 
                         // Priority 1: Shizuku (Professional solution, no picker)
-                        if (ShizukuManager.isAvailable()) {
+                        val restrictedList = if (ShizukuManager.isAvailable()) {
                             if (ShizukuManager.hasPermission()) {
                                 val shizukuResults = ShizukuManager.listFiles(normalizedPath, showHiddenFiles)
 
-                                // Shizuku's shell process can see the shared top-level
-                                // Android/data or Android/obb listing, but it doesn't
-                                // always have read access to a specific *other* app's
-                                // subfolder inside it - that comes back looking like an
-                                // empty folder even when it isn't. When that happens and
-                                // we already hold a working SAF grant, trust SAF instead
-                                // of the empty Shizuku result.
-                                if (shizukuResults.isEmpty() && SafManager.isRestrictedPath(normalizedPath) &&
-                                    SafManager.hasPermission(getApplication(), normalizedPath)
-                                ) {
+                                // Fallback to SAF only if Shizuku returned empty and SAF permission is held
+                                if (shizukuResults.isEmpty() && SafManager.hasPermission(getApplication(), normalizedPath)) {
                                     val safResults = SafManager.listFiles(getApplication(), normalizedPath).let { list ->
                                         if (!showHiddenFiles) list.filter { !it.name.startsWith(".") } else list
                                     }
-                                    return@withContext safResults
+                                    if (safResults.isNotEmpty()) safResults else shizukuResults
+                                } else {
+                                    shizukuResults
                                 }
-
-                                return@withContext shizukuResults
                             } else {
                                 // Shizuku running but needs authorization.
-                                // We no longer auto-trigger the permission dialog here.
-                                // The UI will show a "Grant Access" button instead.
-                                return@withContext emptyList<FileItem>()
+                                // Must set accessDenied = true so RestrictedFolderView is shown with "Grant Access"!
+                                withContext(Dispatchers.Main) {
+                                    accessDenied = true
+                                }
+                                emptyList<FileItem>()
                             }
-                        }
-
-                        // Priority 2: SAF (Fallback ONLY if Shizuku is truly unavailable)
-                        if (SafManager.hasPermission(getApplication(), normalizedPath)) {
+                        } else if (SafManager.hasPermission(getApplication(), normalizedPath)) {
+                            // Priority 2: SAF (Fallback ONLY if Shizuku is truly unavailable)
                             val safResults = SafManager.listFiles(getApplication(), normalizedPath).let { list ->
                                 if (!showHiddenFiles) list.filter { !it.name.startsWith(".") } else list
                             }
-                            return@withContext safResults
+                            safResults
                         } else {
                             // No Shizuku AND no SAF permission.
-                            // Triggering permission is now handled by user interaction in the UI.
                             withContext(Dispatchers.Main) {
                                 accessDenied = true
                             }
                             emptyList()
                         }
+
+                        val sizedFileList = if (sortBy == SortBy.SIZE) {
+                            withFolderSizes(restrictedList)
+                        } else {
+                            restrictedList
+                        }
+                        sortFileList(sizedFileList)
+                    } else {
+                        // Normal folder where File.listFiles() failed (e.g. root or OS protected folder)
+                        withContext(Dispatchers.Main) {
+                            accessDenied = true
+                        }
+                        emptyList()
                     }
 
                 }
@@ -1361,6 +1415,9 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     files = result
                     isLoading = false
                     isRefreshing = false
+                    if (!accessDenied && isRestricted) {
+                        directoryCache[normalizedPath] = System.currentTimeMillis() to result
+                    }
                     if (normalizedPath == Environment.getExternalStorageDirectory().absolutePath) {
                         rootCache = result
                     }
@@ -2018,8 +2075,12 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 } else false
 
                 withContext(Dispatchers.Main) {
-                    if (success) loadFiles(currentPath)
-                    else errorMessage = "Couldn't delete. Access restricted."
+                    if (success) {
+                        invalidateDirectoryCache(currentPath)
+                        loadFiles(currentPath, isManualRefresh = true)
+                    } else {
+                        errorMessage = "Couldn't delete. Access restricted."
+                    }
                 }
             }
             return
@@ -2070,8 +2131,12 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 } else false
 
                 withContext(Dispatchers.Main) {
-                    if (success) loadFiles(currentPath)
-                    else errorMessage = "Couldn't rename. Access restricted."
+                    if (success) {
+                        invalidateDirectoryCache(currentPath)
+                        loadFiles(currentPath, isManualRefresh = true)
+                    } else {
+                        errorMessage = "Couldn't rename. Access restricted."
+                    }
                 }
             }
             return
@@ -2079,6 +2144,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
         val newFile = File(fileItem.file.parent, newName)
         if (fileItem.file.renameTo(newFile)) {
+            invalidateDirectoryCache(currentPath)
             val updatedItem = FileItem(newFile)
             rescanForMediaStore(getApplication(), fileItem.file, newFile)
 
@@ -2121,8 +2187,12 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 } else false
 
                 withContext(Dispatchers.Main) {
-                    if (success) loadFiles(currentPath)
-                    else errorMessage = "Couldn't create folder. Access restricted."
+                    if (success) {
+                        invalidateDirectoryCache(currentPath)
+                        loadFiles(currentPath, isManualRefresh = true)
+                    } else {
+                        errorMessage = "Couldn't create folder. Access restricted."
+                    }
                 }
             }
             return
@@ -2130,7 +2200,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
         val newFolder = File(currentPath, name)
         if (newFolder.mkdir()) {
-            loadFiles(currentPath)
+            invalidateDirectoryCache(currentPath)
+            loadFiles(currentPath, isManualRefresh = true)
         }
     }
 
