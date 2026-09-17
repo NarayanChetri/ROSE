@@ -531,10 +531,12 @@ class MainActivity : ComponentActivity() {
                                             },
                                             onOpenCategory = { type, title ->
                                                 viewModel.resetFiles()
+                                                viewModel.browseCategory(type, title)
                                                 screen = AppScreen.Files(category = type to title)
                                             },
                                             onOpenRecent = {
                                                 viewModel.resetFiles()
+                                                viewModel.loadRecentFiles()
                                                 screen = AppScreen.Files(recent = true)
                                             },
                                             onFileClick = { fileItem ->

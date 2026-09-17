@@ -348,7 +348,11 @@ fun FileExplorerScreen(
             viewModel.highlightedFile = highlightFile
         }
         when {
-            startCategory != null -> viewModel.browseCategory(startCategory.first, startCategory.second)
+            startCategory != null -> {
+                if (viewModel.categoryFilterType != startCategory.first || viewModel.categoryTitle != startCategory.second || (viewModel.categoryFiles.isEmpty() && !viewModel.isCategoryLoading)) {
+                    viewModel.browseCategory(startCategory.first, startCategory.second)
+                }
+            }
             startRecent -> viewModel.loadRecentFiles()
             startPath != null -> {
                 if (SafManager.isSafUri(startPath)) {
@@ -810,7 +814,7 @@ fun FileExplorerScreen(
                                                     "Category" -> {
                                                         val type = viewModel.categoryFilterType
                                                         val title = viewModel.categoryTitle
-                                                        if (type != null && title != null) viewModel.browseCategory(type, title)
+                                                        if (type != null && title != null) viewModel.browseCategory(type, title, bucketId = viewModel.categoryBucketId, forceRefresh = true)
                                                     }
                                                     else -> viewModel.loadFiles(viewModel.currentPath)
                                                 }
@@ -1027,7 +1031,7 @@ fun FileExplorerScreen(
                                 currentView == "Category" -> {
                                     val type = viewModel.categoryFilterType
                                     val title = viewModel.categoryTitle
-                                    if (type != null && title != null) viewModel.browseCategory(type, title)
+                                    if (type != null && title != null) viewModel.browseCategory(type, title, bucketId = viewModel.categoryBucketId, forceRefresh = true)
                                 }
                                 viewModel.currentZipFile != null -> viewModel.openArchive(viewModel.currentZipFile!!, viewModel.currentZipEntryPath)
                                 else -> viewModel.loadFiles(viewModel.currentPath, isManualRefresh = true)
@@ -1085,8 +1089,11 @@ fun FileExplorerScreen(
                                 // from flickering on screen for a single frame.
                                 val isInitialLoad = (currentView == "Category" && viewModel.categoryFilterType == null) ||
                                         (currentView == "Recent" && viewModel.recentFiles.isEmpty() && viewModel.categoryFilterType == null)
-
-                                val isContentLoading = (viewModel.isLoading || viewModel.isRefreshing || viewModel.isRecursiveSearching || isInitialLoad) && displayedFiles.isEmpty()
+                                val isContentLoading = when (currentView) {
+                                    "Category" -> (viewModel.isCategoryLoading || viewModel.isRefreshing || isInitialLoad) && displayedFiles.isEmpty()
+                                    "Recent" -> (viewModel.isRecentLoading || viewModel.isRefreshing || isInitialLoad) && displayedFiles.isEmpty()
+                                    else -> (viewModel.isLoading || viewModel.isRefreshing || viewModel.isRecursiveSearching) && displayedFiles.isEmpty()
+                                }
 
                                 var showCenteredLoading by remember { mutableStateOf(false) }
                                 LaunchedEffect(isContentLoading) {
@@ -1164,7 +1171,13 @@ fun FileExplorerScreen(
                                             }
                                         }
 
-                                        if (displayedFilesFinal.isEmpty() && !viewModel.isLoading && !viewModel.isRecursiveSearching) {
+                                        val isCurrentlyLoading = when (state.view) {
+                                            "Category" -> viewModel.isCategoryLoading || viewModel.isRefreshing
+                                            "Recent" -> viewModel.isRecentLoading || viewModel.isRefreshing
+                                            else -> viewModel.isLoading || viewModel.isRefreshing || viewModel.isRecursiveSearching
+                                        }
+
+                                        if (displayedFilesFinal.isEmpty() && !isCurrentlyLoading) {
                                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                                 Text(if (searchQuery.isEmpty()) stringResource(R.string.no_files_found) else stringResource(R.string.no_results_for_query, searchQuery))
                                             }

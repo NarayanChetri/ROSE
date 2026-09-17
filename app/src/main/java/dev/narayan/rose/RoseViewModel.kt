@@ -964,6 +964,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         files = files.filter { it.file.absolutePath !in affectedPaths }
                         recentFiles = recentFiles.filter { it.file.absolutePath !in affectedPaths }
                         categoryFiles = categoryFiles.filter { it.file.absolutePath !in affectedPaths }
+                        invalidateCategoryCache()
                         searchResults.removeAll { it.file.absolutePath in affectedPaths }
 
                         // If a recycle/restore happened, refresh the bin items too
@@ -1168,6 +1169,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         // but instead just re-sort the existing lists.
         if (categoryFilterType != null) {
             categoryFiles = sortFileList(categoryFiles)
+            categoryCache[categoryFilterType!! to categoryBucketId] = categoryFiles
         } else if (currentZipFile != null) {
             files = sortFileList(files)
         } else if (currentPath.isEmpty()) {
@@ -1755,7 +1757,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         stopWatchingDirectory()
         // Material Files style: don't clear the list before loading. Keeps the UI stable
         // and preserves scroll position while the background query is running.
-        if (recentFiles.isEmpty()) isLoading = true
+        if (recentFiles.isEmpty()) isRecentLoading = true
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val recents = fetchRecentFileItems()
@@ -1764,7 +1766,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } finally {
                 withContext(Dispatchers.Main) {
-                    isLoading = false
+                    isRecentLoading = false
                     isRefreshing = false
                 }
             }
@@ -2077,19 +2079,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         currentZipSourcePath = null
         currentZipEntryPath = ""
         clearStorageRemovedEvent()
-
-        // `categoryFiles` used to be left untouched here on the (wrong)
-        // assumption that clearing it risked the same "blank flash" as
-        // `files`. It doesn't - Category always shows its own loading
-        // spinner while browseCategory() re-queries - but leaving it dirty
-        // meant: browse Category A -> back to Home -> browse Category B.
-        // The new FileExplorerScreen composition mounts and renders its
-        // very first frame *before* browseCategory(B)'s LaunchedEffect has
-        // a chance to run, so that first frame read whatever `categoryFiles`
-        // still held from Category A - a one-frame flash of the wrong
-        // category's files. Clearing it here, synchronously before the new
-        // screen is even created, closes that window completely.
-        categoryFiles = emptyList()
+        categoryJob?.cancel()
+        isCategoryLoading = false
     }
 
     fun closeArchive() {
@@ -2136,6 +2127,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             categoryFiles = categoryFiles.map {
                 if (it.file.absolutePath == fileItem.file.absolutePath) updatedItem else it
             }
+            categoryFilterType?.let { categoryCache[it to categoryBucketId] = categoryFiles }
 
             val searchIndex = searchResults.indexOfFirst { it.file.absolutePath == fileItem.file.absolutePath }
             if (searchIndex != -1) {
@@ -2316,6 +2308,28 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     var categoryBucketId by mutableStateOf<String?>(null)
         private set
 
+    var isCategoryLoading by mutableStateOf(false)
+        private set
+
+    var isRecentLoading by mutableStateOf(false)
+        private set
+
+    private var categoryJob: Job? = null
+    private val categoryCache = mutableMapOf<Pair<FileType, String?>, List<FileItem>>()
+    private val categoryCacheTime = mutableMapOf<Pair<FileType, String?>, Long>()
+
+    fun invalidateCategoryCache(type: FileType? = null) {
+        if (type != null) {
+            categoryCache.keys.filter { it.first == type }.forEach {
+                categoryCache.remove(it)
+                categoryCacheTime.remove(it)
+            }
+        } else {
+            categoryCache.clear()
+            categoryCacheTime.clear()
+        }
+    }
+
     var categoryCounts by mutableStateOf<Map<FileType, Int>>(
         settings.cachedCategoryCounts.mapNotNull { (key, count) ->
             try {
@@ -2448,31 +2462,19 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun browseCategory(type: FileType, title: String, bucketId: String? = null) {
-        // ... (check to avoid re-querying if already showing)
-        if (categoryFilterType == type && categoryTitle == title && categoryBucketId == bucketId && System.currentTimeMillis() < suppressSilentRefreshUntil) {
+    fun browseCategory(type: FileType, title: String, bucketId: String? = null, forceRefresh: Boolean = false) {
+        val sameListing = categoryFilterType == type && categoryTitle == title && categoryBucketId == bucketId
+        val now = System.currentTimeMillis()
+        val cacheKey = type to bucketId
+        val cached = categoryCache[cacheKey]
+        val cacheAge = now - (categoryCacheTime[cacheKey] ?: 0L)
+
+        // Check to avoid re-querying if already showing and within suppression window
+        if (!forceRefresh && sameListing && categoryFiles.isNotEmpty() && now < suppressSilentRefreshUntil) {
             return
         }
 
         stopWatchingDirectory()
-        // Material Files style: don't clear the list if we're just refreshing
-        // the exact same listing (same type AND same album/bucket). That
-        // keeps the UI stable and allows animateItem() to smoothly slide
-        // out removed items rather than the whole list flashing blank.
-        //
-        // A bucketId change (e.g. leaving an album back to the parent album
-        // grid, or opening a different album) is a genuinely different
-        // listing even though `type` stays the same - it used to be treated
-        // like a same-listing refresh, so the OLD album's photos stayed on
-        // screen (under the NEW crossfade key, since categoryTitle/
-        // categoryBucketId are updated synchronously below) until the fresh
-        // query finished, then swapped in - a one-frame flash of the wrong
-        // list right as the "back" animation started. Clearing here too
-        // closes that window, same fix as the type-change case.
-        if (categoryFilterType != type || categoryBucketId != bucketId) {
-            categoryFiles = emptyList()
-            isLoading = true
-        }
         currentZipFile = null
         currentZipEntryPath = ""
         categoryTitle = title
@@ -2480,8 +2482,24 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         categoryBucketId = bucketId
         currentPath = ""
 
+        // Instant display from cache if available
+        if (cached != null) {
+            categoryFiles = cached
+            if (!forceRefresh && cacheAge < 30_000L) {
+                // Highly fresh, no need to re-query
+                isCategoryLoading = false
+                isRefreshing = false
+                return
+            }
+        } else {
+            // Not in cache: clear and show loading state
+            categoryFiles = emptyList()
+            isCategoryLoading = true
+        }
+
+        categoryJob?.cancel()
         val requestGeneration = ++categoryGeneration
-        viewModelScope.launch(Dispatchers.IO) {
+        categoryJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val results = mutableListOf<FileItem>()
                 val queryUri = MediaStore.Files.getContentUri("external")
@@ -2548,6 +2566,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     val bucketNameCol = if (type == FileType.IMAGE) cursor.getColumnIndex(MediaStore.Images.Media.BUCKET_DISPLAY_NAME) else -1
 
                     while (cursor.moveToNext()) {
+                        ensureActive()
                         val path = cursor.getString(dataCol) ?: continue
                         val date = cursor.getLong(dateCol) * 1000
                         val bId = if (bucketIdCol != -1) cursor.getString(bucketIdCol) else null
@@ -2569,7 +2588,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         val mime = cursor.getString(mimeCol)
 
                         val file = File(path)
-                        if (file.exists() && file.isFile) {
+                        if (file.exists()) {
                             results.add(FileItem(
                                 file = file,
                                 isDirectory = false,
@@ -2605,19 +2624,31 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
+                ensureActive()
+                val sortedResults = sortFileList(results)
+
                 withContext(Dispatchers.Main) {
                     if (requestGeneration == categoryGeneration) {
-                        categoryFiles = sortFileList(results)
-                        isLoading = false
-                        isRefreshing = false
+                        categoryFiles = sortedResults
+                        categoryCache[cacheKey] = sortedResults
+                        categoryCacheTime[cacheKey] = System.currentTimeMillis()
                     }
                 }
+            } catch (e: CancellationException) {
+                // Ignore cancellation from newer browseCategory or exit
             } catch (e: Throwable) {
                 withContext(Dispatchers.Main) {
                     if (requestGeneration == categoryGeneration) {
                         errorMessage = "Failed to load category: ${e.message}"
-                        isLoading = false
-                        isRefreshing = false
+                    }
+                }
+            } finally {
+                withContext(NonCancellable) {
+                    withContext(Dispatchers.Main) {
+                        if (requestGeneration == categoryGeneration) {
+                            isCategoryLoading = false
+                            isRefreshing = false
+                        }
                     }
                 }
             }
@@ -2625,11 +2656,11 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun exitCategoryMode() {
+        categoryJob?.cancel()
+        isCategoryLoading = false
         categoryTitle = null
         categoryFilterType = null
-        categoryFiles = emptyList()
         categoryBucketId = null
-        loadFiles(currentPath, showLoading = false)
     }
 
     // ----- Quick access (Home screen) -----
