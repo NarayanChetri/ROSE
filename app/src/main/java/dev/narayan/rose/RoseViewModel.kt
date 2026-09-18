@@ -916,7 +916,19 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 // to prevent them from "reappearing" if the background scan is slow.
                 if (!result.success) {
                     withContext(Dispatchers.Main) {
-                        errorMessage = "Operation failed: ${result.error ?: "Unknown error"}"
+                        val err = result.error ?: ""
+                        if (err.contains("Incorrect password", ignoreCase = true) ||
+                            err.contains("wrong password", ignoreCase = true) ||
+                            err.contains("cen header", ignoreCase = true) ||
+                            err.contains("damaged compressed block", ignoreCase = true) ||
+                            err.contains("failed to decrypt", ignoreCase = true)
+                        ) {
+                            errorMessage = getApplication<Application>().getString(R.string.wrong_password)
+                        } else if (err.contains("Password required", ignoreCase = true)) {
+                            errorMessage = getApplication<Application>().getString(R.string.password_required)
+                        } else {
+                            errorMessage = "Operation failed: ${result.error ?: "Unknown error"}"
+                        }
                         if (job.type is dev.narayan.rose.filejob.FileJobType.Restore) {
                             recycleBinBulkOperationActive = false
                             loadRecycleBin()
@@ -1710,6 +1722,31 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         isCopyOperation = true // Reuse the "Paste" FAB logic
     }
 
+    fun startExtraction(
+        file: File,
+        destDir: File = File(file.parent ?: Environment.getExternalStorageDirectory().absolutePath, file.nameWithoutExtension),
+        entries: List<String>? = extractionEntries,
+        passphrase: String? = null
+    ) {
+        if (!passphrase.isNullOrEmpty()) {
+            extractArchive(file, destDir, passphrase)
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val isEncrypted = ArchiveManager.isArchiveEncrypted(file)
+            withContext(Dispatchers.Main) {
+                if (isEncrypted) {
+                    passphrasePromptItem = FileItem(file).copy(isEncrypted = true)
+                    passphraseAction = { pw ->
+                        extractArchive(file, destDir, pw)
+                    }
+                } else {
+                    extractArchive(file, destDir, null)
+                }
+            }
+        }
+    }
+
     fun extractArchive(file: File, destDir: File = File(file.parent ?: Environment.getExternalStorageDirectory().absolutePath, file.nameWithoutExtension), passphrase: String? = null) {
         dev.narayan.rose.filejob.FileJobService.startExtract(getApplication(), file.absolutePath, destDir.absolutePath, extractionEntries, passphrase)
         clearExtraction()
@@ -1948,17 +1985,26 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         exitSelectionMode()
     }
 
-    fun compressSelected(zipName: String, passphrase: String? = null) {
+    fun compressSelected(archiveName: String, format: ArchiveFormat = ArchiveFormat.ZIP, passphrase: String? = null) {
         val filesToZip = selectedFiles.toList()
         // If in a category, currentPath is "", so we default to the standard Downloads folder.
         val baseDir = currentPath.ifEmpty {
             File(Environment.getExternalStorageDirectory(), "Download").absolutePath
         }
-        val destFile = File(baseDir, if (zipName.lowercase().endsWith(".zip")) zipName else "$zipName.zip")
+        val cleanName = archiveName.trim()
+        val ext = format.extension
+        val fileName = if (cleanName.lowercase().endsWith(ext)) cleanName else "$cleanName$ext"
+        val destFile = File(baseDir, fileName)
         val sources = filesToZip.map { it.file.absolutePath }
         val displayNames = filesToZip.map { it.name }
 
-        dev.narayan.rose.filejob.FileJobService.startCompress(getApplication<android.app.Application>(), sources, displayNames, destFile.absolutePath, passphrase)
+        dev.narayan.rose.filejob.FileJobService.startCompress(
+            getApplication(),
+            sources,
+            displayNames,
+            destFile.absolutePath,
+            if (format == ArchiveFormat.ZIP) passphrase else null
+        )
         exitSelectionMode()
     }
 

@@ -842,7 +842,8 @@ object FileOperationRunner {
             return true
         } catch (e: Exception) {
             e.printStackTrace()
-            return false
+            if (JobManager.isCancelled(job.id)) return false
+            throw e
         }
     }
 

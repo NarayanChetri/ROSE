@@ -13,6 +13,15 @@ import java.nio.channels.FileChannel
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 
+enum class ArchiveFormat(val extension: String, val displayName: String) {
+    ZIP(".zip", "ZIP"),
+    SEVEN_ZIP(".7z", "7-Zip"),
+    TAR_GZ(".tar.gz", "TAR.GZ")
+}
+
+class WrongPasswordException(message: String = "Incorrect password") : Exception(message)
+class PasswordRequiredException(message: String = "Password required for this archive") : Exception(message)
+
 data class RoseArchiveEntry(
     val name: String,
     val isDirectory: Boolean,
@@ -24,6 +33,93 @@ data class RoseArchiveEntry(
 object ArchiveManager {
 
     private const val BUFFER_SIZE = 128 * 1024 // 128KB
+
+    fun isEncryptionError(e: Throwable?): Boolean {
+        var cur = e
+        while (cur != null) {
+            val msg = cur.message?.lowercase() ?: ""
+            if (msg.contains("passphrase") ||
+                msg.contains("password") ||
+                msg.contains("encrypted") ||
+                msg.contains("cen header") ||
+                msg.contains("damaged compressed block") ||
+                msg.contains("failed to decrypt") ||
+                cur is WrongPasswordException ||
+                cur is PasswordRequiredException
+            ) {
+                return true
+            }
+            cur = cur.cause
+        }
+        return false
+    }
+
+    fun isArchiveEncrypted(file: File): Boolean {
+        if (!file.exists() || file.isDirectory || file.length() == 0L) return false
+
+        // 1. Fast binary check for ZIP format general purpose bit flag (bit 0 = encrypted)
+        try {
+            if (isZipBinaryEncrypted(file)) return true
+        } catch (e: Exception) {}
+
+        // 2. Check using libarchive header inspection
+        try {
+            RandomAccessFile(file, "r").use { raf ->
+                val channel = raf.channel
+                val archive = Archive.readNew()
+                if (archive != 0L) {
+                    try {
+                        setupReadArchive(archive, channel)
+                        Archive.readOpen1(archive)
+                        while (true) {
+                            val entry = Archive.readNextHeader(archive)
+                            if (entry == 0L) break
+                            if (ArchiveEntry.isEncrypted(entry)) {
+                                return true
+                            }
+                        }
+                    } catch (e: Exception) {
+                        if (isEncryptionError(e)) return true
+                    } finally {
+                        Archive.readFree(archive)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            if (isEncryptionError(e)) return true
+        }
+
+        // 3. Fallback check using ZipFile (handles CEN encrypted or other central directory exceptions)
+        try {
+            ZipFile(file).use { zip ->
+                val enumEntries = zip.entries()
+                while (enumEntries.hasMoreElements()) {
+                    val entry = enumEntries.nextElement()
+                    // Java ZipFile does not expose encryption per-entry, but parses central directory
+                }
+            }
+        } catch (e: Exception) {
+            if (isEncryptionError(e)) return true
+        }
+
+        return false
+    }
+
+    private fun isZipBinaryEncrypted(file: File): Boolean {
+        if (file.length() < 30) return false
+        RandomAccessFile(file, "r").use { raf ->
+            val header = ByteArray(30)
+            raf.readFully(header)
+            // Local file header signature: 0x04034b50 (little-endian: 0x50, 0x4b, 0x03, 0x04)
+            if (header[0] == 0x50.toByte() && header[1] == 0x4b.toByte() &&
+                header[2] == 0x03.toByte() && header[3] == 0x04.toByte()) {
+                val flags = (header[6].toInt() and 0xFF) or ((header[7].toInt() and 0xFF) shl 8)
+                // Bit 0: encrypted
+                if ((flags and 0x0001) != 0) return true
+            }
+        }
+        return false
+    }
 
     fun readEntries(file: File): List<RoseArchiveEntry> {
         val entries = try {
@@ -127,33 +223,45 @@ object ArchiveManager {
         if (archive == 0L) throw Exception("Failed to initialize archive engine")
         var success = false
         try {
-            Archive.writeSetFormatZip(archive)
+            val lowerName = targetFile.name.lowercase()
+            when {
+                lowerName.endsWith(".7z") -> {
+                    Archive.writeSetFormat7zip(archive)
+                }
+                lowerName.endsWith(".tar.gz") || lowerName.endsWith(".tgz") -> {
+                    Archive.writeSetFormatGnutar(archive)
+                    Archive.writeAddFilterGzip(archive)
+                }
+                else -> {
+                    Archive.writeSetFormatZip(archive)
 
-            // Speed up compression by using a lower compression level.
-            // Level 6 (default) is often too slow for mobile CPUs, while
-            // Level 1-4 provides a much better speed/ratio balance.
-            try {
-                Archive.writeSetOptions(archive, "zip:compression-level=4".toByteArray())
-            } catch (e: Throwable) {}
-
-            if (!passphrase.isNullOrEmpty()) {
-                try {
-                    // zip:encryption=aes256 is the modern standard but requires a 
-                    // libarchive built with crypto support (like mbedTLS or OpenSSL).
-                    // We try AES256 first, then fallback to traditional zipcrypt.
+                    // Speed up compression by using a lower compression level.
+                    // Level 6 (default) is often too slow for mobile CPUs, while
+                    // Level 1-4 provides a much better speed/ratio balance.
                     try {
-                        Archive.writeSetOptions(archive, "zip:encryption=aes256".toByteArray())
-                    } catch (e: Throwable) {
+                        Archive.writeSetOptions(archive, "zip:compression-level=4".toByteArray())
+                    } catch (e: Throwable) {}
+
+                    if (!passphrase.isNullOrEmpty()) {
                         try {
-                            Archive.writeSetOptions(archive, "zip:encryption=zipcrypt".toByteArray())
-                        } catch (e2: Throwable) {}
+                            // zip:encryption=aes256 is the modern standard but requires a 
+                            // libarchive built with crypto support (like mbedTLS or OpenSSL).
+                            // We try AES256 first, then fallback to traditional zipcrypt.
+                            try {
+                                Archive.writeSetOptions(archive, "zip:encryption=aes256".toByteArray())
+                            } catch (e: Throwable) {
+                                try {
+                                    Archive.writeSetOptions(archive, "zip:encryption=zipcrypt".toByteArray())
+                                } catch (e2: Throwable) {}
+                            }
+                            Archive.writeSetPassphrase(archive, passphrase.toByteArray())
+                        } catch (e: Throwable) {
+                            e.printStackTrace()
+                        }
                     }
-                    Archive.writeSetPassphrase(archive, passphrase.toByteArray())
-                } catch (e: Throwable) {
-                    e.printStackTrace()
                 }
             }
-            
+
             Archive.writeOpenFileName(archive, targetFile.absolutePath.toByteArray())
 
             val buffer = ByteBuffer.allocateDirect(BUFFER_SIZE)
@@ -216,28 +324,45 @@ object ArchiveManager {
 
     fun extractEntry(file: File, entryPath: String, outputStream: OutputStream, passphrase: String? = null) {
         var success = false
+        var lastError: Exception? = null
         try {
             RandomAccessFile(file, "r").use { raf ->
                 extractEntry(raf.channel, entryPath, outputStream, passphrase)
                 success = true
             }
         } catch (e: Exception) {
+            lastError = e
             try {
                 FileInputStream(file).use { fis ->
                     extractEntry(fis, entryPath, outputStream, passphrase)
                     success = true
+                    lastError = null
                 }
             } catch (e2: Exception) {
+                lastError = e2
                 e2.printStackTrace()
             }
         }
 
         if (!success) {
-            try {
-                extractEntryZipFallback(file, entryPath, outputStream)
-            } catch (e: Exception) {
-                e.printStackTrace()
-                throw e
+            if (lastError != null && isEncryptionError(lastError)) {
+                if (!passphrase.isNullOrEmpty()) {
+                    throw WrongPasswordException("Incorrect password")
+                } else {
+                    throw PasswordRequiredException("Password required for this entry")
+                }
+            }
+            if (passphrase == null) {
+                try {
+                    extractEntryZipFallback(file, entryPath, outputStream)
+                } catch (e: Exception) {
+                    if (isEncryptionError(e)) {
+                        throw PasswordRequiredException("Password required for this entry")
+                    }
+                    throw e
+                }
+            } else {
+                throw lastError ?: WrongPasswordException("Incorrect password")
             }
         }
     }
@@ -279,7 +404,7 @@ object ArchiveManager {
                 if (entry == 0L) break
                 val name = getEntryName(entry).trimStart('/')
                 if (name == cleanTarget) {
-                    copyData(archive, outputStream)
+                    copyData(archive, outputStream, !passphrase.isNullOrEmpty())
                     return
                 }
             }
@@ -300,7 +425,7 @@ object ArchiveManager {
                 if (entry == 0L) break
                 val name = getEntryName(entry).trimStart('/')
                 if (name == cleanTarget) {
-                    copyData(archive, outputStream)
+                    copyData(archive, outputStream, !passphrase.isNullOrEmpty())
                     return
                 }
             }
@@ -334,7 +459,7 @@ object ArchiveManager {
                         if (name == cleanEntryName || name == "$cleanEntryName/") {
                             if (!isDir) {
                                 dest.parentFile?.mkdirs()
-                                dest.outputStream().use { output -> copyData(archive, output) }
+                                dest.outputStream().use { output -> copyData(archive, output, !passphrase.isNullOrEmpty()) }
                                 extractedAny = true
                                 return
                             }
@@ -346,7 +471,7 @@ object ArchiveManager {
                                     childDest.mkdirs()
                                 } else {
                                     childDest.parentFile?.mkdirs()
-                                    childDest.outputStream().use { output -> copyData(archive, output) }
+                                    childDest.outputStream().use { output -> copyData(archive, output, !passphrase.isNullOrEmpty()) }
                                 }
                                 extractedAny = true
                             }
@@ -409,10 +534,12 @@ object ArchiveManager {
 
     fun extractAll(archiveFile: File, passphrase: String? = null, onEntry: (name: String, isDirectory: Boolean, copyTask: (OutputStream) -> Unit) -> Unit) {
         var count = 0
+        var caughtException: Exception? = null
         try {
             RandomAccessFile(archiveFile, "r").use { raf ->
                 val channel = raf.channel
                 val archive = Archive.readNew()
+                if (archive == 0L) throw Exception("Failed to initialize archive engine")
                 try {
                     setupReadArchive(archive, channel, passphrase)
                     Archive.readOpen1(archive)
@@ -423,22 +550,46 @@ object ArchiveManager {
                         val stat = ArchiveEntry.stat(entry)
                         val isDir = (stat.stMode and 0xf000) == 0x4000
                         count++
-                        onEntry(name, isDir) { output -> copyData(archive, output) }
+                        onEntry(name, isDir) { output -> copyData(archive, output, !passphrase.isNullOrEmpty()) }
                     }
                 } finally {
                     Archive.readFree(archive)
                 }
             }
         } catch (e: Exception) {
+            caughtException = e
             e.printStackTrace()
         }
 
+        if (caughtException != null) {
+            if (isEncryptionError(caughtException)) {
+                if (!passphrase.isNullOrEmpty()) {
+                    throw WrongPasswordException("Incorrect password")
+                } else {
+                    throw PasswordRequiredException("Password required for this archive")
+                }
+            }
+        }
+
         if (count == 0) {
+            if (!passphrase.isNullOrEmpty()) {
+                throw caughtException?.let {
+                    if (isEncryptionError(it)) WrongPasswordException("Incorrect password") else it
+                } ?: WrongPasswordException("Incorrect password")
+            }
+            if (caughtException != null) {
+                throw caughtException
+            }
             try {
                 extractAllZipFallback(archiveFile, onEntry)
             } catch (e: Exception) {
-                e.printStackTrace()
+                if (isEncryptionError(e)) {
+                    throw PasswordRequiredException("Password required for this archive")
+                }
+                throw e
             }
+        } else if (caughtException != null) {
+            throw caughtException
         }
     }
 
@@ -457,15 +608,19 @@ object ArchiveManager {
         }
     }
 
-    private fun copyData(archive: Long, output: OutputStream) {
+    private fun copyData(archive: Long, output: OutputStream, hasPassphrase: Boolean = false) {
         val buffer = ByteBuffer.allocateDirect(BUFFER_SIZE)
         while (true) {
             buffer.clear()
             try {
                 Archive.readData(archive, buffer)
             } catch (e: Exception) {
-                if (e.message?.contains("Passphrase required") == true) {
-                    throw Exception("Password required for this entry")
+                if (isEncryptionError(e) || e.message?.contains("Damaged compressed block") == true || e.message?.contains("Failed to decrypt") == true) {
+                    if (hasPassphrase) {
+                        throw WrongPasswordException("Incorrect password")
+                    } else {
+                        throw PasswordRequiredException("Password required for this entry")
+                    }
                 }
                 throw e
             }
