@@ -411,7 +411,7 @@ fun FileExplorerScreen(
                 viewModel.navigateZipUp()
             } else {
                 // At zip root. Decide whether to exit to Home or return to parent folder.
-                if (fromHome || (viewModel.currentZipSourcePath != null && SafManager.isSafUri(viewModel.currentZipSourcePath!!))) {
+                if (fromHome && (viewModel.currentZipFile?.absolutePath == startPath || viewModel.currentZipSourcePath == startPath)) {
                     onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
                 } else if (lastNonZipView != "Files") {
                     currentView = lastNonZipView
@@ -468,9 +468,21 @@ fun FileExplorerScreen(
     // With the full-screen crossfade no longer keyed on `path`, the LazyColumn/LazyVerticalGrid
     // call sites persist across folder navigation, so their scroll state persists too unless we
     // reset it ourselves. Key this on whatever actually identifies "a different list of files":
-    // the path for "Files", the category title for "Category", and a constant for "Recent".
+    // the path for "Files" (including archive file & inner entry path for virtual zip views),
+    // the category title for "Category", and a constant for "Recent".
+    val activeScrollKey = when (currentView) {
+        "Files" -> if (viewModel.currentZipFile != null) {
+            "zip://${viewModel.currentZipFile?.absolutePath}:${viewModel.currentZipEntryPath}"
+        } else {
+            viewModel.currentPath
+        }
+        "Category" -> "category:${viewModel.categoryTitle ?: ""}:${viewModel.categoryBucketId ?: ""}"
+        "Recent" -> "recent"
+        else -> currentView
+    }
+
     val scrollResetKey = when (currentView) {
-        "Files" -> "${viewModel.currentPath}_${viewModel.sortBy}_${viewModel.sortOrder}"
+        "Files" -> "${activeScrollKey}_${viewModel.sortBy}_${viewModel.sortOrder}"
         "Category" -> "${viewModel.categoryTitle ?: ""}_${viewModel.categoryBucketId ?: ""}_${viewModel.sortBy}_${viewModel.sortOrder}"
         else -> "${currentView}_${viewModel.sortBy}_${viewModel.sortOrder}"
     }
@@ -495,10 +507,11 @@ fun FileExplorerScreen(
             // Material Files style: check if we have a saved scroll position for
             // this path (e.g. from navigating back). If so, restore it; otherwise
             // start at the top for a new folder/sort.
-            val savedPos = if (currentView == "Files") viewModel.getScrollPosition(viewModel.currentPath) else null
+            val savedPos = viewModel.getScrollPosition(activeScrollKey)
             if (savedPos != null) {
-                listState.scrollToItem(savedPos.first, savedPos.second)
-                gridState.scrollToItem(savedPos.first, savedPos.second)
+                val targetIndex = savedPos.first.coerceIn(0, (displayedFiles.size - 1).coerceAtLeast(0))
+                listState.scrollToItem(targetIndex, savedPos.second)
+                gridState.scrollToItem(targetIndex, savedPos.second)
             } else {
                 listState.scrollToItem(0)
                 gridState.scrollToItem(0)
@@ -534,15 +547,15 @@ fun FileExplorerScreen(
     // To avoid saving the OLD path's scroll position into the NEW path's
     // slot immediately after navigation, we track the 'active' path separately
     // and only update it once the corresponding list has actually arrived.
-    var pathForSaving by remember { mutableStateOf(viewModel.currentPath) }
-    LaunchedEffect(displayedFiles, viewModel.isLoading) {
-        if (!viewModel.isLoading && displayedFiles.isNotEmpty() && currentView == "Files") {
-            pathForSaving = viewModel.currentPath
+    var pathForSaving by remember { mutableStateOf(activeScrollKey) }
+    LaunchedEffect(displayedFiles, viewModel.isLoading, activeScrollKey) {
+        if (!viewModel.isLoading && displayedFiles.isNotEmpty()) {
+            pathForSaving = activeScrollKey
         }
     }
 
     LaunchedEffect(listState, gridState, pathForSaving, currentView, currentIsGridView) {
-        if (currentView == "Files" && pathForSaving.isNotEmpty()) {
+        if (pathForSaving.isNotEmpty()) {
             snapshotFlow {
                 if (currentIsGridView) {
                     if (gridState.layoutInfo.visibleItemsInfo.isNotEmpty()) {
@@ -554,7 +567,7 @@ fun FileExplorerScreen(
                     } else null
                 }
             }.collect { pos ->
-                if (pos != null) {
+                if (pos != null && pathForSaving == activeScrollKey) {
                     viewModel.saveScrollPosition(pathForSaving, pos.first, pos.second)
                 }
             }
@@ -931,7 +944,7 @@ fun FileExplorerScreen(
                                                     } else {
                                                         Modifier.clickable {
                                                             val dest = File(viewModel.currentPath, viewModel.extractionSource!!.nameWithoutExtension)
-                                                            viewModel.extractArchive(viewModel.extractionSource!!, dest)
+                                                            viewModel.startExtraction(viewModel.extractionSource!!, dest)
                                                         }
                                                     }
                                                 )
@@ -1590,23 +1603,13 @@ fun FileExplorerScreen(
                                         item = fileItem,
                                         onDismiss = { showExtractionDialog = null },
                                         onExtractHere = {
-                                            if (fileItem.isEncrypted) {
-                                                viewModel.passphrasePromptItem = fileItem
-                                                viewModel.passphraseAction = { passphrase ->
-                                                    if (viewModel.currentZipFile != null || fileItem.zipEntryPath != null) {
-                                                        viewModel.extractArchive(fileItem.file, File(viewModel.currentPath), passphrase)
-                                                    } else {
-                                                        viewModel.extractArchive(fileItem.file, passphrase = passphrase)
-                                                    }
-                                                }
+                                            val destDir = if (viewModel.currentZipFile != null || fileItem.zipEntryPath != null) {
+                                                File(viewModel.currentPath)
                                             } else {
-                                                if (viewModel.currentZipFile != null || fileItem.zipEntryPath != null) {
-                                                    // Extracting from within a zip or a virtual entry
-                                                    viewModel.extractArchive(fileItem.file, File(viewModel.currentPath))
-                                                } else {
-                                                    viewModel.extractArchive(fileItem.file)
-                                                }
+                                                File(fileItem.file.parent ?: Environment.getExternalStorageDirectory().absolutePath, fileItem.file.nameWithoutExtension)
                                             }
+                                            val entries = if (fileItem.zipEntryPath != null) listOf(fileItem.zipEntryPath) else null
+                                            viewModel.startExtraction(fileItem.file, destDir, entries)
                                             showExtractionDialog = null
                                             viewModel.exitSelectionMode()
                                         },
@@ -1638,9 +1641,10 @@ fun FileExplorerScreen(
 
     if (showCompressDialog) {
         CompressDialog(
+            itemCount = viewModel.selectedFiles.size,
             onDismiss = { showCompressDialog = false },
-            onConfirm = { name, password ->
-                viewModel.compressSelected(name, password)
+            onConfirm = { name, format, password ->
+                viewModel.compressSelected(name, format, password)
                 showCompressDialog = false
             }
         )
@@ -3381,67 +3385,231 @@ fun PropertiesDialog(fileItem: FileItem, onDismiss: () -> Unit, viewModel: RoseV
 }
 
 @Composable
-fun CompressDialog(onDismiss: () -> Unit, onConfirm: (String, String?) -> Unit) {
+fun CompressDialog(
+    itemCount: Int = 1,
+    onDismiss: () -> Unit,
+    onConfirm: (String, ArchiveFormat, String?) -> Unit
+) {
     var folderName by remember { mutableStateOf("Archive") }
+    var selectedFormat by remember { mutableStateOf(ArchiveFormat.ZIP) }
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(54.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(18.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(
                     Icons.Default.Archive,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(stringResource(R.string.compress_dialog_title))
+            }
+        },
+        title = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = stringResource(R.string.compress_dialog_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = if (itemCount > 1) {
+                        stringResource(R.string.compress_items_count, itemCount)
+                    } else {
+                        stringResource(R.string.compress_items_count_single)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                TextField(
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Format Selector Section
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = stringResource(R.string.compress_format_label),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ArchiveFormat.values().forEach { format ->
+                            val isSelected = selectedFormat == format
+                            Surface(
+                                onClick = { selectedFormat = format },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                border = if (isSelected) {
+                                    androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+                                } else null,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (isSelected) {
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                    }
+                                    Text(
+                                        text = format.displayName,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // File Name Input Field
+                OutlinedTextField(
                     value = folderName,
                     onValueChange = { folderName = it },
                     label = { Text(stringResource(R.string.compress_file_name_label)) },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    suffix = { Text(".zip") }
-                )
-
-                TextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text(stringResource(R.string.compress_password_label)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        IconButton(onClick = { showPassword = !showPassword }) {
-                            Icon(
-                                if (showPassword) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                contentDescription = null
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester),
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.FolderZip,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    },
+                    suffix = {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                        ) {
+                            Text(
+                                text = selectedFormat.extension,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }
                     }
                 )
+
+                // Password Section (Animated - Only shown when ZIP format is selected)
+                AnimatedVisibility(
+                    visible = selectedFormat == ArchiveFormat.ZIP,
+                    enter = expandVertically(animationSpec = tween(250)) + fadeIn(animationSpec = tween(250)),
+                    exit = shrinkVertically(animationSpec = tween(200)) + fadeOut(animationSpec = tween(200))
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            label = { Text(stringResource(R.string.compress_password_label)) },
+                            singleLine = true,
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Lock,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.secondary
+                                )
+                            },
+                            trailingIcon = {
+                                IconButton(onClick = { showPassword = !showPassword }) {
+                                    Icon(
+                                        if (showPassword) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                        contentDescription = if (showPassword) "Hide password" else "Show password",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        )
+                        Text(
+                            text = stringResource(R.string.compress_password_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
                     if (folderName.isNotBlank()) {
-                        onConfirm(folderName, password.takeIf { it.isNotEmpty() })
+                        onConfirm(
+                            folderName.trim(),
+                            selectedFormat,
+                            if (selectedFormat == ArchiveFormat.ZIP) password.takeIf { it.isNotEmpty() } else null
+                        )
                     }
                 },
-                shape = RoundedCornerShape(12.dp)
-            ) { Text(stringResource(R.string.action_compress)) }
+                enabled = folderName.isNotBlank(),
+                shape = RoundedCornerShape(14.dp),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
+            ) {
+                Icon(
+                    Icons.Default.Archive,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    stringResource(R.string.action_compress),
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+            TextButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text(stringResource(R.string.action_cancel))
+            }
         },
-        shape = RoundedCornerShape(24.dp)
+        shape = RoundedCornerShape(28.dp)
     )
 }
 
@@ -3574,6 +3742,7 @@ fun CreateFolderDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
 @Composable
 fun PasswordDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
     var password by remember { mutableStateOf("") }
+    var showPassword by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
@@ -3590,13 +3759,23 @@ fun PasswordDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
             }
         },
         text = {
-            TextField(
+            OutlinedTextField(
                 value = password,
                 onValueChange = { password = it },
                 label = { Text(stringResource(R.string.password_label)) },
                 singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
+                shape = RoundedCornerShape(14.dp),
+                visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                trailingIcon = {
+                    IconButton(onClick = { showPassword = !showPassword }) {
+                        Icon(
+                            if (showPassword) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                            contentDescription = if (showPassword) "Hide password" else "Show password",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(focusRequester)

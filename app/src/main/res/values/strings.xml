@@ -196,9 +196,13 @@
     <string name="prop_modified">Modified</string>
 
     <!-- Dialogs: Compress & Extract -->
-    <string name="compress_dialog_title">Compress to Zip</string>
-    <string name="compress_file_name_label">Zip file name</string>
+    <string name="compress_dialog_title">Create Archive</string>
+    <string name="compress_file_name_label">Archive Name</string>
     <string name="compress_password_label">Password (Optional)</string>
+    <string name="compress_format_label">Archive Format</string>
+    <string name="compress_items_count">Compressing %1$d items</string>
+    <string name="compress_items_count_single">Compressing 1 item</string>
+    <string name="compress_password_hint">AES-256 encrypted</string>
     <string name="extract_dialog_title">Extract Archive</string>
     <string name="extract_dialog_message">How would you like to extract \"%1$s\"?</string>
     <string name="extract_here_title">Extract here</string>
@@ -211,6 +215,8 @@
     <string name="create_folder_name_label">Folder Name</string>
     <string name="password_dialog_title">Password Required</string>
     <string name="password_label">Password</string>
+    <string name="wrong_password">Incorrect password. Please try again.</string>
+    <string name="password_required">This archive is password protected.</string>
     <string name="rename_dialog_title">Rename</string>
     <string name="rename_new_name_label">New Name</string>
 

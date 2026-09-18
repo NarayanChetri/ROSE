@@ -826,9 +826,12 @@ class MainActivity : ComponentActivity() {
                         }
                         uris.add(FileProvider.getUriForFile(this@MainActivity, "${packageName}.provider", cacheFile))
                     } catch (e: Exception) {
-                        if (e.message?.contains("Password required") == true || e.message?.contains("Invalid password") == true) {
+                        if (ArchiveManager.isEncryptionError(e)) {
                             withContext(Dispatchers.Main) {
                                 viewModel.cachedZipPassword = null
+                                if (effectivePassphrase != null) {
+                                    Toast.makeText(this@MainActivity, R.string.wrong_password, Toast.LENGTH_SHORT).show()
+                                }
                                 viewModel.passphrasePromptItem = item
                                 viewModel.passphraseAction = { pw -> shareFiles(fileItems, pw) }
                             }
@@ -948,8 +951,11 @@ else {
                     }
                     FileProvider.getUriForFile(this, "${packageName}.provider", cacheFile)
                 } catch (e: Exception) {
-                    if (e.message?.contains("Password required") == true || e.message?.contains("Invalid password") == true) {
+                    if (ArchiveManager.isEncryptionError(e)) {
                         viewModel.cachedZipPassword = null
+                        if (effectivePassphrase != null) {
+                            Toast.makeText(this, R.string.wrong_password, Toast.LENGTH_SHORT).show()
+                        }
                         viewModel.passphrasePromptItem = fileItem
                         viewModel.passphraseAction = { pw -> openFile(fileItem, pw) }
                     } else {
