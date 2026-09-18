@@ -10,6 +10,7 @@ app/build/
 
 # Gradle files and caches
 .gradle/
+.kotlin/
 /build.gradle.kts.swp
 
 # Android Studio / IntelliJ IDEA specific files

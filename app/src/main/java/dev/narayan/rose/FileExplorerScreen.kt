@@ -39,7 +39,7 @@ import androidx.compose.material.icons.automirrored.outlined.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,6 +80,10 @@ import dev.narayan.rose.filejob.FileJobType
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -326,7 +330,8 @@ fun FileExplorerScreen(
                     currentView == "Category" -> {
                         val type = viewModel.categoryFilterType
                         val title = viewModel.categoryTitle
-                        if (type != null && title != null) viewModel.browseCategory(type, title)
+                        val bucketId = viewModel.categoryBucketId
+                        if (type != null && title != null) viewModel.browseCategory(type, title, bucketId = bucketId)
                     }
                     else -> {
                         // Only auto-refresh if it's a normal directory view
@@ -349,7 +354,7 @@ fun FileExplorerScreen(
         }
         when {
             startCategory != null -> {
-                if (viewModel.categoryFilterType != startCategory.first || viewModel.categoryTitle != startCategory.second || (viewModel.categoryFiles.isEmpty() && !viewModel.isCategoryLoading)) {
+                if (viewModel.categoryFilterType != startCategory.first || (viewModel.categoryBucketId == null && viewModel.categoryTitle != startCategory.second) || (viewModel.categoryFiles.isEmpty() && !viewModel.isCategoryLoading)) {
                     viewModel.browseCategory(startCategory.first, startCategory.second)
                 }
             }
@@ -419,7 +424,7 @@ fun FileExplorerScreen(
                     else if (currentView == "Category") {
                         val type = viewModel.categoryFilterType
                         val title = viewModel.categoryTitle
-                        if (type != null && title != null) viewModel.browseCategory(type, title)
+                        if (type != null && title != null) viewModel.browseCategory(type, title, bucketId = viewModel.categoryBucketId)
                     }
                     viewModel.closeArchive()
                 } else {
@@ -481,10 +486,13 @@ fun FileExplorerScreen(
         else -> currentView
     }
 
+    var refreshAnimationToken by remember { mutableStateOf(0) }
+    var isPullRefreshing by remember { mutableStateOf(false) }
+
     val scrollResetKey = when (currentView) {
-        "Files" -> "${activeScrollKey}_${viewModel.sortBy}_${viewModel.sortOrder}"
-        "Category" -> "${viewModel.categoryTitle ?: ""}_${viewModel.categoryBucketId ?: ""}_${viewModel.sortBy}_${viewModel.sortOrder}"
-        else -> "${currentView}_${viewModel.sortBy}_${viewModel.sortOrder}"
+        "Files" -> "${activeScrollKey}_${viewModel.sortBy}_${viewModel.sortOrder}_$refreshAnimationToken"
+        "Category" -> "${viewModel.categoryTitle ?: ""}_${viewModel.categoryBucketId ?: ""}_${viewModel.sortBy}_${viewModel.sortOrder}_$refreshAnimationToken"
+        else -> "${currentView}_${viewModel.sortBy}_${viewModel.sortOrder}_$refreshAnimationToken"
     }
     // Folder navigation updates `scrollResetKey` and its file list together
     // (loadFiles assigns currentPath + files atomically), so scrolling to 0
@@ -498,7 +506,13 @@ fun FileExplorerScreen(
     // exactly the "sort doesn't scroll to top" bug. So a reset is marked
     // pending on key change, and only actually performed once the
     // corresponding (already re-sorted) list has arrived.
+    var lastScrollResetKey by remember { mutableStateOf(scrollResetKey) }
     var pendingScrollReset by remember { mutableStateOf(false) }
+
+    if (scrollResetKey != lastScrollResetKey) {
+        pendingScrollReset = true
+    }
+
     LaunchedEffect(scrollResetKey) {
         pendingScrollReset = true
     }
@@ -517,6 +531,7 @@ fun FileExplorerScreen(
                 gridState.scrollToItem(0)
             }
             pendingScrollReset = false
+            lastScrollResetKey = scrollResetKey
         }
     }
 
@@ -678,7 +693,11 @@ fun FileExplorerScreen(
             if (index != -1) {
                 // Slight delay to ensure list is settled for smoother animation
                 kotlinx.coroutines.delay(100)
-                listState.animateScrollToItem(index)
+                if (currentIsGridView) {
+                    gridState.animateScrollToItem(index)
+                } else {
+                    listState.animateScrollToItem(index)
+                }
                 // Clear highlight after 2 seconds
                 kotlinx.coroutines.delay(2000)
                 viewModel.highlightedFile = null
@@ -777,7 +796,7 @@ fun FileExplorerScreen(
                                                     else if (currentView == "Category") {
                                                         val type = viewModel.categoryFilterType
                                                         val title = viewModel.categoryTitle
-                                                        if (type != null && title != null) viewModel.browseCategory(type, title)
+                                                        if (type != null && title != null) viewModel.browseCategory(type, title, bucketId = viewModel.categoryBucketId)
                                                     }
                                                     viewModel.closeArchive()
                                                 } else {
@@ -1036,19 +1055,56 @@ fun FileExplorerScreen(
                         }
                     }
                 ) { paddingValues ->
+                    val refreshScope = rememberCoroutineScope()
+                    val pullToRefreshState = rememberPullToRefreshState()
                     PullToRefreshBox(
-                        isRefreshing = viewModel.isRefreshing,
+                        isRefreshing = isPullRefreshing,
                         onRefresh = {
-                            when {
-                                currentView == "Recent" -> viewModel.loadRecentFiles()
-                                currentView == "Category" -> {
-                                    val type = viewModel.categoryFilterType
-                                    val title = viewModel.categoryTitle
-                                    if (type != null && title != null) viewModel.browseCategory(type, title, bucketId = viewModel.categoryBucketId, forceRefresh = true)
+                            if (viewModel.isSelectionMode || viewModel.isLoading || isPullRefreshing) return@PullToRefreshBox
+                            isPullRefreshing = true
+                            refreshScope.launch {
+                                val startTime = System.currentTimeMillis()
+                                try {
+                                    when {
+                                        currentView == "Recent" -> {
+                                            viewModel.loadRecentFiles()
+                                        }
+                                        currentView == "Category" -> {
+                                            val type = viewModel.categoryFilterType
+                                            val title = viewModel.categoryTitle
+                                            if (type != null && title != null) {
+                                                viewModel.browseCategory(type, title, bucketId = viewModel.categoryBucketId, forceRefresh = true)
+                                            }
+                                        }
+                                        viewModel.currentZipFile != null -> {
+                                            viewModel.openArchive(viewModel.currentZipFile!!, viewModel.currentZipEntryPath)
+                                        }
+                                        else -> {
+                                            viewModel.loadFiles(viewModel.currentPath, isManualRefresh = true)
+                                        }
+                                    }
+                                    while (viewModel.isLoading || viewModel.isCategoryLoading || viewModel.isRecentLoading) {
+                                        kotlinx.coroutines.delay(40)
+                                    }
+                                } finally {
+                                    val elapsed = System.currentTimeMillis() - startTime
+                                    val minSpinDuration = 650L
+                                    if (elapsed < minSpinDuration) {
+                                        kotlinx.coroutines.delay(minSpinDuration - elapsed)
+                                    }
+                                    isPullRefreshing = false
+                                    viewModel.isRefreshing = false
+                                    refreshAnimationToken++
                                 }
-                                viewModel.currentZipFile != null -> viewModel.openArchive(viewModel.currentZipFile!!, viewModel.currentZipEntryPath)
-                                else -> viewModel.loadFiles(viewModel.currentPath, isManualRefresh = true)
                             }
+                        },
+                        state = pullToRefreshState,
+                        indicator = {
+                            PullToRefreshDefaults.Indicator(
+                                state = pullToRefreshState,
+                                isRefreshing = isPullRefreshing,
+                                modifier = Modifier.align(Alignment.TopCenter)
+                            )
                         },
                         modifier = Modifier.padding(paddingValues).fillMaxSize()
                     ) {
@@ -1193,10 +1249,12 @@ fun FileExplorerScreen(
                                         }
 
                                         val isCurrentlyLoading = when (state.view) {
-                                            "Category" -> viewModel.isCategoryLoading || viewModel.isRefreshing
-                                            "Recent" -> viewModel.isRecentLoading || viewModel.isRefreshing
-                                            else -> viewModel.isLoading || viewModel.isRefreshing || viewModel.isRecursiveSearching
+                                            "Category" -> viewModel.isCategoryLoading || isPullRefreshing
+                                            "Recent" -> viewModel.isRecentLoading || isPullRefreshing
+                                            else -> viewModel.isLoading || isPullRefreshing || viewModel.isRecursiveSearching
                                         }
+
+                                        val isNavigatingOrResetting = pendingScrollReset || isPullRefreshing || (scrollResetKey != lastScrollResetKey)
 
                                         if (displayedFilesFinal.isEmpty() && !isCurrentlyLoading) {
                                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -1239,7 +1297,15 @@ fun FileExplorerScreen(
                                                                     scrollResetKey = scrollResetKey,
                                                                     hasAnimatedBefore = skipEntranceAnimation || animatedItemKeys.contains(fileItem.file.absolutePath),
                                                                     onAnimationStart = { animatedItemKeys.add(fileItem.file.absolutePath) },
-                                                                    modifier = if (skipEntranceAnimation || pendingScrollReset) Modifier else Modifier.animateItem(),
+                                                                    modifier = if (skipEntranceAnimation || isNavigatingOrResetting) {
+                                                                        Modifier
+                                                                    } else {
+                                                                        Modifier.animateItem(
+                                                                            fadeInSpec = null,
+                                                                            fadeOutSpec = null,
+                                                                            placementSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                                                                        )
+                                                                    },
                                                                     onClick = {
                                                                         if (viewModel.isSelectionMode) {
                                                                             viewModel.toggleSelection(fileItem)
@@ -1297,7 +1363,15 @@ fun FileExplorerScreen(
                                                             scrollResetKey = scrollResetKey, // Pass key to restart animation on path change
                                                             hasAnimatedBefore = skipEntranceAnimation || animatedItemKeys.contains(fileItem.file.absolutePath),
                                                             onAnimationStart = { animatedItemKeys.add(fileItem.file.absolutePath) },
-                                                            modifier = if (skipEntranceAnimation || pendingScrollReset) Modifier else Modifier.animateItem(),
+                                                            modifier = if (skipEntranceAnimation || isNavigatingOrResetting) {
+                                                                Modifier
+                                                            } else {
+                                                                Modifier.animateItem(
+                                                                    fadeInSpec = null,
+                                                                    fadeOutSpec = null,
+                                                                    placementSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                                                                )
+                                                            },
                                                             onClick = {
                                                                 if (viewModel.isSelectionMode) {
                                                                     viewModel.toggleSelection(fileItem)
@@ -1379,7 +1453,15 @@ fun FileExplorerScreen(
                                                                     scrollResetKey = scrollResetKey,
                                                                     hasAnimatedBefore = skipEntranceAnimation || animatedItemKeys.contains(fileItem.file.absolutePath),
                                                                     onAnimationStart = { animatedItemKeys.add(fileItem.file.absolutePath) },
-                                                                    modifier = if (skipEntranceAnimation || pendingScrollReset) Modifier else Modifier.animateItem(),
+                                                                    modifier = if (skipEntranceAnimation || isNavigatingOrResetting) {
+                                                                        Modifier
+                                                                    } else {
+                                                                        Modifier.animateItem(
+                                                                            fadeInSpec = null,
+                                                                            fadeOutSpec = null,
+                                                                            placementSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                                                                        )
+                                                                    },
                                                                     onClick = {
                                                                         if (viewModel.isSelectionMode) {
                                                                             viewModel.toggleSelection(fileItem)
@@ -1495,7 +1577,15 @@ fun FileExplorerScreen(
                                                             scrollResetKey = scrollResetKey, // Pass key to restart animation on path change
                                                             hasAnimatedBefore = skipEntranceAnimation || animatedItemKeys.contains(fileItem.file.absolutePath),
                                                             onAnimationStart = { animatedItemKeys.add(fileItem.file.absolutePath) },
-                                                            modifier = if (skipEntranceAnimation || pendingScrollReset) Modifier else Modifier.animateItem(),
+                                                            modifier = if (skipEntranceAnimation || isNavigatingOrResetting) {
+                                                                Modifier
+                                                            } else {
+                                                                Modifier.animateItem(
+                                                                    fadeInSpec = null,
+                                                                    fadeOutSpec = null,
+                                                                    placementSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                                                                )
+                                                            },
                                                             onClick = {
                                                                 if (viewModel.isSelectionMode) {
                                                                     viewModel.toggleSelection(fileItem)
@@ -3708,6 +3798,15 @@ private fun ExtractionDialog(
 @Composable
 fun CreateFolderDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
     var folderName by remember { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(100)
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -3723,12 +3822,23 @@ fun CreateFolderDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
                 onValueChange = { folderName = it },
                 label = { Text(stringResource(R.string.create_folder_name_label)) },
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth()
+                keyboardOptions = KeyboardOptions(
+                    imeAction = ImeAction.Done,
+                    capitalization = KeyboardCapitalization.Words
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        if (folderName.isNotBlank()) onCreate(folderName.trim())
+                    }
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester)
             )
         },
         confirmButton = {
             Button(
-                onClick = { if (folderName.isNotBlank()) onCreate(folderName) },
+                onClick = { if (folderName.isNotBlank()) onCreate(folderName.trim()) },
                 shape = RoundedCornerShape(12.dp)
             ) { Text(stringResource(R.string.action_create)) }
         },
@@ -3807,9 +3917,12 @@ fun RenameDialog(initialName: String, onDismiss: () -> Unit, onRename: (String) 
         )
     }
     val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(100)
         focusRequester.requestFocus()
+        keyboardController?.show()
     }
 
     AlertDialog(
@@ -3827,6 +3940,15 @@ fun RenameDialog(initialName: String, onDismiss: () -> Unit, onRename: (String) 
                 onValueChange = { textFieldValue = it },
                 label = { Text(stringResource(R.string.rename_new_name_label)) },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    imeAction = ImeAction.Done,
+                    capitalization = KeyboardCapitalization.Words
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        if (textFieldValue.text.isNotBlank()) onRename(textFieldValue.text)
+                    }
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(focusRequester)

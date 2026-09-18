@@ -165,11 +165,28 @@ fun HomeScreen(
     var showMenu by remember { mutableStateOf(false) }
     var isSearching by remember { mutableStateOf(false) }
 
-    // Silent refresh for categories and storage while on landing page
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.loadStorageInfo()
+                viewModel.loadCategoryCounts(force = true)
+                viewModel.loadRecentFiles()
+                viewModel.loadStorageDevices()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    // Silent refresh for categories, storage, and recent files while on landing page
     LaunchedEffect(Unit) {
         while (true) {
-            kotlinx.coroutines.delay(60000) // Every 60 seconds
+            kotlinx.coroutines.delay(10000) // Every 10 seconds
             if (!isSearching) {
+                viewModel.loadRecentFiles()
                 viewModel.loadCategoryCounts(force = true)
                 viewModel.loadStorageInfo()
             }
@@ -829,7 +846,7 @@ private fun CategoryGrid(
         if (!hasRunCountAnimation) {
             kotlinx.coroutines.delay(60)
             animationStarted = true
-            kotlinx.coroutines.delay(750)
+            kotlinx.coroutines.delay(1400)
             onAnimationFinished()
         }
     }
@@ -843,7 +860,7 @@ private fun CategoryGrid(
                 row.forEachIndexed { colIndex, category ->
                     CategoryCard(
                         category = category,
-                        count = counts[category.type] ?: 0,
+                        count = counts[category.type],
                         animationStarted = animationStarted,
                         hasRunCountAnimation = hasRunCountAnimation,
                         index = rowIndex * 3 + colIndex,
@@ -862,17 +879,18 @@ private fun CategoryGrid(
 @Composable
 private fun CategoryCard(
     category: HomeCategory,
-    count: Int,
+    count: Int?,
     animationStarted: Boolean,
     hasRunCountAnimation: Boolean,
     index: Int = 0,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val targetCount = if (animationStarted || hasRunCountAnimation) count else 0
+    val actualCount = count ?: 0
+    val targetCount = if (animationStarted || hasRunCountAnimation) actualCount else 0
     val animatedCount by androidx.compose.animation.core.animateIntAsState(
         targetValue = targetCount,
-        animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 1200, easing = FastOutSlowInEasing),
         label = "CategoryCountAnimation"
     )
 
@@ -925,8 +943,9 @@ private fun CategoryCard(
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(modifier = Modifier.height(1.dp))
+            val countText = if (count == null) "..." else animatedCount.toString()
             Text(
-                animatedCount.toString(),
+                countText,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

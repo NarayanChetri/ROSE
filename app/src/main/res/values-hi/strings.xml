@@ -277,8 +277,10 @@
     <string name="settings_clear_thumbnail_cache_subtitle">कैश्ड इमेज और वीडियो थंबनेल द्वारा उपयोग की जाने वाली मेमोरी खाली करें</string>
     <string name="settings_toast_cache_cleared">थंबनेल कैश साफ़ किया गया</string>
     <string name="settings_section_support">सहायता</string>
-    <string name="settings_report_issue">समस्या की रिपोर्ट करें</string>
-    <string name="settings_report_issue_subtitle">कोई बग मिला? हमें GitHub पर बताएं</string>
+    <string name="settings_report_issue">समस्या रिपोर्ट करें</string>
+    <string name="settings_report_issue_subtitle">GitHub पर बग रिपोर्ट करें या सुविधाओं का सुझाव दें</string>
+    <string name="settings_buy_coffee">डेवलपर को कॉफ़ी दें</string>
+    <string name="settings_buy_coffee_subtitle">Ko-fi पर ROSE विकास का समर्थन करें</string>
     <string name="excluded_folders_dialog_title">बहिष्कृत फ़ोल्डर</string>
     <string name="excluded_folders_dialog_subtitle">हाल की फ़ाइलों और श्रेणियों से छिपा हुआ</string>
     <string name="excluded_folders_empty">अभी तक कोई फ़ोल्डर बहिष्कृत नहीं किया गया</string>

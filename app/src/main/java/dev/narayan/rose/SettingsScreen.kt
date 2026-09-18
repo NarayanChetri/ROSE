@@ -237,6 +237,14 @@ fun SettingsScreen(
                         subtitle = stringResource(R.string.settings_report_issue_subtitle),
                         onClick = { uriHandler.openUri("https://github.com/NarayanChetri/ROSE/issues") }
                     )
+                    SettingsDivider()
+                    SettingsActionRow(
+                        icon = Icons.Default.Coffee,
+                        iconTint = Color(0xFFFF5E5B),
+                        title = stringResource(R.string.settings_buy_coffee),
+                        subtitle = stringResource(R.string.settings_buy_coffee_subtitle),
+                        onClick = { uriHandler.openUri("https://ko-fi.com/narayanchetri") }
+                    )
                 }
             }
 
