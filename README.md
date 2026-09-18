@@ -10,6 +10,7 @@ A fast, modern, beautiful, and privacy-first Android file manager built with **K
 [![Total Downloads](https://img.shields.io/github/downloads/NarayanChetri/ROSE/total?style=flat-square&color=brightgreen&logo=github)](https://github.com/NarayanChetri/ROSE/releases)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue?style=flat-square)](LICENSE)
 [![No Ads](https://img.shields.io/badge/Ads-Zero%20%2F%20Clean-success?style=flat-square)](#-highlights)
+[![No Ads](https://img.shields.io/badge/Ads-Zero%20%2F%20Clean-success?style=flat-square)](#-features)
 [![Translation status](https://hosted.weblate.org/widgets/rose/-/app/svg-badge.svg)](https://hosted.weblate.org/engage/rose/)
 
 ---
@@ -18,7 +19,7 @@ A fast, modern, beautiful, and privacy-first Android file manager built with **K
 
 <!-- Eye-catching Download CTA for non-tech users -->
 <a href="https://github.com/NarayanChetri/ROSE/releases/latest">
-  <img src="https://img.shields.io/badge/⚡_DOWNLOAD_LATEST_APK-v1.2.3_(FREE)-00C853?style=for-the-badge&logo=android&logoColor=white&labelColor=1a1f2c" alt="Download Latest APK" height="50">
+  <img src="https://img.shields.io/badge/⚡_DOWNLOAD_LATEST_APK-v1.2.4_(FREE)-00C853?style=for-the-badge&logo=android&logoColor=white&labelColor=1a1f2c" alt="Download Latest APK" height="50">
 </a>
 &nbsp;&nbsp;
 <a href="https://github.com/NarayanChetri/ROSE/releases/latest">
@@ -30,9 +31,10 @@ A fast, modern, beautiful, and privacy-first Android file manager built with **K
 > [!TIP]
 > ### 💡 Non-Techy? Easy 3-Step Installation:
 > 1. Tap the green **[Download Latest APK](https://github.com/NarayanChetri/ROSE/releases/latest)** button above.
-> 2. On the releases page under **Assets**, tap **`app-release.apk`** (or `ROSE-v1.2.3.apk`) to download.
+> 2. On the releases page under **Assets**, tap **`app-release.apk`** (or `ROSE-v1.2.4.apk`) to download.
 > 3. Tap the downloaded file in your notification bar and choose **Install**!  
 >    *(If your phone asks, tap **Settings** and turn on **"Allow from this source"**).*
+<img width="1448" height="1086" alt="ROSE Screenshots" src="https://github.com/user-attachments/assets/da89f0d8-dc08-432a-99bf-c0f69f81340e" />
 
 </div>
 
@@ -68,25 +70,39 @@ A fast, modern, beautiful, and privacy-first Android file manager built with **K
 - **Multi-Format Extraction & Browsing**: Support for **ZIP, RAR, 7-Zip (`.7z`), TAR, GZ, TGZ, BZ2, XZ, ISO, APK, XAPK, and APKS**.
 - **In-Archive File Explorer**: Browse folders and inspect files inside archives without extracting everything first.
 - **APK Archive Inspector**: View dex, resources, and assets inside APKs directly.
+- **Multi-Format Extraction & Browsing**: Support for ZIP, RAR, 7-Zip (`.7z`), TAR, GZ, TGZ, BZ2, XZ, ISO, APK, XAPK, and APKS.
+- **In-Archive File Explorer**: Browse folders and inspect files inside archives without extracting them first.
+- **APK Archive Inspector**: View dex, compiled resources, and assets inside APKs directly.
 - **Encrypted Archives**: Create password-protected ZIPs (AES-256 / ZipCrypto) and extract password-secured archives.
 - **Selective Extraction**: Extract individual files or complete archives anywhere on your device.
 
 ### 📁 Smart File Management
 - **Full File Operations**: Copy, Move, Rename, Delete, Share, and Open With.
+- **Full File Operations**: Cut, copy, move, rename, delete, share, and open files with any app.
 - **Non-blocking Background Jobs**: Real-time progress dialog displaying percentage, current file, and transfer stats.
 - **Recycle Bin**: Safeguards your files with restore and permanent delete options.
 - **Recent Files**: Quickly access newly added or edited files, grouped by date with configurable item counts.
 - **Multi-Storage Navigation**: Easily switch between Internal Storage, SD Card, and USB OTG drives.
 - **Fast Search**: Instant search across filenames in any directory.
+- **Recycle Bin**: Recover accidentally deleted files with one tap or permanently delete them.
+- **Recent Files**: Quickly access newly added or edited files, grouped by date.
+- **USB OTG & Multi-Storage**: Seamlessly navigate between Internal Storage, SD Card, and USB OTG drives.
+- **Fast Search**: Instant real-time filename search across any directory.
 
 ### 📄 Viewers & Media Tools
 - **Built-in Markdown Reader**: Clean reading experience for markdown (`.md`) files.
+- **Built-in Markdown Reader**: Clean and native reading experience for markdown (`.md`) files and notes.
 - **Media Rescan & WhatsApp Scanner**: Automatic MediaStore refresh and dedicated scanning for WhatsApp media files.
 - **Folder Exclusion**: Option in settings to exclude specific folders from scanning.
+- **Folder Exclusion**: Option in settings to exclude specific folders from system media scanning.
 
 ### 🛡️ System & Privacy
 - **Shizuku API Integration**: Safely read and write to restricted `Android/data` and `Android/obb` folders.
 - **100% Private**: No analytics, no third-party tracking, and completely offline capable.
+### 🛡️ System, UI & Privacy
+- **Shizuku API Integration**: Safely read and write to restricted `Android/data` and `Android/obb` folders without root.
+- **Material You (Material 3)**: Beautiful adaptive UI with dynamic system colors, smooth animations, and full dark theme.
+- **100% Privacy & No Ads**: Zero ads, zero tracking, zero bloat, completely offline-capable, and open source.
 - **In-App Update Checker**: Check for newer releases directly from the About screen.
 
 ---

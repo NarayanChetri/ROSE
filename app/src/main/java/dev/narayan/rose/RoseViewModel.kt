@@ -2203,6 +2203,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         clearStorageRemovedEvent()
         categoryJob?.cancel()
         isCategoryLoading = false
+        isRefreshing = false
+        exitSelectionMode()
     }
 
     fun closeArchive() {
@@ -2629,6 +2631,9 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         categoryFilterType = type
         categoryBucketId = bucketId
         currentPath = ""
+        if (!forceRefresh) {
+            isRefreshing = false
+        }
 
         // Instant display from cache if available
         if (cached != null) {
@@ -2806,6 +2811,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     fun exitCategoryMode() {
         categoryJob?.cancel()
         isCategoryLoading = false
+        isRefreshing = false
         categoryTitle = null
         categoryFilterType = null
         categoryBucketId = null

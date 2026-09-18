@@ -284,7 +284,9 @@
     <string name="settings_toast_cache_cleared">Thumbnail cache cleared</string>
     <string name="settings_section_support">Support</string>
     <string name="settings_report_issue">Report an issue</string>
-    <string name="settings_report_issue_subtitle">Found a bug? Let us know on GitHub</string>
+    <string name="settings_report_issue_subtitle">Report bugs or suggest features on GitHub</string>
+    <string name="settings_buy_coffee">Buy developer a coffee</string>
+    <string name="settings_buy_coffee_subtitle">Support ROSE development on Ko-fi</string>
     <string name="excluded_folders_dialog_title">Excluded Folders</string>
     <string name="excluded_folders_dialog_subtitle">Hidden from Recents and Categories</string>
     <string name="excluded_folders_empty">No folders excluded yet</string>
