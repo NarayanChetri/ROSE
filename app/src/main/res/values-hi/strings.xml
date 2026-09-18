@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Application Details -->
     <string name="app_name">ROSE</string>
@@ -12,7 +13,6 @@
     <string name="about_contact_email">Narayanchetri.dev@gmail.com</string>
     <string name="about_check_for_updates">अपडेट देखें</string>
     <string name="about_checking_for_updates">अपडेट देखे जा रहे हैं…</string>
-
     <!-- Common Actions -->
     <string name="action_cancel">रद्द करें</string>
     <string name="action_close">बंद करें</string>
@@ -63,7 +63,6 @@
     <string name="action_about">इसके बारे में</string>
     <string name="action_add_folders">फ़ोल्डर जोड़ें</string>
     <string name="action_select_this_folder">यह फ़ोल्डर चुनें</string>
-
     <!-- Content Descriptions & Accessibility -->
     <string name="content_desc_back">वापस</string>
     <string name="content_desc_search">खोजें</string>
@@ -75,7 +74,6 @@
     <string name="content_desc_collapse">संक्षिप्त करें</string>
     <string name="content_desc_go_to_root">रूट पर जाएं</string>
     <string name="content_desc_encrypted">एन्क्रिप्टेड</string>
-
     <!-- Categories -->
     <string name="category_images">छवियां</string>
     <string name="category_photos">तस्वीरें</string>
@@ -89,14 +87,12 @@
     <string name="category_files">फ़ाइलें</string>
     <string name="category_all_files">सभी फ़ाइलें</string>
     <string name="album_unknown">अज्ञात एल्बम</string>
-
     <!-- Common Statuses -->
     <string name="status_empty">खाली</string>
     <string name="status_done">पूर्ण</string>
     <string name="status_calculating">गणना हो रही है…</string>
     <string name="status_analyzing">विश्लेषण हो रहा है…</string>
     <string name="status_unknown_error">अज्ञात त्रुटि हुई</string>
-
     <!-- Home Screen -->
     <string name="storage_internal">आंतरिक स्टोरेज</string>
     <string name="storage_drive_fallback">ड्राइव</string>
@@ -129,7 +125,6 @@
     <string name="clean_up_found">%1$s मिला</string>
     <string name="clean_up_in_bin">बिन में %1$s</string>
     <string name="folder_picker_no_subfolders">यहाँ कोई सबफ़ोल्डर नहीं है</string>
-
     <!-- File Explorer Screen -->
     <string name="search_files_placeholder">फ़ाइलें खोजें…</string>
     <string name="no_files_found">कोई फ़ाइल नहीं मिली</string>
@@ -145,7 +140,6 @@
     <string name="action_paste_here">यहीं पेस्ट करें</string>
     <string name="action_move_here">यहीं ले जाएं</string>
     <string name="action_add_to_quick_access">त्वरित एक्सेस में जोड़ें</string>
-
     <!-- Sorting and Views -->
     <string name="sort_title">क्रमबद्ध करें</string>
     <string name="sort_name">नाम</string>
@@ -155,12 +149,10 @@
     <string name="sort_last_modified">अंतिम संशोधित</string>
     <string name="view_list">सूची दृश्य</string>
     <string name="view_grid">ग्रिड दृश्य</string>
-
     <!-- Relative Dates -->
     <string name="date_today">आज</string>
     <string name="date_yesterday">कल</string>
     <string name="date_days_ago">%1$d दिन पहले</string>
-
     <!-- Save As Screen -->
     <string name="save_as_archive_title">आर्काइव सहेजें/एक्सट्रैक्ट करें</string>
     <string name="save_as_title">यहाँ सहेजें…</string>
@@ -171,7 +163,6 @@
     <string name="save_as_archive_viewer_subtitle">आर्काइव देखें और ब्राउज़ करें</string>
     <string name="save_as_save_as">इस रूप में सहेजें</string>
     <string name="save_as_save_as_subtitle">आर्काइव को किसी स्थान पर एक्सट्रैक्ट करें</string>
-
     <!-- Dialogs: Delete Confirmation -->
     <string name="delete_large_item_title">बड़ा आइटम हटाएं?</string>
     <string name="delete_item_title">हटाएं?</string>
@@ -187,14 +178,12 @@
     <string name="delete_permanently_title">स्थायी रूप से हटाएं</string>
     <string name="delete_permanently_confirm">क्या आप वाकई \"%1$s\" को हटाना चाहते हैं? इसे पूर्ववत नहीं किया जा सकता।</string>
     <string name="delete_permanently_bulk_confirm">क्या %1$d चयनित आइटम स्थायी रूप से हटाएं?</string>
-
     <!-- Dialogs: Properties -->
     <string name="prop_name">नाम</string>
     <string name="prop_type">प्रकार</string>
     <string name="prop_size">आकार</string>
     <string name="prop_path">पथ</string>
     <string name="prop_modified">संशोधित</string>
-
     <!-- Dialogs: Compress & Extract -->
     <string name="compress_dialog_title">Zip में कंप्रेस करें</string>
     <string name="compress_file_name_label">Zip फ़ाइल का नाम</string>
@@ -205,7 +194,6 @@
     <string name="extract_here_subtitle">उसी डायरेक्टरी में नए फ़ोल्डर में एक्सट्रैक्ट करें</string>
     <string name="extract_select_location_title">स्थान चुनें</string>
     <string name="extract_select_location_subtitle">एक्सट्रैक्ट करने के लिए एक विशिष्ट फ़ोल्डर चुनें</string>
-
     <!-- Dialogs: Create Folder, Password, Rename -->
     <string name="create_folder_dialog_title">नया फ़ोल्डर बनाएं</string>
     <string name="create_folder_name_label">फ़ोल्डर का नाम</string>
@@ -213,7 +201,6 @@
     <string name="password_label">पासवर्ड</string>
     <string name="rename_dialog_title">नाम बदलें</string>
     <string name="rename_new_name_label">नया नाम</string>
-
     <!-- Restricted Folder Prompts -->
     <string name="restricted_folder_default_title">प्रतिबंधित फ़ोल्डर</string>
     <string name="restricted_folder_default_desc">Android इस फ़ोल्डर तक पहुंच को प्रतिबंधित करता है। इन फ़ाइलों को देखने और संशोधित करने के लिए ROSE को अनुमति की आवश्यकता है।</string>
@@ -225,7 +212,6 @@
     <string name="action_how_to_setup_shizuku">Shizuku कैसे सेटअप करें?</string>
     <string name="action_grant_storage_access">स्टोरेज एक्सेस दें</string>
     <string name="action_use_shizuku_instead">इसके बजाय Shizuku का उपयोग करें</string>
-
     <!-- Recycle Bin Screen -->
     <string name="recycle_bin_title">रीसायकल बिन</string>
     <string name="recycle_bin_is_empty">रीसायकल बिन खाली है</string>
@@ -242,7 +228,6 @@
     <string name="recycle_prop_original_path">मूल पथ</string>
     <string name="recycle_prop_deletion_date">हटाने की तारीख</string>
     <string name="recycle_prop_size">आकार</string>
-
     <!-- Settings Screen -->
     <string name="settings_title">सेटिंग्स</string>
     <string name="settings_section_appearance">स्वरूप</string>
@@ -287,7 +272,6 @@
     <string name="action_add_folder_to_exclude">बहिष्कृत करने के लिए फ़ोल्डर जोड़ें</string>
     <string name="action_exclude_current_folder">वर्तमान फ़ोल्डर को बहिष्कृत करें</string>
     <string name="excluded_folders_picker_empty">यहाँ कोई सबफ़ोल्डर नहीं है</string>
-
     <!-- File Jobs & Operations -->
     <string name="job_active_tasks_count">%1$d सक्रिय कार्य</string>
     <string name="job_working">कार्य जारी है…</string>
@@ -324,7 +308,6 @@
     <string name="job_moving_to_bin_fast">बिन में भेजा जा रहा है…</string>
     <string name="job_restoring_fast">रीस्टोर हो रहा है…</string>
     <string name="job_deleting_fast">हटाया जा रहा है…</string>
-
     <!-- File Job Notifications -->
     <string name="notif_channel_file_operations">फ़ाइल संचालन</string>
     <string name="notif_channel_background_operations">बैकग्राउंड संचालन</string>
@@ -354,11 +337,9 @@
     <string name="notif_completion_success">%1$s पूरा हुआ</string>
     <string name="notif_completion_failure">%1$s विफल रहा</string>
     <string name="notif_completion_couldnt_finish">%1$s पूरा नहीं हो सका</string>
-
     <!-- Notification Primer -->
     <string name="notif_primer_title">ट्रांसफर पर अपडेट रहें</string>
     <string name="notif_primer_description">बैकग्राउंड में फ़ाइल डाउनलोड होते समय ROSE आपको लाइव प्रगति की सूचना दे सकता है - ताकि आपको हमेशा पता रहे कि यह कब ऑफ़लाइन सहेजी गई है।</string>
-
     <!-- Updates -->
     <string name="update_dialog_title">अपडेट उपलब्ध है</string>
     <string name="update_dialog_message">एक नया संस्करण (%1$s) उपलब्ध है। क्या आप अभी अपडेट करना चाहते हैं?</string>
@@ -373,7 +354,6 @@
     <string name="update_download_failed_http">डाउनलोड विफल रहा (HTTP %1$d)</string>
     <string name="update_download_failed">डाउनलोड विफल रहा</string>
     <string name="update_error_open_install_settings">इंस्टॉल-अनुमति सेटिंग्स नहीं खोली जा सकीं</string>
-
     <!-- Toasts & General Feedback -->
     <string name="toast_notification_permission_recommended">बैकग्राउंड कार्यों के लिए सूचना अनुमति की अनुशंसा की जाती है</string>
     <string name="toast_manage_storage_required">स्टोरेज प्रबंधन अनुमति आवश्यक है</string>
@@ -395,4 +375,3 @@
     <string name="toast_up_to_date">आप नवीनतम संस्करण पर हैं</string>
     <string name="permission_placeholder_waiting">स्टोरेज अनुमतियों की प्रतीक्षा की जा रही है…</string>
 </resources>
-
