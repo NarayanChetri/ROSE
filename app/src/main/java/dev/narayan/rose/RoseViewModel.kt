@@ -477,6 +477,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     fun loadStorageInfo() {
+        registerMediaObserver()
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val stats = StatFs(Environment.getExternalStorageDirectory().path)
@@ -885,10 +886,46 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     enum class SortBy { NAME, DATE, SIZE, TYPE }
     enum class SortOrder { ASCENDING, DESCENDING }
 
+    private var mediaObserver: android.database.ContentObserver? = null
+    private var debouncedMediaRefreshJob: Job? = null
+
+    fun registerMediaObserver() {
+        if (mediaObserver != null) return
+        try {
+            val observer = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+                override fun onChange(selfChange: Boolean, uri: Uri?) {
+                    super.onChange(selfChange, uri)
+                    debouncedMediaRefreshJob?.cancel()
+                    debouncedMediaRefreshJob = viewModelScope.launch {
+                        kotlinx.coroutines.delay(700)
+                        loadRecentFiles()
+                        loadCategoryCounts(force = true)
+                        loadStorageInfo()
+                    }
+                }
+            }
+            val resolver = getApplication<Application>().contentResolver
+            resolver.registerContentObserver(MediaStore.Files.getContentUri("external"), true, observer)
+            mediaObserver = observer
+        } catch (e: Throwable) {
+            // Permission may not be granted yet; will be registered when permissions are available
+        }
+    }
+
+    private fun unregisterMediaObserver() {
+        try {
+            mediaObserver?.let {
+                getApplication<Application>().contentResolver.unregisterContentObserver(it)
+                mediaObserver = null
+            }
+        } catch (e: Throwable) {}
+    }
+
     init {
         // We no longer load recent files here to prevent potential
         // startup crashes if permissions are not yet granted.
         // HomeScreen will trigger loading when it becomes visible.
+        registerMediaObserver()
 
         // Add default excluded folders if none are set
         if (settings.excludedFolders.isEmpty()) {
@@ -1003,6 +1040,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     viewModelScope.launch {
                         kotlinx.coroutines.delay(1500)
                         loadCategoryCounts(force = true)
+                        loadRecentFiles()
+                        loadStorageInfo()
                     }
                 }
 
@@ -1444,6 +1483,15 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(Dispatchers.Main) {
                     isLoading = false
                     isRefreshing = false
+                }
+            } finally {
+                withContext(NonCancellable) {
+                    withContext(Dispatchers.Main) {
+                        if (requestGeneration == filesGeneration) {
+                            isLoading = false
+                            isRefreshing = false
+                        }
+                    }
                 }
             }
         }
@@ -2223,19 +2271,28 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun createFolder(name: String) {
+        val trimmedName = name.trim()
+        if (trimmedName.isEmpty()) return
+
         if (SafManager.isRestrictedPath(currentPath)) {
             viewModelScope.launch(Dispatchers.IO) {
-                val path = "${currentPath.trimEnd('/')}/$name"
+                val path = "${currentPath.trimEnd('/')}/$trimmedName"
                 val success = if (SafManager.hasPermission(getApplication(), currentPath)) {
                     SafManager.createDirectory(getApplication(), path)
                 } else if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
-                    ShizukuManager.createFolder(currentPath, name)
+                    ShizukuManager.createFolder(currentPath, trimmedName)
                 } else false
 
                 withContext(Dispatchers.Main) {
                     if (success) {
                         invalidateDirectoryCache(currentPath)
-                        loadFiles(currentPath, isManualRefresh = true)
+                        val folderFile = File(path)
+                        if (clipboardFiles.isNotEmpty()) {
+                            navigateTo(folderFile, isActuallyDirectory = true)
+                        } else {
+                            highlightedFile = FileItem(folderFile)
+                            loadFiles(currentPath, isManualRefresh = true)
+                        }
                     } else {
                         errorMessage = "Couldn't create folder. Access restricted."
                     }
@@ -2244,10 +2301,17 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        val newFolder = File(currentPath, name)
+        val newFolder = File(currentPath, trimmedName)
         if (newFolder.mkdir()) {
             invalidateDirectoryCache(currentPath)
-            loadFiles(currentPath, isManualRefresh = true)
+            if (clipboardFiles.isNotEmpty()) {
+                navigateTo(newFolder, isActuallyDirectory = true)
+            } else {
+                highlightedFile = FileItem(newFolder)
+                loadFiles(currentPath, isManualRefresh = true)
+            }
+        } else {
+            errorMessage = "Couldn't create folder. Name may already exist."
         }
     }
 
@@ -3251,6 +3315,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
+        unregisterMediaObserver()
+        debouncedMediaRefreshJob?.cancel()
         stopWatchingDirectory()
         updateDownloadJob?.cancel()
     }

@@ -326,7 +326,8 @@ fun FileExplorerScreen(
                     currentView == "Category" -> {
                         val type = viewModel.categoryFilterType
                         val title = viewModel.categoryTitle
-                        if (type != null && title != null) viewModel.browseCategory(type, title)
+                        val bucketId = viewModel.categoryBucketId
+                        if (type != null && title != null) viewModel.browseCategory(type, title, bucketId = bucketId)
                     }
                     else -> {
                         // Only auto-refresh if it's a normal directory view
@@ -349,7 +350,7 @@ fun FileExplorerScreen(
         }
         when {
             startCategory != null -> {
-                if (viewModel.categoryFilterType != startCategory.first || viewModel.categoryTitle != startCategory.second || (viewModel.categoryFiles.isEmpty() && !viewModel.isCategoryLoading)) {
+                if (viewModel.categoryFilterType != startCategory.first || (viewModel.categoryBucketId == null && viewModel.categoryTitle != startCategory.second) || (viewModel.categoryFiles.isEmpty() && !viewModel.isCategoryLoading)) {
                     viewModel.browseCategory(startCategory.first, startCategory.second)
                 }
             }
@@ -419,7 +420,7 @@ fun FileExplorerScreen(
                     else if (currentView == "Category") {
                         val type = viewModel.categoryFilterType
                         val title = viewModel.categoryTitle
-                        if (type != null && title != null) viewModel.browseCategory(type, title)
+                        if (type != null && title != null) viewModel.browseCategory(type, title, bucketId = viewModel.categoryBucketId)
                     }
                     viewModel.closeArchive()
                 } else {
@@ -678,7 +679,11 @@ fun FileExplorerScreen(
             if (index != -1) {
                 // Slight delay to ensure list is settled for smoother animation
                 kotlinx.coroutines.delay(100)
-                listState.animateScrollToItem(index)
+                if (currentIsGridView) {
+                    gridState.animateScrollToItem(index)
+                } else {
+                    listState.animateScrollToItem(index)
+                }
                 // Clear highlight after 2 seconds
                 kotlinx.coroutines.delay(2000)
                 viewModel.highlightedFile = null
@@ -777,7 +782,7 @@ fun FileExplorerScreen(
                                                     else if (currentView == "Category") {
                                                         val type = viewModel.categoryFilterType
                                                         val title = viewModel.categoryTitle
-                                                        if (type != null && title != null) viewModel.browseCategory(type, title)
+                                                        if (type != null && title != null) viewModel.browseCategory(type, title, bucketId = viewModel.categoryBucketId)
                                                     }
                                                     viewModel.closeArchive()
                                                 } else {
@@ -1036,18 +1041,46 @@ fun FileExplorerScreen(
                         }
                     }
                 ) { paddingValues ->
+                    val refreshScope = rememberCoroutineScope()
                     PullToRefreshBox(
                         isRefreshing = viewModel.isRefreshing,
                         onRefresh = {
-                            when {
-                                currentView == "Recent" -> viewModel.loadRecentFiles()
-                                currentView == "Category" -> {
-                                    val type = viewModel.categoryFilterType
-                                    val title = viewModel.categoryTitle
-                                    if (type != null && title != null) viewModel.browseCategory(type, title, bucketId = viewModel.categoryBucketId, forceRefresh = true)
+                            if (viewModel.isSelectionMode || viewModel.isLoading) return@PullToRefreshBox
+                            refreshScope.launch {
+                                viewModel.isRefreshing = true
+                                val startTime = System.currentTimeMillis()
+                                try {
+                                    kotlinx.coroutines.withTimeoutOrNull(5000L) {
+                                        when {
+                                            currentView == "Recent" -> {
+                                                viewModel.loadRecentFiles()
+                                            }
+                                            currentView == "Category" -> {
+                                                val type = viewModel.categoryFilterType
+                                                val title = viewModel.categoryTitle
+                                                if (type != null && title != null) {
+                                                    viewModel.browseCategory(type, title, bucketId = viewModel.categoryBucketId, forceRefresh = true)
+                                                }
+                                            }
+                                            viewModel.currentZipFile != null -> {
+                                                viewModel.openArchive(viewModel.currentZipFile!!, viewModel.currentZipEntryPath)
+                                            }
+                                            else -> {
+                                                viewModel.loadFiles(viewModel.currentPath, isManualRefresh = true)
+                                            }
+                                        }
+                                        while (viewModel.isLoading || viewModel.isCategoryLoading || viewModel.isRecentLoading) {
+                                            kotlinx.coroutines.delay(50)
+                                        }
+                                    }
+                                } finally {
+                                    val elapsed = System.currentTimeMillis() - startTime
+                                    val minSpinDuration = 750L
+                                    if (elapsed < minSpinDuration) {
+                                        kotlinx.coroutines.delay(minSpinDuration - elapsed)
+                                    }
+                                    viewModel.isRefreshing = false
                                 }
-                                viewModel.currentZipFile != null -> viewModel.openArchive(viewModel.currentZipFile!!, viewModel.currentZipEntryPath)
-                                else -> viewModel.loadFiles(viewModel.currentPath, isManualRefresh = true)
                             }
                         },
                         modifier = Modifier.padding(paddingValues).fillMaxSize()
