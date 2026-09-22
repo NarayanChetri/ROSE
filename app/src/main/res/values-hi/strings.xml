@@ -374,4 +374,40 @@
     <string name="toast_added_to_quick_access">त्वरित एक्सेस में जोड़ा गया</string>
     <string name="toast_up_to_date">आप नवीनतम संस्करण पर हैं</string>
     <string name="permission_placeholder_waiting">स्टोरेज अनुमतियों की प्रतीक्षा की जा रही है…</string>
+
+    <!-- Document Viewer & Text Editor -->
+    <string name="doc_reader_title">दस्तावेज़</string>
+    <string name="doc_markdown_reader">मार्कडाउन रीडर</string>
+    <string name="doc_text_editor">टेक्स्ट एडिटर</string>
+    <string name="doc_preview">पूर्वावलोकन</string>
+    <string name="doc_edit">संपादित करें</string>
+    <string name="doc_save">सहेजें</string>
+    <string name="doc_saved_success">फ़ाइल सफलतापूर्वक सहेजी गई</string>
+    <string name="doc_save_failed">फ़ाइल सहेजने में विफल: %1$s</string>
+    <string name="doc_unsaved_title">असहेजे गए परिवर्तन</string>
+    <string name="doc_unsaved_message">\"%1$s\" में आपके असहेजे गए परिवर्तन हैं। क्या आप छोड़ने से पहले उन्हें सहेजना चाहते हैं?</string>
+    <string name="doc_discard">खारिज करें</string>
+    <string name="doc_keep_editing">संपादन जारी रखें</string>
+    <string name="doc_read_only">केवल-पढ़ने के लिए</string>
+    <string name="doc_read_only_warning">यह फ़ाइल केवल-पढ़ने के लिए है और इसमें बदलाव नहीं किया जा सकता</string>
+    <string name="doc_large_file_warning">यह फ़ाइल बहुत बड़ी है (%1$s)। सुचारू प्रदर्शन बनाए रखने के लिए केवल-पढ़ने के मोड में पहली %2$d पंक्तियाँ दिखाई जा रही हैं।</string>
+    <string name="doc_word_wrap">वर्ड रैप</string>
+    <string name="doc_line_numbers">पंक्ति संख्याएँ</string>
+    <string name="doc_monospace">मोनोस्पेस फ़ॉन्ट</string>
+    <string name="doc_search_hint">दस्तावेज़ में खोजें…</string>
+    <string name="doc_no_matches">कोई परिणाम नहीं</string>
+    <string name="doc_matches_count">%2$d में से %1$d</string>
+    <string name="doc_copy_code">कोड कॉपी करें</string>
+    <string name="doc_code_copied">कोड क्लिपबोर्ड पर कॉपी किया गया</string>
+    <string name="doc_info">दस्तावेज़ विवरण</string>
+    <string name="doc_stat_lines">पंक्तियाँ</string>
+    <string name="doc_stat_words">शब्द</string>
+    <string name="doc_stat_chars">वर्ण</string>
+    <string name="doc_stat_encoding">एन्कोडिंग</string>
+    <string name="doc_stat_line_ending">पंक्ति अंत</string>
+    <string name="doc_empty_release_notes">इस संस्करण के लिए कोई रिलीज़ नोट्स नहीं दिए गए हैं।</string>
+    <string name="doc_loading">दस्तावेज़ लोड हो रहा है…</string>
+    <string name="doc_failed_to_load">दस्तावेज़ लोड करने में विफल: %1$s</string>
+    <string name="doc_empty_file">खाली फ़ाइल</string>
+    <string name="doc_open_external">अन्य ऐप से खोलें</string>
 </resources>

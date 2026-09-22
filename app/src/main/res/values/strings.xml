@@ -400,4 +400,40 @@
     <string name="toast_added_to_quick_access">Added to Quick access</string>
     <string name="toast_up_to_date">You\'re on the latest version</string>
     <string name="permission_placeholder_waiting">Waiting for storage permissions…</string>
+
+    <!-- Document Viewer & Text Editor -->
+    <string name="doc_reader_title">Document</string>
+    <string name="doc_markdown_reader">Markdown Reader</string>
+    <string name="doc_text_editor">Text Editor</string>
+    <string name="doc_preview">Preview</string>
+    <string name="doc_edit">Edit</string>
+    <string name="doc_save">Save</string>
+    <string name="doc_saved_success">File saved successfully</string>
+    <string name="doc_save_failed">Failed to save file: %1$s</string>
+    <string name="doc_unsaved_title">Unsaved Changes</string>
+    <string name="doc_unsaved_message">You have unsaved changes in \"%1$s\". Do you want to save them before leaving?</string>
+    <string name="doc_discard">Discard</string>
+    <string name="doc_keep_editing">Keep Editing</string>
+    <string name="doc_read_only">Read-only</string>
+    <string name="doc_read_only_warning">This file is read-only and cannot be modified</string>
+    <string name="doc_large_file_warning">This file is very large (%1$s). Showing first %2$d lines in read-only mode to preserve performance.</string>
+    <string name="doc_word_wrap">Word wrap</string>
+    <string name="doc_line_numbers">Line numbers</string>
+    <string name="doc_monospace">Monospace font</string>
+    <string name="doc_search_hint">Find in document…</string>
+    <string name="doc_no_matches">No matches</string>
+    <string name="doc_matches_count">%1$d of %2$d</string>
+    <string name="doc_copy_code">Copy code</string>
+    <string name="doc_code_copied">Code copied to clipboard</string>
+    <string name="doc_info">Document Details</string>
+    <string name="doc_stat_lines">Lines</string>
+    <string name="doc_stat_words">Words</string>
+    <string name="doc_stat_chars">Characters</string>
+    <string name="doc_stat_encoding">Encoding</string>
+    <string name="doc_stat_line_ending">Line Endings</string>
+    <string name="doc_empty_release_notes">No release notes provided for this version.</string>
+    <string name="doc_loading">Loading document…</string>
+    <string name="doc_failed_to_load">Failed to load document: %1$s</string>
+    <string name="doc_empty_file">Empty file</string>
+    <string name="doc_open_external">Open with other app</string>
 </resources>

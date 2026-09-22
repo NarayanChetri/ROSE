@@ -2,6 +2,7 @@ package dev.narayan.rose
 
 import android.content.Context
 import android.content.Intent
+import dev.narayan.rose.document.MarkdownText
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
