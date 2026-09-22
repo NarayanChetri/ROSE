@@ -2520,7 +2520,10 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             val userExcluded = excludedFolders.toList()
 
             val excludeSelection = (hardcodedExcluded.map { "${MediaStore.MediaColumns.DATA} NOT LIKE '%/$it/%'" } +
-                    userExcluded.map { "(${MediaStore.MediaColumns.DATA} NOT LIKE '$it/%' AND ${MediaStore.MediaColumns.DATA} != '$it')" }).joinToString(" AND ")
+                    userExcluded.map {
+                        val escaped = it.replace("'", "''")
+                        "(${MediaStore.MediaColumns.DATA} NOT LIKE '$escaped/%' AND ${MediaStore.MediaColumns.DATA} != '$escaped')"
+                    }).joinToString(" AND ")
 
             // Exclude hidden files and folders
             val noHiddenSelection = "(${MediaStore.MediaColumns.DATA} NOT LIKE '%/.%' AND ${MediaStore.MediaColumns.DATA} NOT LIKE '.%')"
@@ -2538,11 +2541,12 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
             fun isDoc(mime: String, ext: String): Boolean {
                 if (mime.startsWith("text/", ignoreCase = true) ||
+                    mime == "text/markdown" || mime == "text/x-markdown" ||
                     mime.startsWith("application/vnd.ms-", ignoreCase = true) ||
                     mime.startsWith("application/vnd.openxmlformats-officedocument", ignoreCase = true)
                 ) return true
 
-                return ext == "txt" || ext == "pdf" || ext == "rtf" ||
+                return ext == "txt" || ext == "md" || ext == "markdown" || ext == "pdf" || ext == "rtf" ||
                         ext.startsWith("doc") || ext.startsWith("xls") || ext.startsWith("ppt")
             }
 
@@ -2676,13 +2680,13 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     FileType.PDF -> "${MediaStore.Files.FileColumns.MIME_TYPE} = 'application/pdf' OR ${MediaStore.MediaColumns.DATA} LIKE '%.pdf' OR ${MediaStore.MediaColumns.DATA} LIKE '%.PDF'"
                     FileType.APK -> "${MediaStore.Files.FileColumns.MIME_TYPE} = 'application/vnd.android.package-archive' OR ${MediaStore.MediaColumns.DATA} LIKE '%.apk' OR ${MediaStore.MediaColumns.DATA} LIKE '%.APK'"
                     FileType.ZIP -> "${MediaStore.MediaColumns.DATA} LIKE '%.zip' OR ${MediaStore.MediaColumns.DATA} LIKE '%.rar' OR ${MediaStore.MediaColumns.DATA} LIKE '%.7z' OR ${MediaStore.MediaColumns.DATA} LIKE '%.tar' OR ${MediaStore.MediaColumns.DATA} LIKE '%.gz' OR ${MediaStore.MediaColumns.DATA} LIKE '%.ZIP'"
-                    FileType.DOCUMENT -> "${MediaStore.Files.FileColumns.MIME_TYPE} LIKE 'text/%' OR ${MediaStore.Files.FileColumns.MIME_TYPE} LIKE 'application/vnd.ms-%' OR ${MediaStore.Files.FileColumns.MIME_TYPE} LIKE 'application/vnd.openxmlformats-officedocument%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.txt' OR ${MediaStore.MediaColumns.DATA} LIKE '%.doc%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.xls%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.ppt%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.pdf' OR ${MediaStore.MediaColumns.DATA} LIKE '%.rtf' OR ${MediaStore.MediaColumns.DATA} LIKE '%.TXT' OR ${MediaStore.MediaColumns.DATA} LIKE '%.DOC%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.PDF'"
                     FileType.DOCUMENT -> "${MediaStore.Files.FileColumns.MIME_TYPE} LIKE 'text/%' OR ${MediaStore.Files.FileColumns.MIME_TYPE} = 'text/markdown' OR ${MediaStore.Files.FileColumns.MIME_TYPE} = 'text/x-markdown' OR ${MediaStore.Files.FileColumns.MIME_TYPE} LIKE 'application/vnd.ms-%' OR ${MediaStore.Files.FileColumns.MIME_TYPE} LIKE 'application/vnd.openxmlformats-officedocument%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.txt' OR ${MediaStore.MediaColumns.DATA} LIKE '%.md' OR ${MediaStore.MediaColumns.DATA} LIKE '%.MD' OR ${MediaStore.MediaColumns.DATA} LIKE '%.markdown' OR ${MediaStore.MediaColumns.DATA} LIKE '%.doc%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.xls%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.ppt%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.pdf' OR ${MediaStore.MediaColumns.DATA} LIKE '%.rtf' OR ${MediaStore.MediaColumns.DATA} LIKE '%.TXT' OR ${MediaStore.MediaColumns.DATA} LIKE '%.DOC%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.PDF'"
                     else -> null
                 }
 
                 if (type == FileType.IMAGE && bucketId != null) {
-                    categorySelection = "($categorySelection) AND (${MediaStore.Images.Media.BUCKET_ID} = '$bucketId')"
+                    val safeBucketId = bucketId.replace("'", "''")
+                    categorySelection = "($categorySelection) AND (${MediaStore.Images.Media.BUCKET_ID} = '$safeBucketId')"
                 }
 
                 val hardcodedExcluded = if (type == FileType.ZIP || type == FileType.DOCUMENT || type == FileType.PDF || type == FileType.APK) {
@@ -2694,7 +2698,10 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 val userExcluded = excludedFolders.toList()
 
                 val excludeSelection = (hardcodedExcluded.map { "${MediaStore.MediaColumns.DATA} NOT LIKE '%/$it/%'" } +
-                        userExcluded.map { "(${MediaStore.MediaColumns.DATA} NOT LIKE '$it/%' AND ${MediaStore.MediaColumns.DATA} != '$it')" }).joinToString(" AND ")
+                        userExcluded.map {
+                            val escaped = it.replace("'", "''")
+                            "(${MediaStore.MediaColumns.DATA} NOT LIKE '$escaped/%' AND ${MediaStore.MediaColumns.DATA} != '$escaped')"
+                        }).joinToString(" AND ")
 
                 // Exclude hidden files and folders
                 val noHiddenSelection = "(${MediaStore.MediaColumns.DATA} NOT LIKE '%/.%' AND ${MediaStore.MediaColumns.DATA} NOT LIKE '.%')"

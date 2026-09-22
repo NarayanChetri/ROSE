@@ -1340,7 +1340,7 @@ else {
             addDataScheme("file")
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(storageReceiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
+            registerReceiver(storageReceiver, filter, android.content.Context.RECEIVER_EXPORTED)
         } else {
             registerReceiver(storageReceiver, filter)
         }
