@@ -4,6 +4,7 @@ import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.ActivityCompat
@@ -206,7 +207,11 @@ class FileJobService : Service() {
         val channelToUse = if (isDownload) CHANNEL_ID else SILENT_CHANNEL_ID
 
         // Foreground notification must be posted synchronously here
-        startForeground(notificationId, createNotification(job, channelToUse))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(notificationId, createNotification(job, channelToUse), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            startForeground(notificationId, createNotification(job, channelToUse))
+        }
 
         FileOperationRunner.execute(applicationContext, job, { updatedJob ->
             // Only update live progress in notification shade for downloads
