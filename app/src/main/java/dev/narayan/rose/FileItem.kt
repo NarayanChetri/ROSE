@@ -45,8 +45,10 @@ data class FileItem(
         extension in listOf("mp3", "wav", "ogg", "flac", "m4a", "aac", "wma") ||
                 mimeType?.startsWith("audio/") == true -> FileType.AUDIO
         extension in listOf("txt", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "html", "htm", "xml", "json") ||
+        extension in listOf("txt", "md", "markdown", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "html", "htm", "xml", "json") ||
                 mimeType?.startsWith("text/") == true ||
                 mimeType in listOf("application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") -> FileType.DOCUMENT
+                mimeType in listOf("text/markdown", "text/x-markdown", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") -> FileType.DOCUMENT
         else -> FileType.OTHER
     }
 }

@@ -39,6 +39,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
+import dev.narayan.rose.document.DocumentMode
+import dev.narayan.rose.document.DocumentScreen
+import dev.narayan.rose.document.DocumentSource
 
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
@@ -153,6 +156,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private var pendingArchiveUri by mutableStateOf<Uri?>(null)
+    private var pendingDocument by mutableStateOf<Pair<DocumentSource, Boolean>?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -429,6 +433,19 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
+                        // Handle viewed/edited document (.md or .txt)
+                        LaunchedEffect(pendingDocument) {
+                            pendingDocument?.let { (source, isMarkdown) ->
+                                screen = AppScreen.Document(
+                                    source = source,
+                                    isMarkdown = isMarkdown,
+                                    initialMode = DocumentMode.VIEW,
+                                    previousScreen = screen
+                                )
+                                pendingDocument = null
+                            }
+                        }
+
                         Box(modifier = Modifier.fillMaxSize()) {
                             SharedTransitionLayout {
                                 AnimatedContent(
@@ -459,6 +476,12 @@ class MainActivity : ComponentActivity() {
                                             is AppScreen.SaveAs -> {
                                                 (slideInVertically(animationSpec = tween(280, easing = FastOutSlowInEasing)) { it } + fadeIn())
                                                     .togetherWith(slideOutVertically(animationSpec = tween(200)) { it } + fadeOut())
+                                            }
+                                            is AppScreen.Document -> {
+                                                (fadeIn(tween(200, easing = FastOutSlowInEasing)) +
+                                                        scaleIn(initialScale = 0.98f, animationSpec = tween(200, easing = FastOutSlowInEasing)))
+                                                    .togetherWith(fadeOut(tween(120, easing = FastOutSlowInEasing)))
+                                                    .using(SizeTransform(clip = false))
                                             }
                                             else -> fadeIn(tween(180)) togetherWith fadeOut(tween(180))
                                         }
@@ -614,6 +637,53 @@ class MainActivity : ComponentActivity() {
                                             viewModel = viewModel,
                                             onBack = { screen = AppScreen.Home }
                                         )
+                                        is AppScreen.Document -> DocumentScreen(
+                                            source = currentScreen.source,
+                                            isMarkdownFile = currentScreen.isMarkdown,
+                                            initialMode = currentScreen.initialMode,
+                                            onBack = {
+                                                screen = currentScreen.previousScreen ?: AppScreen.Home
+                                            },
+                                            onOpenExternal = {
+                                                when (val src = currentScreen.source) {
+                                                    is DocumentSource.FileSource -> {
+                                                        openFileWith(FileItem(src.file))
+                                                    }
+                                                    is DocumentSource.UriSource -> {
+                                                        try {
+                                                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                                                setDataAndType(src.uri, if (currentScreen.isMarkdown) "text/markdown" else "text/plain")
+                                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                            }
+                                                            startActivity(Intent.createChooser(intent, getString(R.string.action_open_with)))
+                                                        } catch (e: Exception) {
+                                                            Toast.makeText(this@MainActivity, getString(R.string.toast_couldnt_open_file, e.message ?: ""), Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    }
+                                                    is DocumentSource.VirtualZipSource -> {}
+                                                }
+                                            },
+                                            onShare = {
+                                                when (val src = currentScreen.source) {
+                                                    is DocumentSource.FileSource -> {
+                                                        shareFiles(listOf(FileItem(src.file)))
+                                                    }
+                                                    is DocumentSource.UriSource -> {
+                                                        try {
+                                                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                                                putExtra(Intent.EXTRA_STREAM, src.uri)
+                                                                type = if (currentScreen.isMarkdown) "text/markdown" else "text/plain"
+                                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                            }
+                                                            startActivity(Intent.createChooser(intent, getString(R.string.action_share_via)))
+                                                        } catch (e: Exception) {
+                                                            Toast.makeText(this@MainActivity, getString(R.string.toast_couldnt_open_file, e.message ?: ""), Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    }
+                                                    is DocumentSource.VirtualZipSource -> {}
+                                                }
+                                            }
+                                        )
                                     }
                                 }
                             }
@@ -695,6 +765,19 @@ class MainActivity : ComponentActivity() {
             Intent.ACTION_VIEW -> {
                 val uri = intent.data ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
                 uri?.let { pendingArchiveUri = it }
+                uri?.let {
+                    if (isMarkdownUri(it)) {
+                        val name = getUriDisplayName(it) ?: "document.md"
+                        val isWritable = it.scheme == "file" || (intent.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION != 0)
+                        pendingDocument = DocumentSource.UriSource(it, name, isReadOnly = !isWritable) to true
+                    } else if (isTextUri(it)) {
+                        val name = getUriDisplayName(it) ?: "document.txt"
+                        val isWritable = it.scheme == "file" || (intent.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION != 0)
+                        pendingDocument = DocumentSource.UriSource(it, name, isReadOnly = !isWritable) to false
+                    } else {
+                        pendingArchiveUri = it
+                    }
+                }
             }
             Intent.ACTION_SEND -> {
                 val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -704,6 +787,14 @@ class MainActivity : ComponentActivity() {
                     intent.getParcelableExtra(Intent.EXTRA_STREAM)
                 } ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
                 uri?.let { sharedUris = listOf(it) }
+                uri?.let {
+                    if (isMarkdownUri(it)) {
+                        val name = getUriDisplayName(it) ?: "document.md"
+                        pendingDocument = DocumentSource.UriSource(it, name, isReadOnly = true) to true
+                    } else {
+                        sharedUris = listOf(it)
+                    }
+                }
             }
             Intent.ACTION_SEND_MULTIPLE -> {
                 val uris = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -783,6 +874,53 @@ class MainActivity : ComponentActivity() {
         if (uri.scheme == "file") {
             val file = File(uri.path ?: "")
             if (file.extension.lowercase() in archiveExtensions) return true
+        }
+
+        return false
+    }
+
+    private val markdownExtensions = setOf("md", "markdown", "mdown", "mkdn", "mkd")
+    private val textExtensions = setOf("txt", "text", "log", "ini", "conf", "properties")
+
+    private fun isMarkdownUri(uri: Uri): Boolean {
+        val mimeType = try { contentResolver.getType(uri) } catch (e: Exception) { null }
+        if (mimeType == "text/markdown" || mimeType == "text/x-markdown") return true
+
+        val urlExtension = MimeTypeMap.getFileExtensionFromUrl(uri.toString()).lowercase()
+        if (urlExtension in markdownExtensions) return true
+
+        val pathExtension = uri.path?.substringAfterLast('.', "")?.lowercase()
+        if (pathExtension != null && pathExtension.isNotEmpty() && pathExtension in markdownExtensions) return true
+
+        val displayName = getUriDisplayName(uri)
+        val nameExtension = displayName?.substringAfterLast('.', "")?.lowercase()
+        if (nameExtension != null && nameExtension.isNotEmpty() && nameExtension in markdownExtensions) return true
+
+        if (uri.scheme == "file") {
+            val file = File(uri.path ?: "")
+            if (file.extension.lowercase() in markdownExtensions) return true
+        }
+
+        return false
+    }
+
+    private fun isTextUri(uri: Uri): Boolean {
+        val mimeType = try { contentResolver.getType(uri) } catch (e: Exception) { null }
+        if (mimeType == "text/plain") return true
+
+        val urlExtension = MimeTypeMap.getFileExtensionFromUrl(uri.toString()).lowercase()
+        if (urlExtension in textExtensions) return true
+
+        val pathExtension = uri.path?.substringAfterLast('.', "")?.lowercase()
+        if (pathExtension != null && pathExtension.isNotEmpty() && pathExtension in textExtensions) return true
+
+        val displayName = getUriDisplayName(uri)
+        val nameExtension = displayName?.substringAfterLast('.', "")?.lowercase()
+        if (nameExtension != null && nameExtension.isNotEmpty() && nameExtension in textExtensions) return true
+
+        if (uri.scheme == "file") {
+            val file = File(uri.path ?: "")
+            if (file.extension.lowercase() in textExtensions) return true
         }
 
         return false
@@ -1056,6 +1194,36 @@ else {
     }
 
     private fun openFile(fileItem: FileItem, passphrase: String? = null) {
+        val ext = fileItem.extension.lowercase()
+        val isMd = ext in markdownExtensions
+        val isTxt = ext in textExtensions
+
+        if (isMd || isTxt) {
+            if (fileItem.virtualZipSource != null) {
+                val entryPath = fileItem.zipEntryPath ?: fileItem.name
+                val source = DocumentSource.VirtualZipSource(
+                    archiveFile = fileItem.virtualZipSource,
+                    entryPath = entryPath,
+                    displayName = fileItem.name
+                )
+                pendingDocument = source to isMd
+                return
+            }
+
+            val path = fileItem.file.absolutePath
+            val restricted = SafManager.isRestrictedPath(path)
+            if (restricted) {
+                val safUri = if (SafManager.hasPermission(this, path)) SafManager.getContentUri(this, path) else null
+                if (safUri != null) {
+                    pendingDocument = DocumentSource.UriSource(safUri, fileItem.name, isReadOnly = false) to isMd
+                    return
+                }
+            }
+
+            pendingDocument = DocumentSource.FileSource(fileItem.file) to isMd
+            return
+        }
+
         val intent = createViewIntent(fileItem, passphrase) ?: return
         try {
             // Check for offline file first (simplified from previous implementation)
@@ -1267,4 +1435,10 @@ private sealed class AppScreen {
     object Settings : AppScreen()
     object About : AppScreen()
     object RecycleBin : AppScreen()
+    data class Document(
+        val source: DocumentSource,
+        val isMarkdown: Boolean,
+        val initialMode: DocumentMode = DocumentMode.VIEW,
+        val previousScreen: AppScreen? = null
+    ) : AppScreen()
 }
