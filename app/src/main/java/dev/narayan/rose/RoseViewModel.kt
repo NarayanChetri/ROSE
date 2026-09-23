@@ -16,6 +16,8 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.narayan.rose.filejob.JobManager
+import dev.narayan.rose.update.SemanticVersion
+import dev.narayan.rose.update.UpdatePreferences
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONObject
@@ -138,6 +140,13 @@ fun scanFilesystemForQuery(query: String, root: File, filterType: FileType? = nu
 class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
     private val settings = SettingsManager(application)
+    val updatePreferences = UpdatePreferences(application)
+
+    private val _autoCheckUpdates = mutableStateOf(settings.autoCheckUpdates)
+    val autoCheckUpdates: Boolean by _autoCheckUpdates
+
+    private val _skippedVersion = mutableStateOf(settings.skippedUpdateVersion)
+    val skippedVersion: String? by _skippedVersion
 
     var currentPath by mutableStateOf(Environment.getExternalStorageDirectory().absolutePath)
         private set
@@ -1140,6 +1149,23 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+
+        // Synchronize update preferences from DataStore
+        viewModelScope.launch {
+            updatePreferences.autoCheckEnabledFlow.collect { enabled ->
+                _autoCheckUpdates.value = enabled
+                settings.autoCheckUpdates = enabled
+            }
+        }
+        viewModelScope.launch {
+            updatePreferences.skippedVersionFlow.collect { skipped ->
+                _skippedVersion.value = skipped
+                settings.skippedUpdateVersion = skipped
+            }
+        }
+
+        // Automatic update check on app launch (throttled to once per 24 hours)
+        performAutoUpdateCheckIfNeeded()
     }
 
     // ----- Theme settings -----
@@ -3230,6 +3256,11 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
     // ----- Update Check (GitHub Releases) -----
 
+    companion object {
+        private var autoUpdateCheckedInProcess = false
+        private const val AUTO_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000L // 24 hours
+    }
+
     var updateCheckResult by mutableStateOf<UpdateCheckResult>(UpdateCheckResult.Idle)
         private set
 
@@ -3237,29 +3268,81 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         updateCheckResult = UpdateCheckResult.Idle
     }
 
-    fun checkForUpdates() {
-        if (updateCheckResult is UpdateCheckResult.Checking) return
-        updateCheckResult = UpdateCheckResult.Checking
+    fun dismissUpdateSheet() {
+        cancelUpdateDownload()
+        resetUpdateCheck()
+    }
+
+    fun setAutoCheckUpdates(enabled: Boolean) {
+        _autoCheckUpdates.value = enabled
+        settings.autoCheckUpdates = enabled
+        viewModelScope.launch(Dispatchers.IO) {
+            updatePreferences.setAutoCheckEnabled(enabled)
+        }
+    }
+
+    fun skipVersion(versionTag: String) {
+        _skippedVersion.value = versionTag
+        settings.skippedUpdateVersion = versionTag
+        viewModelScope.launch(Dispatchers.IO) {
+            updatePreferences.setSkippedVersion(versionTag)
+        }
+        dismissUpdateSheet()
+    }
+
+    fun performAutoUpdateCheckIfNeeded() {
+        checkForUpdates(isAutoCheck = true)
+    }
+
+    /**
+     * Checks GitHub releases for a newer version.
+     *
+     * @param isAutoCheck When true (e.g. on app launch):
+     * - Respects the [autoCheckUpdates] toggle (makes zero network calls if disabled).
+     * - Only runs once per app process.
+     * - Throttled to at most once every 24 hours using DataStore.
+     * - Fails silently on any network or parsing error.
+     * - Ignores releases already marked as skipped.
+     *
+     * When false (manual button in About):
+     * - Always checks GitHub regardless of toggle or skipped version.
+     * - Shows in-progress, up-to-date, or error states.
+     */
+    fun checkForUpdates(isAutoCheck: Boolean = false) {
+        if (isAutoCheck) {
+            if (!autoCheckUpdates) return
+            if (autoUpdateCheckedInProcess) return
+            autoUpdateCheckedInProcess = true
+        } else {
+            if (updateCheckResult is UpdateCheckResult.Checking) return
+            updateCheckResult = UpdateCheckResult.Checking
+        }
 
         viewModelScope.launch(Dispatchers.IO) {
+            if (isAutoCheck) {
+                val lastCheck = updatePreferences.getLastCheckTime()
+                val now = System.currentTimeMillis()
+                if (now - lastCheck < AUTO_UPDATE_INTERVAL_MS && lastCheck > 0L) {
+                    return@launch
+                }
+            }
+
+            var connection: HttpURLConnection? = null
             try {
                 val url = URL("https://api.github.com/repos/NarayanChetri/ROSE/releases/latest")
-                val connection = url.openConnection() as HttpURLConnection
-                connection.requestMethod = "GET"
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
+                connection = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 10000
+                    readTimeout = 10000
+                }
 
                 if (connection.responseCode == 200) {
                     val response = connection.inputStream.bufferedReader().readText()
                     val json = JSONObject(response)
                     val tagName = json.getString("tag_name")
-                    val body = json.getString("body")
+                    val body = json.optString("body", "")
                     val htmlUrl = json.getString("html_url")
 
-                    // Look for a directly-downloadable .apk asset on the release so
-                    // "Download & Install" can fetch it in-app instead of just sending
-                    // the user to the GitHub release page. Falls back to htmlUrl (and
-                    // the browser) if a release was published without one attached.
                     var apkUrl: String? = null
                     val assets = json.optJSONArray("assets")
                     if (assets != null) {
@@ -3273,23 +3356,22 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
 
+                    // Save last check time in DataStore
+                    val now = System.currentTimeMillis()
+                    updatePreferences.setLastCheckTime(now)
+
                     val currentVersion = BuildConfig.VERSION_NAME
-                    // Simple version comparison (e.g., "1.1" vs "1.0")
-                    // Note: GitHub tags often start with 'v' (v1.1)
-                    val latestVersion = tagName.removePrefix("v").trim()
+                    val isUpdateAvailable = SemanticVersion.isNewerVersion(currentVersion, tagName)
 
-                    val isUpdateAvailable = isNewerVersion(currentVersion, latestVersion)
+                    if (isUpdateAvailable) {
+                        if (isAutoCheck) {
+                            val skipped = updatePreferences.getSkippedVersion() ?: skippedVersion
+                            if (!skipped.isNullOrBlank() && !SemanticVersion.isNewerVersion(skipped, tagName)) {
+                                return@launch
+                            }
+                        }
 
-                    withContext(Dispatchers.Main) {
-                        if (isUpdateAvailable) {
-                            // A download/install in progress (or already completed but not
-                            // yet installed) from a PREVIOUS check only stays valid if it's
-                            // for this same release. If a newer tag just appeared - e.g. the
-                            // user backed out of installing an older download, then checked
-                            // again later and a newer release was published in the meantime -
-                            // that stale Downloading/ReadyToInstall/Error state must not be
-                            // shown against the new tag, or "Install" would silently install
-                            // the wrong version.
+                        withContext(Dispatchers.Main) {
                             if (updateDownloadTag != tagName) {
                                 updateDownloadTag = null
                                 updateDownloadState = UpdateDownloadState.Idle
@@ -3297,36 +3379,35 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                             updateCheckResult = UpdateCheckResult.UpdateAvailable(
                                 UpdateInfo(tagName, body, htmlUrl, apkUrl)
                             )
-                        } else {
-                            updateCheckResult = UpdateCheckResult.UpToDate
+                        }
+                    } else {
+                        if (!isAutoCheck) {
+                            withContext(Dispatchers.Main) {
+                                updateCheckResult = UpdateCheckResult.UpToDate
+                            }
                         }
                     }
                 } else {
-                    withContext(Dispatchers.Main) {
-                        updateCheckResult = UpdateCheckResult.Error(getApplication<Application>().getString(R.string.update_check_failed_http, connection.responseCode))
+                    if (!isAutoCheck) {
+                        withContext(Dispatchers.Main) {
+                            updateCheckResult = UpdateCheckResult.Error(
+                                getApplication<Application>().getString(R.string.update_check_failed_http, connection.responseCode)
+                            )
+                        }
                     }
                 }
-                connection.disconnect()
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    updateCheckResult = UpdateCheckResult.Error(e.message ?: getApplication<Application>().getString(R.string.status_unknown_error))
+                if (!isAutoCheck) {
+                    withContext(Dispatchers.Main) {
+                        updateCheckResult = UpdateCheckResult.Error(
+                            e.message ?: getApplication<Application>().getString(R.string.status_unknown_error)
+                        )
+                    }
                 }
+            } finally {
+                connection?.disconnect()
             }
         }
-    }
-
-    private fun isNewerVersion(current: String, latest: String): Boolean {
-        val currentParts = current.split(".").mapNotNull { it.toIntOrNull() }
-        val latestParts = latest.split(".").mapNotNull { it.toIntOrNull() }
-
-        val length = maxOf(currentParts.size, latestParts.size)
-        for (i in 0 until length) {
-            val curr = currentParts.getOrElse(i) { 0 }
-            val late = latestParts.getOrElse(i) { 0 }
-            if (late > curr) return true
-            if (late < curr) return false
-        }
-        return false
     }
 
     // ----- Update Download + Install -----

@@ -227,6 +227,19 @@ fun SettingsScreen(
                 }
             }
 
+            // ---------- Updates ----------
+            SettingsSection(title = stringResource(R.string.settings_section_updates), icon = Icons.Default.SystemUpdate) {
+                SettingsGroup {
+                    SettingsSwitchRow(
+                        icon = Icons.Default.Sync,
+                        title = stringResource(R.string.settings_auto_check_updates),
+                        subtitle = stringResource(R.string.settings_auto_check_updates_subtitle),
+                        checked = viewModel.autoCheckUpdates,
+                        onCheckedChange = { viewModel.setAutoCheckUpdates(it) }
+                    )
+                }
+            }
+
             // ---------- Support ----------
             SettingsSection(title = stringResource(R.string.settings_section_support), icon = Icons.Default.Favorite) {
                 SettingsGroup {

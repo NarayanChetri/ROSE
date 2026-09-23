@@ -366,6 +366,16 @@
     <string name="notif_primer_description">Rose can notify you with live progress while a file downloads in the background - so you always know when it\'s saved offline.</string>
 
     <!-- Updates -->
+    <string name="settings_section_updates">Updates</string>
+    <string name="settings_auto_check_updates">Check for updates automatically</string>
+    <string name="settings_auto_check_updates_subtitle">Check for new versions on app launch (at most once every 24 hours)</string>
+    <string name="settings_auto_check_updates_sheet_subtitle">Automatically check on launch</string>
+    <string name="action_skip_version">Skip this version</string>
+    <string name="toast_skipped_version_info">You can still download it from the About section.</string>
+    <string name="update_sheet_title">Update Available</string>
+    <string name="update_sheet_version_header">Version %1$s</string>
+    <string name="update_sheet_whats_new">What\'s new</string>
+    <string name="action_update">Update</string>
     <string name="update_dialog_title">Update Available</string>
     <string name="update_dialog_message">A new version (%1$s) is available. Do you want to update now?</string>
     <string name="update_dialog_whats_new">What\'s new:</string>

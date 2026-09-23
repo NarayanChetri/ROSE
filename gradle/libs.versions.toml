@@ -17,6 +17,7 @@ shizuku = "13.1.5"
 documentfile = "1.1.0"
 libarchive = "1.1.6"
 commonmark = "0.24.0"
+datastore = "1.1.7"
 
 [libraries]
 androidx-documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentfile" }
@@ -48,6 +49,7 @@ commonmark = { group = "org.commonmark", name = "commonmark", version.ref = "com
 commonmark-ext-gfm-tables = { group = "org.commonmark", name = "commonmark-ext-gfm-tables", version.ref = "commonmark" }
 commonmark-ext-gfm-strikethrough = { group = "org.commonmark", name = "commonmark-ext-gfm-strikethrough", version.ref = "commonmark" }
 commonmark-ext-autolink = { group = "org.commonmark", name = "commonmark-ext-autolink", version.ref = "commonmark" }
+androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
