@@ -16,6 +16,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.narayan.rose.filejob.JobManager
+import dev.narayan.rose.update.ApkSelector
 import dev.narayan.rose.update.SemanticVersion
 import dev.narayan.rose.update.UpdatePreferences
 import kotlinx.coroutines.*
@@ -3343,18 +3344,19 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     val body = json.optString("body", "")
                     val htmlUrl = json.getString("html_url")
 
-                    var apkUrl: String? = null
+                    val assetsList = mutableListOf<ApkSelector.Asset>()
                     val assets = json.optJSONArray("assets")
                     if (assets != null) {
                         for (i in 0 until assets.length()) {
                             val asset = assets.optJSONObject(i) ?: continue
-                            val assetName = asset.optString("name")
-                            if (assetName.endsWith(".apk", ignoreCase = true)) {
-                                apkUrl = asset.optString("browser_download_url").takeIf { it.isNotBlank() }
-                                break
+                            val name = asset.optString("name")
+                            val downloadUrl = asset.optString("browser_download_url")
+                            if (name.isNotBlank() && downloadUrl.isNotBlank()) {
+                                assetsList.add(ApkSelector.Asset(name, downloadUrl))
                             }
                         }
                     }
+                    val apkUrl = ApkSelector.selectBestApk(assetsList)
 
                     // Save last check time in DataStore
                     val now = System.currentTimeMillis()
