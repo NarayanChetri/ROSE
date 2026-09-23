@@ -165,10 +165,17 @@ fun HomeScreen(
     var showMenu by remember { mutableStateOf(false) }
     var isSearching by remember { mutableStateOf(false) }
 
+    LaunchedEffect(Unit) {
+        viewModel.exitCategoryMode()
+        viewModel.resetFiles()
+    }
+
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.exitCategoryMode()
+                viewModel.resetFiles()
                 viewModel.loadStorageInfo()
                 viewModel.loadCategoryCounts(force = true)
                 viewModel.loadRecentFiles()
@@ -197,7 +204,8 @@ fun HomeScreen(
     BackHandler(enabled = isSearching) {
         isSearching = false
         searchQuery = ""
-        viewModel.searchFiles("")
+        viewModel.searchFiles(query = "", filterType = null, bucketId = null, scopePath = null)
+        viewModel.activeSearchFilter = SearchFilter.ALL
     }
 
     // Dialog states for recent file actions
@@ -214,13 +222,19 @@ fun HomeScreen(
                             query = searchQuery,
                             onQueryChange = {
                                 searchQuery = it
-                                viewModel.searchFiles(it)
+                                viewModel.searchFiles(query = it, filterType = null, bucketId = null, scopePath = null)
                             },
                             onBack = {
                                 isSearching = false
                                 searchQuery = ""
-                                viewModel.searchFiles("")
+                                viewModel.searchFiles(query = "", filterType = null, bucketId = null, scopePath = null)
+                                viewModel.activeSearchFilter = SearchFilter.ALL
                             }
+                        )
+                        SearchFilterChipsRow(
+                            selectedFilter = viewModel.activeSearchFilter,
+                            onFilterSelected = { viewModel.activeSearchFilter = it },
+                            counts = viewModel.searchFilterCounts
                         )
                     } else {
                         TopAppBar(
@@ -416,16 +430,33 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             if (isSearching && searchQuery.isNotEmpty()) {
-                item(key = "search_spacer") { Spacer(modifier = Modifier.height(8.dp)) }
+                val currentSearchResults = viewModel.filteredSearchResults
+                item(key = "search_spacer") { Spacer(modifier = Modifier.height(4.dp)) }
 
-                if (viewModel.searchResults.isEmpty() && !viewModel.isRecursiveSearching) {
-                    item(key = "no_results") {
-                        Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                            Text(stringResource(R.string.no_results_for_query, searchQuery), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (currentSearchResults.isEmpty()) {
+                    if (viewModel.isRecursiveSearching) {
+                        item(key = "search_loading") {
+                            SearchLoadingView(
+                                query = searchQuery,
+                                categoryName = if (viewModel.activeSearchFilter != SearchFilter.ALL) viewModel.activeSearchFilter.label else null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 48.dp, bottom = 32.dp)
+                            )
+                        }
+                    } else {
+                        item(key = "no_results") {
+                            SearchEmptyStateView(
+                                query = searchQuery,
+                                filter = viewModel.activeSearchFilter,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 48.dp, bottom = 32.dp)
+                            )
                         }
                     }
                 } else {
-                    itemsIndexed(viewModel.searchResults, key = { _, item -> item.file.absolutePath }) { index, item ->
+                    itemsIndexed(currentSearchResults, key = { _, item -> item.file.absolutePath }) { index, item ->
                         SearchResultItem(
                             item = item,
                             modifier = Modifier.animateItem(),
@@ -445,6 +476,8 @@ fun HomeScreen(
                                 isSearching = false
                                 searchQuery = ""
                                 viewModel.searchFiles("")
+                                viewModel.searchFiles(query = "", filterType = null, bucketId = null, scopePath = null)
+                                viewModel.activeSearchFilter = SearchFilter.ALL
                             },
                             onCut = {
                                 viewModel.toggleSelection(item)
@@ -454,6 +487,8 @@ fun HomeScreen(
                                 isSearching = false
                                 searchQuery = ""
                                 viewModel.searchFiles("")
+                                viewModel.searchFiles(query = "", filterType = null, bucketId = null, scopePath = null)
+                                viewModel.activeSearchFilter = SearchFilter.ALL
                             },
                             onExtract = {
                                 viewModel.prepareExtraction(item.file)
@@ -461,19 +496,13 @@ fun HomeScreen(
                             },
                             onOpenArchive = { onOpenPath(item.file.absolutePath, null) }
                         )
-                        if (viewModel.showListDividers && index != viewModel.searchResults.lastIndex) {
+                        if (viewModel.showListDividers && index != currentSearchResults.lastIndex) {
                             HorizontalDivider(
                                 modifier = Modifier.padding(start = 72.dp, end = 12.dp),
                                 thickness = 0.5.dp,
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
                             )
                         }
-                    }
-                }
-
-                if (viewModel.isRecursiveSearching) {
-                    item(key = "search_progress") {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     }
                 }
             } else {

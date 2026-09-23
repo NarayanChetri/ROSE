@@ -107,8 +107,8 @@ fun scanFilesystemForExtensions(
     return results
 }
 
-/** Same fallback walk as [scanFilesystemForExtensions], matching by filename instead of extension. */
-fun scanFilesystemForQuery(query: String, root: File, maxResults: Int = 100): List<File> {
+/** Same fallback walk as [scanFilesystemForExtensions], matching by filename and optional category filter. */
+fun scanFilesystemForQuery(query: String, root: File, filterType: FileType? = null, maxResults: Int = 100): List<File> {
     val results = mutableListOf<File>()
     val stack = ArrayDeque<File>()
     stack.addLast(root)
@@ -121,9 +121,14 @@ fun scanFilesystemForQuery(query: String, root: File, maxResults: Int = 100): Li
         for (child in children) {
             if (results.size >= maxResults) break
             if (child.isDirectory) {
+                if (filterType == null && child.name.lowercase().contains(lowerQuery)) {
+                    results.add(child)
+                }
                 if (!fsScanShouldSkipDir(child)) stack.addLast(child)
             } else if (child.name.lowercase().contains(lowerQuery)) {
-                results.add(child)
+                if (filterType == null || FileItem(child).matchesCategory(filterType)) {
+                    results.add(child)
+                }
             }
         }
     }
@@ -588,6 +593,13 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     private var filesGeneration = 0
     var searchResults = mutableStateListOf<FileItem>()
     var isRecursiveSearching by mutableStateOf(false)
+    var activeSearchFilter by mutableStateOf(SearchFilter.ALL)
+
+    val filteredSearchResults: List<FileItem>
+        get() = filterSearchResults(searchResults, activeSearchFilter)
+
+    val searchFilterCounts: Map<SearchFilter, Int>
+        get() = computeSearchFilterCounts(searchResults)
 
     // path -> (lastModified at time of scan, computed recursive size). Lets
     // repeated sorts/re-visits skip re-walking a folder that hasn't changed.
@@ -1499,80 +1511,226 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
     private var searchJob: Job? = null
 
-    fun searchFiles(query: String) {
+    fun searchFiles(
+        query: String,
+        filterType: FileType? = categoryFilterType,
+        bucketId: String? = categoryBucketId,
+        scopePath: String? = if (categoryFilterType != null) null else currentPath
+    ) {
         searchJob?.cancel()
         if (query.isBlank()) {
             searchResults.clear()
             isRecursiveSearching = false
+            activeSearchFilter = SearchFilter.ALL
             return
         }
 
+        // Set immediately so UI transitions to searching state without blank/no-results flicker
+        isRecursiveSearching = true
+
+        // Instant in-memory results if categoryFiles is already loaded
+        if (filterType != null && categoryFiles.isNotEmpty()) {
+            val instantMatches = categoryFiles.filter {
+                it.name.contains(query, ignoreCase = true) &&
+                (bucketId == null || it.bucketId == bucketId) &&
+                it.matchesCategory(filterType)
+            }.sortedWith(
+                compareByDescending<FileItem> { it.isDirectory }
+                    .thenByDescending { it.name.equals(query, ignoreCase = true) }
+                    .thenByDescending { it.name.startsWith(query, ignoreCase = true) }
+                    .thenBy { it.name.lowercase() }
+            )
+            searchResults.clear()
+            searchResults.addAll(instantMatches)
+        } else {
+            searchResults.clear()
+        }
+
         searchJob = viewModelScope.launch(Dispatchers.IO) {
-            kotlinx.coroutines.delay(200)
+            kotlinx.coroutines.delay(180)
+            ensureActive()
+
+            val results = mutableListOf<FileItem>()
+
+            // Determine if the search scope is restricted to Android/data or Android/obb
+            val rawScope = scopePath?.let { ShizukuManager.normalize(it) } ?: ""
+            val cleanScope = if (rawScope == Environment.getExternalStorageDirectory().absolutePath) "" else rawScope
+            val isDataScope = cleanScope.contains("/Android/data", ignoreCase = true) || cleanScope.endsWith("/Android/data")
+            val isObbScope = cleanScope.contains("/Android/obb", ignoreCase = true) || cleanScope.endsWith("/Android/obb")
+            val isRestrictedScope = isDataScope || isObbScope
+
+            if (isRestrictedScope) {
+                // Strict isolation: User is searching inside Android/data or Android/obb.
+                // Search ONLY within this restricted scope (do not query MediaStore or other folders).
+                if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
+                    val shizukuResults = ShizukuManager.searchFiles(
+                        searchRoot = cleanScope,
+                        query = query,
+                        filterType = filterType,
+                        showHiddenFiles = showHiddenFiles,
+                        maxResults = 100
+                    )
+                    results.addAll(shizukuResults)
+                } else if (SafManager.hasPermission(getApplication(), cleanScope)) {
+                    val safResults = SafManager.searchFiles(
+                        context = getApplication(),
+                        rootPath = cleanScope,
+                        query = query,
+                        filterType = filterType,
+                        showHiddenFiles = showHiddenFiles,
+                        maxResults = 100
+                    )
+                    results.addAll(safResults)
+                }
+            } else {
+                // User is searching from Home Screen, All Files, or a Category outside Android/data / Android/obb.
+                // Enforce that results NEVER contain Android/data or Android/obb.
+                val queryUri = MediaStore.Files.getContentUri("external")
+                val projection = arrayOf(
+                    MediaStore.Files.FileColumns.DATA,
+                    MediaStore.Files.FileColumns.DISPLAY_NAME,
+                    MediaStore.Files.FileColumns.SIZE,
+                    MediaStore.Files.FileColumns.DATE_MODIFIED,
+                    MediaStore.Files.FileColumns.MIME_TYPE
+                )
+
+                val conditions = mutableListOf<String>()
+                val selectionArgs = mutableListOf<String>()
+
+                // Scope path (if scoped to a specific normal folder)
+                if (cleanScope.isNotEmpty()) {
+                    conditions.add("${MediaStore.Files.FileColumns.DATA} LIKE ?")
+                    selectionArgs.add("$cleanScope/%")
+                }
+
+                // Name match
+                conditions.add("${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE ?")
+                selectionArgs.add("%$query%")
+
+                // Category type filter (if searching within a category)
+                if (filterType != null) {
+                    val catClause = when (filterType) {
+                        FileType.IMAGE -> "(${MediaStore.Files.FileColumns.MEDIA_TYPE} = ${MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE} OR ${MediaStore.MediaColumns.DATA} LIKE '%.jpg' OR ${MediaStore.MediaColumns.DATA} LIKE '%.jpeg' OR ${MediaStore.MediaColumns.DATA} LIKE '%.png' OR ${MediaStore.MediaColumns.DATA} LIKE '%.webp')"
+                        FileType.VIDEO -> "(${MediaStore.Files.FileColumns.MEDIA_TYPE} = ${MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO} OR ${MediaStore.MediaColumns.DATA} LIKE '%.mp4' OR ${MediaStore.MediaColumns.DATA} LIKE '%.mkv')"
+                        FileType.AUDIO -> "(${MediaStore.Files.FileColumns.MEDIA_TYPE} = ${MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO} OR ${MediaStore.MediaColumns.DATA} LIKE '%.mp3' OR ${MediaStore.MediaColumns.DATA} LIKE '%.m4a')"
+                        FileType.PDF -> "(${MediaStore.Files.FileColumns.MIME_TYPE} = 'application/pdf' OR ${MediaStore.MediaColumns.DATA} LIKE '%.pdf')"
+                        FileType.APK -> "(${MediaStore.Files.FileColumns.MIME_TYPE} = 'application/vnd.android.package-archive' OR ${MediaStore.MediaColumns.DATA} LIKE '%.apk')"
+                        FileType.ZIP -> "(${MediaStore.MediaColumns.DATA} LIKE '%.zip' OR ${MediaStore.MediaColumns.DATA} LIKE '%.rar' OR ${MediaStore.MediaColumns.DATA} LIKE '%.7z' OR ${MediaStore.MediaColumns.DATA} LIKE '%.tar' OR ${MediaStore.MediaColumns.DATA} LIKE '%.gz')"
+                        FileType.DOCUMENT -> "(${MediaStore.Files.FileColumns.MIME_TYPE} LIKE 'text/%' OR ${MediaStore.Files.FileColumns.MIME_TYPE} = 'application/pdf' OR ${MediaStore.Files.FileColumns.MIME_TYPE} LIKE 'application/msword' OR ${MediaStore.Files.FileColumns.MIME_TYPE} LIKE 'application/vnd.openxmlformats-officedocument%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.txt' OR ${MediaStore.MediaColumns.DATA} LIKE '%.doc%' OR ${MediaStore.MediaColumns.DATA} LIKE '%.pdf')"
+                        else -> null
+                    }
+                    if (catClause != null) {
+                        conditions.add(catClause)
+                    }
+                }
+
+                if (bucketId != null) {
+                    conditions.add("${MediaStore.Images.Media.BUCKET_ID} = ?")
+                    selectionArgs.add(bucketId)
+                }
+
+                // Strictly exclude Android/data and Android/obb from global search results
+                conditions.add("${MediaStore.MediaColumns.DATA} NOT LIKE '%/Android/data/%'")
+                conditions.add("${MediaStore.MediaColumns.DATA} NOT LIKE '%/Android/obb/%'")
+
+                if (!showHiddenFiles) {
+                    conditions.add("${MediaStore.MediaColumns.DATA} NOT LIKE '%/.%'")
+                }
+
+                val selection = conditions.joinToString(" AND ")
+
+                try {
+                    getApplication<Application>().contentResolver.query(
+                        queryUri,
+                        projection,
+                        selection,
+                        selectionArgs.toTypedArray(),
+                        "${MediaStore.Files.FileColumns.DATE_MODIFIED} DESC"
+                    )?.use { cursor ->
+                        val dataCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATA)
+                        val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DISPLAY_NAME)
+                        val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.SIZE)
+                        val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATE_MODIFIED)
+                        val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MIME_TYPE)
+
+                        while (cursor.moveToNext()) {
+                            ensureActive()
+                            val path = cursor.getString(dataCol) ?: continue
+                            // Extra safety check against Android/data and Android/obb
+                            if (path.contains("/Android/data", ignoreCase = true) || path.contains("/Android/obb", ignoreCase = true)) continue
+
+                            val file = File(path)
+                            if (file.exists()) {
+                                val name = cursor.getString(nameCol) ?: file.name
+                                val size = cursor.getLong(sizeCol)
+                                val date = cursor.getLong(dateCol) * 1000
+                                val mime = cursor.getString(mimeCol)
+                                val item = FileItem(
+                                    file = file,
+                                    isDirectory = file.isDirectory,
+                                    name = name,
+                                    size = size,
+                                    lastModified = date,
+                                    extension = name.substringAfterLast('.', "").lowercase(),
+                                    mimeType = mime
+                                )
+                                if (filterType == null || item.matchesCategory(filterType)) {
+                                    results.add(item)
+                                }
+                            }
+                            if (results.size >= 100) break
+                        }
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {}
+
+                // Filesystem walk fallback for non-indexed files
+                if (results.size < 100) {
+                    try {
+                        val alreadyFound = results.mapTo(mutableSetOf()) { it.file.absolutePath }
+                        val scanRoot = if (cleanScope.isNotEmpty()) {
+                            File(cleanScope)
+                        } else {
+                            Environment.getExternalStorageDirectory()
+                        }
+                        scanFilesystemForQuery(query, scanRoot, filterType = filterType, maxResults = 100 - results.size).forEach { file ->
+                            ensureActive()
+                            val path = file.absolutePath
+                            if (!path.contains("/Android/data", ignoreCase = true) && !path.contains("/Android/obb", ignoreCase = true)) {
+                                if (path !in alreadyFound) {
+                                    val item = FileItem(file)
+                                    if (filterType == null || item.matchesCategory(filterType)) {
+                                        results.add(item)
+                                        alreadyFound.add(path)
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {}
+                }
+            }
+
+            // Ensure folders are ALWAYS sorted first, followed by exact/prefix matches and alphabetical order
+            val finalResults = results
+                .distinctBy { it.file.absolutePath }
+                .sortedWith(
+                    compareByDescending<FileItem> { it.isDirectory }
+                        .thenByDescending { it.name.equals(query, ignoreCase = true) }
+                        .thenByDescending { it.name.startsWith(query, ignoreCase = true) }
+                        .thenBy { it.name.lowercase() }
+                )
 
             withContext(Dispatchers.Main) {
                 searchResults.clear()
-                isRecursiveSearching = true
-            }
-
-            val results = mutableListOf<FileItem>()
-            val queryUri = MediaStore.Files.getContentUri("external")
-            val projection = arrayOf(MediaStore.Files.FileColumns.DATA)
-
-            val selection = if (currentPath.isNotEmpty() && currentPath != Environment.getExternalStorageDirectory().absolutePath) {
-                "${MediaStore.Files.FileColumns.DATA} LIKE ? AND ${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE ?"
-            } else {
-                "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE ?"
-            }
-
-            val selectionArgs = if (currentPath.isNotEmpty() && currentPath != Environment.getExternalStorageDirectory().absolutePath) {
-                arrayOf("$currentPath%", "%$query%")
-            } else {
-                arrayOf("%$query%")
-            }
-
-            try {
-                getApplication<Application>().contentResolver.query(queryUri, projection, selection, selectionArgs, null)?.use { cursor ->
-                    val dataCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATA)
-                    while (cursor.moveToNext()) {
-                        val path = cursor.getString(dataCol) ?: continue
-                        val file = File(path)
-                        // Note: file.exists() can be slow on large lists, but needed for accuracy
-                        if (file.exists()) {
-                            results.add(FileItem(file))
-                        }
-                        if (results.size >= 100) break
-                    }
-                }
-            } catch (e: Exception) {}
-
-            // MediaStore-only search misses anything MediaStore never scanned
-            // (a zip copied in manually, WhatsApp/Telegram files, etc). Fill
-            // remaining slots with a direct filesystem walk of the same scope,
-            // deduping against what MediaStore already found.
-            if (results.size < 100) {
-                try {
-                    val alreadyFound = results.mapTo(mutableSetOf()) { it.file.absolutePath }
-                    val scanRoot = if (currentPath.isNotEmpty() && currentPath != Environment.getExternalStorageDirectory().absolutePath) {
-                        File(currentPath)
-                    } else {
-                        Environment.getExternalStorageDirectory()
-                    }
-                    scanFilesystemForQuery(query, scanRoot, maxResults = 100 - results.size).forEach { file ->
-                        if (file.absolutePath !in alreadyFound) {
-                            results.add(FileItem(file))
-                            alreadyFound.add(file.absolutePath)
-                        }
-                    }
-                } catch (e: Exception) {}
-            }
-
-            withContext(Dispatchers.Main) {
-                searchResults.addAll(results)
+                searchResults.addAll(finalResults)
                 isRecursiveSearching = false
             }
         }
     }
+
 
     fun openArchive(file: File, initialEntryPath: String = "") {
         stopWatchingDirectory()
@@ -2205,6 +2363,9 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         isCategoryLoading = false
         isRefreshing = false
         exitSelectionMode()
+        if (currentPath.isEmpty()) {
+            currentPath = Environment.getExternalStorageDirectory().absolutePath
+        }
     }
 
     fun closeArchive() {
@@ -2823,6 +2984,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         categoryTitle = null
         categoryFilterType = null
         categoryBucketId = null
+        currentPath = Environment.getExternalStorageDirectory().absolutePath
     }
 
     // ----- Quick access (Home screen) -----

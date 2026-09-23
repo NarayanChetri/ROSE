@@ -494,4 +494,56 @@ object SafManager {
         val doc = createFileDocument(context, path, mimeType) ?: return null
         return context.contentResolver.openOutputStream(doc.uri)
     }
+
+    /**
+     * Recursively traverses a restricted folder tree via SAF to find files matching [query].
+     */
+    fun searchFiles(
+        context: Context,
+        rootPath: String,
+        query: String,
+        filterType: FileType? = null,
+        showHiddenFiles: Boolean = false,
+        maxResults: Int = 100
+    ): List<FileItem> {
+        val sanitizedQuery = query.trim().lowercase()
+        if (sanitizedQuery.isEmpty()) return emptyList()
+
+        val results = mutableListOf<FileItem>()
+        val queue = ArrayDeque<String>()
+        queue.add(rootPath)
+        var foldersScanned = 0
+        val maxFolders = 150
+
+        while (queue.isNotEmpty() && results.size < maxResults && foldersScanned < maxFolders) {
+            val currentFolder = queue.removeFirst()
+            foldersScanned++
+            val children = try {
+                listFiles(context, currentFolder)
+            } catch (e: Exception) {
+                emptyList()
+            }
+            for (child in children) {
+                if (results.size >= maxResults) break
+                if (!showHiddenFiles && child.name.startsWith(".")) continue
+
+                if (child.isDirectory) {
+                    if (filterType == null && child.name.lowercase().contains(sanitizedQuery)) {
+                        results.add(child)
+                    }
+                    val childPath = if (child.file.path.startsWith("/content:/")) {
+                        child.file.path.substring(1).replaceFirst("content:/", "content://")
+                    } else {
+                        child.file.path
+                    }
+                    queue.add(childPath)
+                } else if (child.name.lowercase().contains(sanitizedQuery)) {
+                    if (filterType == null || child.matchesCategory(filterType)) {
+                        results.add(child)
+                    }
+                }
+            }
+        }
+        return results.distinctBy { it.file.absolutePath }
+    }
 }

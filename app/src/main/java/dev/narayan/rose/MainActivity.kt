@@ -597,6 +597,8 @@ class MainActivity : ComponentActivity() {
                                             sharedTransitionScope = this@SharedTransitionLayout,
                                             animatedVisibilityScope = this@AnimatedContent,
                                             onExitToHome = {
+                                                viewModel.resetFiles()
+                                                viewModel.exitCategoryMode()
                                                 if (sharedUris != null) {
                                                     screen = AppScreen.SaveAs(sharedUris!!, true)
                                                 } else {
