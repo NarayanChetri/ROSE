@@ -172,8 +172,18 @@ class SettingsManager(context: Context) {
         get() = prefs.getBoolean(KEY_NOTIFICATION_PRIMER_SHOWN, false)
         set(value) = prefs.edit { putBoolean(KEY_NOTIFICATION_PRIMER_SHOWN, value) }
 
+    var autoCheckUpdates: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_CHECK_UPDATES, true)
+        set(value) = prefs.edit { putBoolean(KEY_AUTO_CHECK_UPDATES, value) }
+
+    var skippedUpdateVersion: String?
+        get() = prefs.getString(KEY_SKIPPED_UPDATE_VERSION, null)
+        set(value) = prefs.edit { putString(KEY_SKIPPED_UPDATE_VERSION, value) }
+
     companion object {
         private const val PREFS_NAME = "rose_prefs"
+        private const val KEY_AUTO_CHECK_UPDATES = "auto_check_updates"
+        private const val KEY_SKIPPED_UPDATE_VERSION = "skipped_update_version"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_AMOLED = "amoled_mode"
         private const val KEY_DYNAMIC_COLOR = "dynamic_color"

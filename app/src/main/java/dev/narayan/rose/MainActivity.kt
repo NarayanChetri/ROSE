@@ -42,6 +42,7 @@ import rikka.shizuku.Shizuku
 import dev.narayan.rose.document.DocumentMode
 import dev.narayan.rose.document.DocumentScreen
 import dev.narayan.rose.document.DocumentSource
+import dev.narayan.rose.update.UpdateBottomSheet
 
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
@@ -281,6 +282,41 @@ class MainActivity : ComponentActivity() {
                             ) { Text(stringResource(R.string.action_not_now)) }
                         }
                     }
+                }
+
+                // Automatic & manual update bottom sheet
+                val updateCheckResult = viewModel.updateCheckResult
+                if (updateCheckResult is UpdateCheckResult.UpdateAvailable) {
+                    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    UpdateBottomSheet(
+                        info = updateCheckResult.info,
+                        downloadState = viewModel.updateDownloadState,
+                        autoCheckEnabled = viewModel.autoCheckUpdates,
+                        onAutoCheckToggle = { viewModel.setAutoCheckUpdates(it) },
+                        onDismiss = {
+                            viewModel.dismissUpdateSheet()
+                        },
+                        onUpdate = {
+                            if (updateCheckResult.info.apkUrl != null) {
+                                viewModel.downloadAndInstallUpdate(updateCheckResult.info)
+                            } else {
+                                uriHandler.openUri(updateCheckResult.info.downloadUrl)
+                                viewModel.dismissUpdateSheet()
+                            }
+                        },
+                        onInstallClick = {
+                            viewModel.installDownloadedUpdate()
+                        },
+                        onSkipVersion = {
+                            viewModel.skipVersion(updateCheckResult.info.tagName)
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.toast_skipped_version_info),
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    )
                 }
 
                 // Handle SAF requests
