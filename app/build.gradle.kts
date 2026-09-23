@@ -22,8 +22,8 @@ android {
         applicationId = "dev.narayan.rose"
         minSdk = 24
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.2.4"
+        versionCode = 7
+        versionName = "1.2.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -139,7 +139,7 @@ androidComponents {
             val abi = output.filters.find {
                 it.filterType == com.android.build.api.variant.FilterConfiguration.FilterType.ABI
             }?.identifier
-            val baseCode = output.versionCode.orNull ?: 6
+            val baseCode = output.versionCode.orNull ?: 7
             if (abi != null) {
                 output.versionCode.set(baseCode * 10 + (abiCodes[abi] ?: 0))
             } else {

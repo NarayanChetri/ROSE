@@ -3,10 +3,10 @@ package dev.narayan.rose.update
 /**
  * Robust Semantic Version representation following SemVer 2.0.0 specification.
  * Handles:
- * - 'v' / 'V' prefixes (e.g., "v1.2.4")
- * - Major, minor, patch, and additional numeric components (e.g., "1.2", "1.2.4", "1.2.4.1")
- * - Pre-release identifiers (e.g., "1.2.4-rc.1", "1.2.4-beta")
- * - Build metadata ignored for precedence (e.g., "1.2.4+build.2024")
+ * - 'v' / 'V' prefixes (e.g., "v1.2.5")
+ * - Major, minor, patch, and additional numeric components (e.g., "1.2", "1.2.5", "1.2.5.1")
+ * - Pre-release identifiers (e.g., "1.2.5-rc.1", "1.2.5-beta")
+ * - Build metadata ignored for precedence (e.g., "1.2.5+build.2024")
  */
 data class SemanticVersion(
     val numbers: List<Int>,
