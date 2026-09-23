@@ -303,7 +303,7 @@ fun FileExplorerScreen(
     var showCompressDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf<FileItem?>(null) }
     var showExtractionDialog by remember { mutableStateOf<FileItem?>(null) }
-    var pendingDelete by remember { mutableStateOf<PendingDelete?>(null) }
+    var pendingDelete: PendingDelete? by remember { mutableStateOf<PendingDelete?>(null) }
     var isSearching by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var currentView by remember(startPath, startCategory, startRecent) {
@@ -877,30 +877,6 @@ fun FileExplorerScreen(
 
                                         val shouldGroupTop = currentView == "Recent" && searchQuery.isBlank()
 
-                                        MainTopBar(
-                                            title = when (currentView) {
-                                                "Recent" -> stringResource(R.string.home_section_recent_files)
-                                                "Category" -> viewModel.categoryTitle ?: stringResource(R.string.category_files)
-                                                else -> stringResource(R.string.category_all_files)
-                                            },
-                                            path = if (currentView == "Files") viewModel.currentPath else null,
-                                            archiveName = viewModel.currentZipFile?.name?.let { zipName ->
-                                                val subPath = viewModel.currentZipEntryPath.trimEnd('/')
-                                                if (subPath.isEmpty()) zipName else "$zipName/$subPath"
-                                            },
-                                            viewModel = viewModel,
-                                            currentView = currentView,
-                                            totalItems = if (shouldGroupTop) displayedFiles.size else null,
-                                            sharedTransitionScope = sharedTransitionScope,
-                                            animatedVisibilityScope = animatedVisibilityScope,
-                                            onSearchClick = { isSearching = true },
-                                            onRefreshClick = {
-                                                when (currentView) {
-                                                    "Recent" -> viewModel.loadRecentFiles()
-                                                    "Category" -> {
-                                                        val type = viewModel.categoryFilterType
-                                                        val title = viewModel.categoryTitle
-                                                        if (type != null && title != null) viewModel.browseCategory(type, title, bucketId = viewModel.categoryBucketId, forceRefresh = true)
                                         Column {
                                             MainTopBar(
                                                 title = when (currentView) {
@@ -929,14 +905,6 @@ fun FileExplorerScreen(
                                                         }
                                                         else -> viewModel.loadFiles(viewModel.currentPath)
                                                     }
-                                                    else -> viewModel.loadFiles(viewModel.currentPath)
-                                                }
-                                            },
-                                            onNewFolderClick = { showCreateFolderDialog = true },
-                                            onSettingsClick = { activeScreen = "Settings" },
-                                            onNavigate = { viewModel.navigateTo(it) },
-                                            onBack = { handleBack() }
-                                        )
                                                 },
                                                 onNewFolderClick = { showCreateFolderDialog = true },
                                                 onSettingsClick = { activeScreen = "Settings" },
@@ -998,14 +966,11 @@ fun FileExplorerScreen(
                                         }
                                     }
                                 },
-                                isAllSelected = viewModel.selectedFiles.size == displayedFiles.size && displayedFiles.isNotEmpty(),
                                 isAllSelected = viewModel.selectedFiles.size == effectiveDisplayedFiles.size && effectiveDisplayedFiles.isNotEmpty(),
                                 onSelectAllClick = {
-                                    if (viewModel.selectedFiles.size == displayedFiles.size) {
                                     if (viewModel.selectedFiles.size == effectiveDisplayedFiles.size) {
                                         viewModel.exitSelectionMode()
                                     } else {
-                                        viewModel.selectAll(displayedFiles)
                                         viewModel.selectAll(effectiveDisplayedFiles)
                                     }
                                 },
@@ -1218,11 +1183,9 @@ fun FileExplorerScreen(
                             checkboxDragSelectState.containerBounds = coords.boundsInWindow()
                         }.then(
                             if (viewModel.isSelectionMode) {
-                                Modifier.pointerInput(checkboxDragSelectState, displayedFiles) {
                                 Modifier.pointerInput(checkboxDragSelectState, effectiveDisplayedFiles) {
                                     detectCheckboxDragSelect(
                                         dragSelectState = checkboxDragSelectState,
-                                        displayedFiles = displayedFiles,
                                         displayedFiles = effectiveDisplayedFiles,
                                         viewModel = viewModel
                                     )

@@ -22,12 +22,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.automirrored.filled.Article
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
+import androidx.compose.material.icons.automirrored.filled.Subject
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Slideshow
-import androidx.compose.material.icons.filled.Subject
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -56,11 +56,11 @@ enum class DocumentTypeCategory(
 ) {
     ALL("all", "All", Icons.Default.Description, Color(0xFF4C9A72)),
     PDF("pdf", "PDF", Icons.Default.PictureAsPdf, Color(0xFFE53935)),
-    DOC("doc", "DOC", Icons.Default.Article, Color(0xFF1E88E5)),
-    TXT("txt", "TXT", Icons.Default.Subject, Color(0xFF43A047)),
+    DOC("doc", "DOC", Icons.AutoMirrored.Filled.Article, Color(0xFF1E88E5)),
+    TXT("txt", "TXT", Icons.AutoMirrored.Filled.Subject, Color(0xFF43A047)),
     XLS("xls", "XLS", Icons.Default.TableChart, Color(0xFF2E7D32)),
     PPT("ppt", "PPT", Icons.Default.Slideshow, Color(0xFFE65100)),
-    OTHER("other", "Other", Icons.Default.InsertDriveFile, Color(0xFF78909C));
+    OTHER("other", "Other", Icons.AutoMirrored.Filled.InsertDriveFile, Color(0xFF78909C));
 
     fun matches(item: FileItem): Boolean {
         val ext = item.extension.lowercase()
