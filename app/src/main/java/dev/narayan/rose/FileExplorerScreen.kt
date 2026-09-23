@@ -31,6 +31,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -318,6 +320,24 @@ fun FileExplorerScreen(
     var activeScreen by remember { mutableStateOf("Main") }
     var lastNonZipView by remember { mutableStateOf(currentView) }
 
+    val coroutineScope = rememberCoroutineScope()
+    val isDocumentCategory = currentView == "Category" && viewModel.categoryFilterType == FileType.DOCUMENT
+    val docCategoryCounts = remember(viewModel.categoryFiles, isDocumentCategory) {
+        if (isDocumentCategory) computeDocumentCategoryCounts(viewModel.categoryFiles) else emptyMap()
+    }
+    val orderedDocCategories = remember(viewModel.categoryFiles, docCategoryCounts, isDocumentCategory) {
+        if (isDocumentCategory) getOrderedDocumentCategories(viewModel.categoryFiles, docCategoryCounts) else emptyList()
+    }
+    val docPagerState = rememberPagerState(
+        initialPage = 0,
+        pageCount = { if (orderedDocCategories.isNotEmpty()) orderedDocCategories.size else 1 }
+    )
+    val activeDocCategory = remember(docPagerState.currentPage, orderedDocCategories) {
+        orderedDocCategories.getOrElse(docPagerState.currentPage.coerceIn(0, (orderedDocCategories.size - 1).coerceAtLeast(0))) {
+            DocumentTypeCategory.ALL
+        }
+    }
+
     val lifecycleOwner: androidx.lifecycle.LifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event: androidx.lifecycle.Lifecycle.Event ->
@@ -469,6 +489,12 @@ fun FileExplorerScreen(
         viewModel.categoryFiles
     } else {
         viewModel.files
+    }
+
+    val effectiveDisplayedFiles = if (isDocumentCategory) {
+        filterDocumentFiles(displayedFiles, activeDocCategory)
+    } else {
+        displayedFiles
     }
 
 
@@ -781,6 +807,20 @@ fun FileExplorerScreen(
                                                     onFilterSelected = { viewModel.activeSearchFilter = it },
                                                     counts = viewModel.searchFilterCounts
                                                 )
+                                            } else if (isDocumentCategory) {
+                                                DocumentFilterChipsRow(
+                                                    categories = orderedDocCategories,
+                                                    selectedCategory = activeDocCategory,
+                                                    onCategorySelected = { cat ->
+                                                        val targetIndex = orderedDocCategories.indexOf(cat)
+                                                        if (targetIndex >= 0) {
+                                                            coroutineScope.launch {
+                                                                docPagerState.animateScrollToPage(targetIndex)
+                                                            }
+                                                        }
+                                                    },
+                                                    counts = docCategoryCounts
+                                                )
                                             }
                                         }
                                     }
@@ -861,6 +901,33 @@ fun FileExplorerScreen(
                                                         val type = viewModel.categoryFilterType
                                                         val title = viewModel.categoryTitle
                                                         if (type != null && title != null) viewModel.browseCategory(type, title, bucketId = viewModel.categoryBucketId, forceRefresh = true)
+                                        Column {
+                                            MainTopBar(
+                                                title = when (currentView) {
+                                                    "Recent" -> stringResource(R.string.home_section_recent_files)
+                                                    "Category" -> viewModel.categoryTitle ?: stringResource(R.string.category_files)
+                                                    else -> stringResource(R.string.category_all_files)
+                                                },
+                                                path = if (currentView == "Files") viewModel.currentPath else null,
+                                                archiveName = viewModel.currentZipFile?.name?.let { zipName ->
+                                                    val subPath = viewModel.currentZipEntryPath.trimEnd('/')
+                                                    if (subPath.isEmpty()) zipName else "$zipName/$subPath"
+                                                },
+                                                viewModel = viewModel,
+                                                currentView = currentView,
+                                                totalItems = if (shouldGroupTop) displayedFiles.size else null,
+                                                sharedTransitionScope = sharedTransitionScope,
+                                                animatedVisibilityScope = animatedVisibilityScope,
+                                                onSearchClick = { isSearching = true },
+                                                onRefreshClick = {
+                                                    when (currentView) {
+                                                        "Recent" -> viewModel.loadRecentFiles()
+                                                        "Category" -> {
+                                                            val type = viewModel.categoryFilterType
+                                                            val title = viewModel.categoryTitle
+                                                            if (type != null && title != null) viewModel.browseCategory(type, title, bucketId = viewModel.categoryBucketId, forceRefresh = true)
+                                                        }
+                                                        else -> viewModel.loadFiles(viewModel.currentPath)
                                                     }
                                                     else -> viewModel.loadFiles(viewModel.currentPath)
                                                 }
@@ -870,6 +937,28 @@ fun FileExplorerScreen(
                                             onNavigate = { viewModel.navigateTo(it) },
                                             onBack = { handleBack() }
                                         )
+                                                },
+                                                onNewFolderClick = { showCreateFolderDialog = true },
+                                                onSettingsClick = { activeScreen = "Settings" },
+                                                onNavigate = { viewModel.navigateTo(it) },
+                                                onBack = { handleBack() }
+                                            )
+                                            if (isDocumentCategory) {
+                                                DocumentFilterChipsRow(
+                                                    categories = orderedDocCategories,
+                                                    selectedCategory = activeDocCategory,
+                                                    onCategorySelected = { cat ->
+                                                        val targetIndex = orderedDocCategories.indexOf(cat)
+                                                        if (targetIndex >= 0) {
+                                                            coroutineScope.launch {
+                                                                docPagerState.animateScrollToPage(targetIndex)
+                                                            }
+                                                        }
+                                                    },
+                                                    counts = docCategoryCounts
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -910,11 +999,14 @@ fun FileExplorerScreen(
                                     }
                                 },
                                 isAllSelected = viewModel.selectedFiles.size == displayedFiles.size && displayedFiles.isNotEmpty(),
+                                isAllSelected = viewModel.selectedFiles.size == effectiveDisplayedFiles.size && effectiveDisplayedFiles.isNotEmpty(),
                                 onSelectAllClick = {
                                     if (viewModel.selectedFiles.size == displayedFiles.size) {
+                                    if (viewModel.selectedFiles.size == effectiveDisplayedFiles.size) {
                                         viewModel.exitSelectionMode()
                                     } else {
                                         viewModel.selectAll(displayedFiles)
+                                        viewModel.selectAll(effectiveDisplayedFiles)
                                     }
                                 },
                                 onOpenArchiveClick = { fileItem ->
@@ -1127,9 +1219,11 @@ fun FileExplorerScreen(
                         }.then(
                             if (viewModel.isSelectionMode) {
                                 Modifier.pointerInput(checkboxDragSelectState, displayedFiles) {
+                                Modifier.pointerInput(checkboxDragSelectState, effectiveDisplayedFiles) {
                                     detectCheckboxDragSelect(
                                         dragSelectState = checkboxDragSelectState,
                                         displayedFiles = displayedFiles,
+                                        displayedFiles = effectiveDisplayedFiles,
                                         viewModel = viewModel
                                     )
                                 }
@@ -1289,6 +1383,151 @@ fun FileExplorerScreen(
                                         } else if (displayedFilesFinal.isEmpty() && !isCurrentlyLoading) {
                                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                                 Text(if (searchQuery.isEmpty()) stringResource(R.string.no_files_found) else stringResource(R.string.no_results_for_query, searchQuery))
+                                            }
+                                        } else if (isDocumentCategory) {
+                                            HorizontalPager(
+                                                state = docPagerState,
+                                                modifier = Modifier.fillMaxSize()
+                                            ) { pageIndex ->
+                                                val pageCat = orderedDocCategories.getOrElse(pageIndex) { DocumentTypeCategory.ALL }
+                                                val pageFiles = remember(displayedFilesFinal, pageCat) {
+                                                    filterDocumentFiles(displayedFilesFinal, pageCat)
+                                                }
+                                                val pageGridState = if (pageIndex == 0) gridState else remember(pageCat.id) { androidx.compose.foundation.lazy.grid.LazyGridState() }
+                                                val pageListState = if (pageIndex == 0) listState else remember(pageCat.id) { androidx.compose.foundation.lazy.LazyListState() }
+
+                                                if (pageFiles.isEmpty() && !isCurrentlyLoading) {
+                                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                            Icon(
+                                                                imageVector = pageCat.icon,
+                                                                contentDescription = null,
+                                                                tint = pageCat.accentColor.copy(alpha = 0.5f),
+                                                                modifier = Modifier.size(48.dp)
+                                                            )
+                                                            Spacer(modifier = Modifier.height(8.dp))
+                                                            Text(
+                                                                text = if (pageCat == DocumentTypeCategory.ALL) {
+                                                                    if (searchQuery.isEmpty()) stringResource(R.string.no_files_found) else stringResource(R.string.no_results_for_query, searchQuery)
+                                                                } else {
+                                                                    "No ${pageCat.label} files found"
+                                                                },
+                                                                style = MaterialTheme.typography.bodyMedium,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                            )
+                                                        }
+                                                    }
+                                                } else if (viewModel.isCategoryGridView) {
+                                                    LazyVerticalGrid(
+                                                        columns = GridCells.Adaptive(minSize = viewModel.gridItemSize.cellMinSize),
+                                                        state = pageGridState,
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        contentPadding = PaddingValues(8.dp)
+                                                    ) {
+                                                        items(pageFiles, key = { it.file.absolutePath }, contentType = { "grid_item" }) { fileItem ->
+                                                            val index = pageFiles.indexOf(fileItem)
+                                                            FileGridItem(
+                                                                fileItem = fileItem,
+                                                                isSelected = viewModel.selectedFiles.contains(fileItem),
+                                                                showDetails = viewModel.showDetails,
+                                                                showExtension = viewModel.showFileExtensions,
+                                                                iconSize = viewModel.gridItemSize.iconSize,
+                                                                isVirtual = false,
+                                                                index = index,
+                                                                scrollResetKey = scrollResetKey,
+                                                                hasAnimatedBefore = skipEntranceAnimation || animatedItemKeys.contains(fileItem.file.absolutePath),
+                                                                onAnimationStart = { animatedItemKeys.add(fileItem.file.absolutePath) },
+                                                                modifier = if (skipEntranceAnimation || isNavigatingOrResetting) {
+                                                                    Modifier
+                                                                } else {
+                                                                    Modifier.animateItem(
+                                                                        fadeInSpec = null,
+                                                                        fadeOutSpec = null,
+                                                                        placementSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                                                                    )
+                                                                },
+                                                                onClick = {
+                                                                    if (viewModel.isSelectionMode) {
+                                                                        viewModel.toggleSelection(fileItem)
+                                                                    } else {
+                                                                        onFileClick(fileItem)
+                                                                    }
+                                                                },
+                                                                onLongClick = {
+                                                                    viewModel.toggleSelection(fileItem)
+                                                                }
+                                                            )
+                                                        }
+                                                    }
+                                                } else {
+                                                    LazyColumn(
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        state = pageListState,
+                                                        contentPadding = PaddingValues(vertical = 8.dp)
+                                                    ) {
+                                                        itemsIndexed(pageFiles, key = { _, item -> item.file.absolutePath }, contentType = { _, _ -> "list_item" }) { index, fileItem ->
+                                                            val isSelected = viewModel.selectedFiles.contains(fileItem)
+                                                            val isHighlighted = viewModel.highlightedFile?.file?.absolutePath == fileItem.file.absolutePath
+                                                            FileListItem(
+                                                                fileItem = fileItem,
+                                                                isSelected = isSelected,
+                                                                isHighlighted = isHighlighted,
+                                                                isSelectionMode = viewModel.isSelectionMode,
+                                                                showDetails = viewModel.showDetails,
+                                                                showExtension = viewModel.showFileExtensions,
+                                                                showListDividers = viewModel.showListDividers,
+                                                                isVirtual = false,
+                                                                clipboardHasFiles = viewModel.clipboardFiles.isNotEmpty(),
+                                                                index = index,
+                                                                scrollResetKey = scrollResetKey,
+                                                                hasAnimatedBefore = skipEntranceAnimation || animatedItemKeys.contains(fileItem.file.absolutePath),
+                                                                onAnimationStart = { animatedItemKeys.add(fileItem.file.absolutePath) },
+                                                                modifier = if (skipEntranceAnimation || isNavigatingOrResetting) {
+                                                                    Modifier
+                                                                } else {
+                                                                    Modifier.animateItem(
+                                                                        fadeInSpec = null,
+                                                                        fadeOutSpec = null,
+                                                                        placementSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                                                                    )
+                                                                },
+                                                                onClick = {
+                                                                    if (viewModel.isSelectionMode) {
+                                                                        viewModel.toggleSelection(fileItem)
+                                                                    } else {
+                                                                        onFileClick(fileItem)
+                                                                    }
+                                                                },
+                                                                onLongClick = {
+                                                                    viewModel.toggleSelection(fileItem)
+                                                                },
+                                                                onDelete = {
+                                                                    val totalSize = fileItem.size
+                                                                    if (viewModel.confirmBeforeDelete || totalSize > LARGE_FILE_THRESHOLD) {
+                                                                        pendingDelete = PendingDelete.Single(fileItem)
+                                                                    } else {
+                                                                        viewModel.deleteFile(fileItem)
+                                                                    }
+                                                                },
+                                                                onRename = { newName -> viewModel.renameFile(fileItem, newName) },
+                                                                onRenameRequest = { showRenameDialog = fileItem },
+                                                                onOpenWith = { onOpenWithClick(fileItem) },
+                                                                onShare = { onShareClick(listOf(fileItem)) },
+                                                                onCopy = { viewModel.toggleSelection(fileItem); viewModel.copySelected() },
+                                                                onCut = { viewModel.toggleSelection(fileItem); viewModel.moveSelected() },
+                                                                onOpenLocation = null,
+                                                                onExtract = {
+                                                                    viewModel.prepareExtraction(fileItem.file)
+                                                                    Toast.makeText(context, context.getString(R.string.toast_archive_ready_extract), Toast.LENGTH_SHORT).show()
+                                                                },
+                                                                onProperties = { viewModel.showProperties(fileItem) },
+                                                                viewModel = viewModel,
+                                                                dragSelectState = checkboxDragSelectState,
+                                                                isDividerVisible = viewModel.showListDividers && index != pageFiles.lastIndex && !isSelected && !viewModel.selectedFiles.contains(pageFiles.getOrNull(index + 1))
+                                                            )
+                                                        }
+                                                    }
+                                                }
                                             }
                                         } else if (if (currentView == "Category") viewModel.isCategoryGridView else viewModel.isGridView) {
                                             LazyVerticalGrid(
