@@ -1382,9 +1382,7 @@ private fun StorageSection(
 ) {
     val allDevices = viewModel.storageDevices
     // Filter to only show physical SD cards (removable volumes)
-    val devices = allDevices.filter {
-        it is StorageDevice.Physical && it.isSdCard
-    }
+    val devices = allDevices.filterIsInstance<StorageDevice.Physical>().filter { it.isSdCard }
 
     if (devices.isEmpty()) return
 
@@ -1425,20 +1423,12 @@ private fun StorageSection(
                     modifier = Modifier.fillMaxWidth().heightIn(max = 2000.dp),
                     userScrollEnabled = false
                 ) {
-                    itemsIndexed(devices, key = { _, device ->
-                        when(device) {
-                            is StorageDevice.Physical -> device.path
-                            is StorageDevice.Logical -> device.treeUri.toString()
-                        }
-                    }) { index, device ->
+                    itemsIndexed(devices, key = { _, device -> device.path }) { index, device ->
                         StorageDeviceItem(
                             device = device,
                             modifier = Modifier.animateItem(),
                             onClick = {
-                                when (device) {
-                                    is StorageDevice.Physical -> onOpenPath(device.path)
-                                    is StorageDevice.Logical -> onOpenPath(device.treeUri.toString())
-                                }
+                                onOpenPath(device.path)
                             }
                         )
 
@@ -1454,7 +1444,7 @@ private fun StorageSection(
 
 @Composable
 private fun StorageDeviceItem(
-    device: StorageDevice,
+    device: StorageDevice.Physical,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
@@ -1465,21 +1455,8 @@ private fun StorageDeviceItem(
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val icon = when (device) {
-            is StorageDevice.Physical -> if (device.isSdCard) Icons.Default.SdCard else Icons.Default.SdStorage
-            is StorageDevice.Logical -> {
-                val isGoogleDrive = device.treeUri.authority?.contains("com.google.android.apps.docs") == true
-                if (isGoogleDrive) Icons.Default.CloudQueue else Icons.Default.Cloud
-            }
-        }
-
-        val iconColor = when (device) {
-            is StorageDevice.Physical -> MaterialTheme.colorScheme.primary
-            is StorageDevice.Logical -> {
-                val isGoogleDrive = device.treeUri.authority?.contains("com.google.android.apps.docs") == true
-                if (isGoogleDrive) Color(0xFF4285F4) else MaterialTheme.colorScheme.secondary
-            }
-        }
+        val icon = if (device.isSdCard) Icons.Default.SdCard else Icons.Default.SdStorage
+        val iconColor = MaterialTheme.colorScheme.primary
 
         Box(
             modifier = Modifier
@@ -1500,20 +1477,12 @@ private fun StorageDeviceItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            if (device is StorageDevice.Physical) {
-                val used = device.totalBytes - device.availableBytes
-                Text(
-                    stringResource(R.string.storage_amount_used_of_total, formatFileSize(used), formatFileSize(device.totalBytes)),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else if (device is StorageDevice.Logical) {
-                Text(
-                    if (device.treeUri.authority?.contains("com.google.android.apps.docs") == true) stringResource(R.string.storage_google_drive) else stringResource(R.string.storage_cloud),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            val used = device.totalBytes - device.availableBytes
+            Text(
+                stringResource(R.string.storage_amount_used_of_total, formatFileSize(used), formatFileSize(device.totalBytes)),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         Icon(

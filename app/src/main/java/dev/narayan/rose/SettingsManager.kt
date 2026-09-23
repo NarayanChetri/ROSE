@@ -113,14 +113,6 @@ class SettingsManager(context: Context) {
             ?: emptyList()
         set(value) = prefs.edit { putString(KEY_QUICK_ACCESS_CUSTOM, value.joinToString(QUICK_ACCESS_DELIMITER)) }
 
-    // External storages (Cloud/SAF trees) added by the user.
-    // Stored as "name|uri" pairs.
-    var externalStorages: List<String>
-        get() = prefs.getString(KEY_EXTERNAL_STORAGES, "")
-            ?.split(QUICK_ACCESS_DELIMITER)
-            ?.filter { it.isNotBlank() }
-            ?: emptyList()
-        set(value) = prefs.edit { putString(KEY_EXTERNAL_STORAGES, value.joinToString(QUICK_ACCESS_DELIMITER)) }
 
     // Last-scanned category counts (keyed by FileType.name), persisted so cold launches
     // show real counts immediately without flashing 0 or waiting for MediaStore query.
@@ -200,7 +192,6 @@ class SettingsManager(context: Context) {
         private const val KEY_USE_SHIZUKU = "use_shizuku"
         private const val KEY_QUICK_ACCESS_REMOVED = "quick_access_removed"
         private const val KEY_QUICK_ACCESS_CUSTOM = "quick_access_custom"
-        private const val KEY_EXTERNAL_STORAGES = "external_storages"
         private const val KEY_CACHED_CATEGORY_COUNTS = "cached_category_counts"
         private const val KEY_OFFLINE_FILES = "offline_files"
         private const val KEY_USE_RECYCLE_BIN = "use_recycle_bin"

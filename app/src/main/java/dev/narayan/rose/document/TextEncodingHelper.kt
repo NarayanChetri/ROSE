@@ -12,6 +12,8 @@ import java.nio.ByteBuffer
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 object TextEncodingHelper {
 
@@ -178,19 +180,58 @@ object TextEncodingHelper {
                 fos.channel.force(true)
             }
 
-            // Atomic rename or fallback replacement
-            if (!tempFile.renameTo(targetFile)) {
-                if (targetFile.exists()) {
-                    targetFile.delete()
-                }
-                if (!tempFile.renameTo(targetFile)) {
-                    tempFile.inputStream().use { input ->
-                        targetFile.outputStream().use { output ->
-                            input.copyTo(output)
+            // Safe atomic replacement with rollback protection
+            var backupFile: File? = null
+            try {
+                var moved = false
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    try {
+                        Files.move(
+                            tempFile.toPath(),
+                            targetFile.toPath(),
+                            StandardCopyOption.REPLACE_EXISTING,
+                            StandardCopyOption.ATOMIC_MOVE
+                        )
+                        moved = true
+                    } catch (e: Exception) {
+                        try {
+                            Files.move(
+                                tempFile.toPath(),
+                                targetFile.toPath(),
+                                StandardCopyOption.REPLACE_EXISTING
+                            )
+                            moved = true
+                        } catch (e2: Exception) {
+                            moved = false
                         }
                     }
-                    tempFile.delete()
                 }
+
+                if (!moved) {
+                    if (!tempFile.renameTo(targetFile)) {
+                        if (targetFile.exists()) {
+                            val backup = File(parentDir, ".${targetFile.name}.${System.currentTimeMillis()}.bak")
+                            if (targetFile.renameTo(backup)) {
+                                backupFile = backup
+                            }
+                        }
+                        if (!tempFile.renameTo(targetFile)) {
+                            tempFile.inputStream().use { input ->
+                                targetFile.outputStream().use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                        }
+                    }
+                }
+                backupFile?.delete()
+                tempFile.delete()
+            } catch (e: Exception) {
+                if (backupFile != null && backupFile.exists() && !targetFile.exists()) {
+                    backupFile.renameTo(targetFile)
+                }
+                tempFile.delete()
+                throw e
             }
 
             // Notify Android MediaStore of updated file size and timestamp

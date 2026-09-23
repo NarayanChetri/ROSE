@@ -1035,6 +1035,10 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         recentFiles = recentFiles.filter { it.file.absolutePath !in affectedPaths }
                         categoryFiles = categoryFiles.filter { it.file.absolutePath !in affectedPaths }
                         invalidateCategoryCache()
+                        invalidateDirectoryCache(currentPath)
+                        affectedPaths.forEach { p ->
+                            File(p).parent?.let { invalidateDirectoryCache(it) }
+                        }
                         searchResults.removeAll { it.file.absolutePath in affectedPaths }
 
                         // If a recycle/restore happened, refresh the bin items too
@@ -1060,15 +1064,24 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 val targetPath = when (val type = job.type) {
                     is dev.narayan.rose.filejob.FileJobType.Copy -> type.targetDir.toString()
                     is dev.narayan.rose.filejob.FileJobType.Move -> type.targetDir.toString()
+                    is dev.narayan.rose.filejob.FileJobType.Extract -> type.targetDir.toString()
                     else -> null
                 }
 
-                // Only reload if we're in the target folder of a copy/move.
-                // For deletions or source folders of a move, the manual filtering
-                // above is enough to remove the items instantly with animation,
-                // and avoids re-scanning the folder before the filesystem has synced.
-                if (targetPath != null && targetPath == currentPath && currentPath.isNotEmpty()) {
-                    loadFiles(currentPath, showLoading = false)
+                if (targetPath != null) {
+                    invalidateDirectoryCache(targetPath)
+                }
+
+                val isCurrentFolderAffected = (targetPath != null && targetPath == currentPath) ||
+                        affectedPaths.any { path ->
+                            val normParent = ShizukuManager.normalize(File(path).parent ?: "")
+                            val normCurrent = ShizukuManager.normalize(currentPath)
+                            normParent == normCurrent
+                        }
+
+                if (isCurrentFolderAffected && currentPath.isNotEmpty()) {
+                    invalidateDirectoryCache(currentPath)
+                    loadFiles(currentPath, isManualRefresh = true, showLoading = false)
                 }
 
                 // Handle offline download success/failure
@@ -1122,7 +1135,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 lastProcessedMap.keys.retainAll(jobs.keys)
 
                 if (shouldRefresh) {
-                    loadFiles(currentPath, showLoading = false)
+                    invalidateDirectoryCache(currentPath)
+                    loadFiles(currentPath, isManualRefresh = true, showLoading = false)
                 }
             }
         }
@@ -2236,7 +2250,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(Dispatchers.Main) {
                     clipboardFiles.clear()
                     clipboardSourceZip = null
-                    loadFiles(targetDir)
+                    invalidateDirectoryCache(targetDir)
+                    loadFiles(targetDir, isManualRefresh = true, showLoading = false)
                     isLoading = false
                     rescanForMediaStore(getApplication(), *extractedDests.toTypedArray())
                 }
@@ -2251,11 +2266,13 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             }
             clipboardFiles.clear()
             exitSelectionMode()
-            // We can't easily highlight the pasted files because they are processed in background
-            // But we can reload the view after a short delay or use a listener
+            invalidateDirectoryCache(targetDir)
             viewModelScope.launch {
                 kotlinx.coroutines.delay(500)
-                loadFiles(targetDir)
+                invalidateDirectoryCache(targetDir)
+                if (targetDir == currentPath) {
+                    loadFiles(targetDir, isManualRefresh = true, showLoading = false)
+                }
             }
         }
     }
@@ -2306,8 +2323,11 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         // job.completedPaths - see the `activeJobs` collector in init{} and
         // `displayedFilesFinal` in FileExplorerScreen. Stripping everything
         // out up-front made every selected file vanish at once while the
-        // progress card at the bottom kept counting on its own.
-        if (useRecycleBin && !permanently) {
+        // If any selected file is in a restricted path, check if Shizuku can recycle it;
+        // otherwise route directly to permanent delete.
+        val hasRestricted = sources.any { SafManager.isRestrictedPath(it) }
+        val canRecycleRestricted = ShizukuManager.isAvailable() && ShizukuManager.hasPermission()
+        if (useRecycleBin && !permanently && (!hasRestricted || canRecycleRestricted)) {
             dev.narayan.rose.filejob.FileJobService.startRecycle(getApplication(), sources, names)
         } else {
             dev.narayan.rose.filejob.FileJobService.startDelete(getApplication(), sources, names)
@@ -2319,6 +2339,11 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         val path = fileItem.file.absolutePath
 
         if (SafManager.isRestrictedPath(path)) {
+            val canRecycle = useRecycleBin && !permanently && ShizukuManager.isAvailable() && ShizukuManager.hasPermission()
+            if (canRecycle) {
+                dev.narayan.rose.filejob.FileJobService.startRecycle(getApplication(), listOf(path), listOf(fileItem.name))
+                return
+            }
             viewModelScope.launch(Dispatchers.IO) {
                 val success = if (SafManager.hasPermission(getApplication(), path)) {
                     SafManager.delete(getApplication(), path)
@@ -2329,7 +2354,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(Dispatchers.Main) {
                     if (success) {
                         invalidateDirectoryCache(currentPath)
-                        loadFiles(currentPath, isManualRefresh = true)
+                        loadFiles(currentPath, isManualRefresh = true, showLoading = false)
                     } else {
                         errorMessage = "Couldn't delete. Access restricted."
                     }
@@ -2995,14 +3020,6 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     var quickAccessCustomPaths by mutableStateOf(settings.quickAccessCustomPaths)
         private set
 
-    var externalStorages by mutableStateOf(
-        settings.externalStorages.map {
-            val parts = it.split("|")
-            StorageDevice.Logical(parts[0], Uri.parse(parts[1]))
-        }
-    )
-        private set
-
     var storageDevices = mutableStateListOf<StorageDevice>()
         private set
 
@@ -3094,27 +3111,6 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         pendingUsbNavigation = true
         loadStorageDevices()
     }
-
-
-
-    fun addExternalStorage(name: String, treeUri: Uri) {
-        val newStorage = StorageDevice.Logical(name, treeUri)
-        if (externalStorages.any { it.treeUri == treeUri }) return
-
-        val updated = externalStorages + newStorage
-        externalStorages = updated
-        settings.externalStorages = updated.map { "${it.name}|${it.treeUri}" }
-        loadStorageDevices()
-    }
-
-    fun removeExternalStorage(storage: StorageDevice.Logical) {
-        val updated = externalStorages.filter { it.treeUri != storage.treeUri }
-        externalStorages = updated
-        settings.externalStorages = updated.map { "${it.name}|${it.treeUri}" }
-        loadStorageDevices()
-    }
-
-    var onRequestAddStorage: () -> Unit = {}
 
     /**
      * Returns true if [path] lives on a removable physical volume (SD card or
