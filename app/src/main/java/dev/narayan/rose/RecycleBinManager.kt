@@ -223,23 +223,52 @@ object RecycleBinManager {
     }
 
     fun recycle(context: Context, file: File, onProgress: ((Long, Long) -> Unit)? = null): Boolean {
-        if (!file.exists()) return false
+        val path = file.absolutePath
+        val isRestricted = SafManager.isRestrictedPath(path)
+        val exists = if (isRestricted) {
+            if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
+                val clean = ShizukuManager.normalize(path)
+                ShizukuManager.runCommandSync("[ -e ${shellEscape(clean)} ]") == 0
+            } else {
+                SafManager.exists(context, path)
+            }
+        } else {
+            file.exists()
+        }
+        if (!exists) return false
+
+        val isDir = if (isRestricted) {
+            if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
+                val clean = ShizukuManager.normalize(path)
+                ShizukuManager.runCommandSync("[ -d ${shellEscape(clean)} ]") == 0
+            } else {
+                SafManager.isDirectory(context, path)
+            }
+        } else {
+            file.isDirectory
+        }
 
         val extension = file.extension
         val uuid = UUID.randomUUID().toString()
-        val fileName = if (extension.isNotEmpty() && !file.isDirectory) "$uuid.$extension" else uuid
+        val fileName = if (extension.isNotEmpty() && !isDir) "$uuid.$extension" else uuid
         val recycleBinDir = getRecycleBinDirForFile(context, file)
         val destination = File(recycleBinDir, fileName)
 
         return try {
-            val size = if (file.isDirectory) 0L else file.length()
+            val size = if (isDir) 0L else {
+                if (isRestricted) {
+                    SafManager.getReliableSize(context, path).coerceAtLeast(0L)
+                } else {
+                    file.length()
+                }
+            }
             val item = RecycledItem(
                 id = fileName,
                 originalName = file.name,
                 originalPath = file.absolutePath,
                 deletionTime = System.currentTimeMillis(),
                 size = size,
-                isDirectory = file.isDirectory,
+                isDirectory = isDir,
                 binPath = recycleBinDir.absolutePath
             )
 

@@ -81,6 +81,11 @@ object FileOperationRunner {
 
                         type.sources.forEach { source ->
                             if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
+
+                            if (isDirectory(appContext, source.path) && isSubdirectoryOrSame(type.targetDir.toString(), source.path)) {
+                                throw IllegalArgumentException("Cannot copy a directory into itself or its subdirectories: ${source.displayName}")
+                            }
+
                             job.currentFileName = source.displayName
                             onProgress(job)
                             JobManager.updateJob(job)
@@ -108,6 +113,11 @@ object FileOperationRunner {
 
                         type.sources.forEach { source ->
                             if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
+
+                            if (isDirectory(appContext, source.path) && isSubdirectoryOrSame(type.targetDir.toString(), source.path)) {
+                                throw IllegalArgumentException("Cannot move a directory into itself or its subdirectories: ${source.displayName}")
+                            }
+
                             job.currentFileName = source.displayName
                             onProgress(job)
                             JobManager.updateJob(job)
@@ -351,6 +361,43 @@ object FileOperationRunner {
     }
 
     // -- Helpers ----------------------------------------------------------
+    private fun isDirectory(context: Context, path: String): Boolean {
+        val restricted = SafManager.isRestrictedPath(path)
+        return if (restricted || SafManager.isSafUri(path)) {
+            val fromSaf = SafManager.isDirectory(context, path)
+            if (!fromSaf && restricted && dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()) {
+                val cleanSource = dev.narayan.rose.ShizukuManager.normalize(path)
+                dev.narayan.rose.ShizukuManager.runCommandSync(
+                    "[ -d ${dev.narayan.rose.ShizukuManager.shellEscape(cleanSource)} ]"
+                ) == 0
+            } else fromSaf
+        } else {
+            try {
+                Files.isDirectory(Paths.get(path))
+            } catch (e: Exception) {
+                java.io.File(path).isDirectory
+            }
+        }
+    }
+
+    private fun isSubdirectoryOrSame(childPath: String, parentPath: String): Boolean {
+        val cleanChild = childPath.trimEnd('/', '\\')
+        val cleanParent = parentPath.trimEnd('/', '\\')
+        if (cleanChild.equals(cleanParent, ignoreCase = true)) return true
+
+        try {
+            if (!SafManager.isSafUri(cleanChild) && !SafManager.isSafUri(cleanParent)) {
+                val child = Paths.get(cleanChild).toAbsolutePath().normalize()
+                val parent = Paths.get(cleanParent).toAbsolutePath().normalize()
+                if (child == parent || child.startsWith(parent)) {
+                    return true
+                }
+            }
+        } catch (_: Exception) {}
+
+        val pWithSlash = if (cleanParent.endsWith("/")) cleanParent else "$cleanParent/"
+        return cleanChild.startsWith(pWithSlash, ignoreCase = true)
+    }
 
     private fun checkExists(context: Context, path: String): Boolean {
         return if (SafManager.isRestrictedPath(path)) {
@@ -443,6 +490,9 @@ object FileOperationRunner {
         if (job != null && JobManager.isCancelled(job.id)) return false
 
         val targetPath = target.toString()
+        if (isDirectory(context, sourcePath) && isSubdirectoryOrSame(targetPath, sourcePath)) {
+            return false
+        }
         val sourceRestricted = SafManager.isRestrictedPath(sourcePath)
         val targetRestricted = SafManager.isRestrictedPath(targetPath)
 
@@ -662,7 +712,12 @@ object FileOperationRunner {
     // -- Move -------------------------------------------------------------
 
     private fun moveRecursive(context: Context, sourcePath: String, target: Path, job: FileJob? = null, onProgress: ((FileJob) -> Unit)? = null): Boolean {
+        if (job != null && JobManager.isCancelled(job.id)) return false
+
         val targetPath = target.toString()
+        if (isDirectory(context, sourcePath) && isSubdirectoryOrSame(targetPath, sourcePath)) {
+            return false
+        }
         val sourceRestricted = SafManager.isRestrictedPath(sourcePath)
         val targetRestricted = SafManager.isRestrictedPath(targetPath)
 

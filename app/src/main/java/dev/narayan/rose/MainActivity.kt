@@ -108,27 +108,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private var pendingStorageUri by mutableStateOf<Uri?>(null)
-
-    private val addStorageLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == RESULT_OK) {
-            val uri = result.data?.data
-            if (uri != null) {
-                try {
-                    contentResolver.takePersistableUriPermission(
-                        uri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                    )
-                    pendingStorageUri = uri
-                } catch (e: Exception) {
-                    Toast.makeText(this, getString(R.string.toast_failed_to_add_storage, e.message ?: ""), Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
     private var sharedUris by mutableStateOf<List<Uri>?>(null)
 
     private val SHIZUKU_PERMISSION_REQUEST_CODE = 1001
@@ -166,12 +145,6 @@ class MainActivity : ComponentActivity() {
         Shizuku.addBinderReceivedListener(shizukuBinderListener)
         checkPermissions()
         handleIntent(intent)
-
-        viewModel.onRequestAddStorage = {
-            addStorageLauncher.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-                putExtra("android.provider.extra.SHOW_ADVANCED", true)
-            })
-        }
 
         setContent {
             RoseTheme(
@@ -490,29 +463,6 @@ class MainActivity : ComponentActivity() {
                                     modifier = Modifier.fillMaxSize()
                                 )
                                 { currentScreen ->
-                                    // Naming dialog for new external storage
-                                    pendingStorageUri?.let { uri ->
-                                        val initialName = if (uri.authority?.contains("com.google.android.apps.docs") == true) {
-                                            stringResource(R.string.storage_google_drive)
-                                        } else {
-                                            // Try to get a meaningful name from the URI if possible
-                                            val path = uri.path ?: ""
-                                            if (path.contains(":")) {
-                                                path.substringAfterLast(":")
-                                            } else {
-                                                stringResource(R.string.storage_external)
-                                            }
-                                        }
-                                        RenameDialog(
-                                            initialName = initialName,
-                                            onDismiss = { pendingStorageUri = null },
-                                            onRename = { name ->
-                                                viewModel.addExternalStorage(name, uri)
-                                                pendingStorageUri = null
-                                            }
-                                        )
-                                    }
-
                                     viewModel.passphrasePromptItem?.let { fileItem ->
                                         PasswordDialog(
                                             onDismiss = {

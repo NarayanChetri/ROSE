@@ -232,6 +232,22 @@ class FileJobService : Service() {
                 stopSelf()
             } else {
                 stopForeground(STOP_FOREGROUND_DETACH)
+                // Cancel finished job's notification if not showing completion
+                if (!isDownload) {
+                    (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(notificationId)
+                }
+                // Maintain foreground status with one of the remaining active jobs
+                val remainingJob = JobManager.activeJobs.value.values.firstOrNull()
+                if (remainingJob != null) {
+                    val remNotifId = notificationIdFor(remainingJob.id)
+                    val remIsDownload = remainingJob.type is FileJobType.Download
+                    val remChannel = if (remIsDownload) CHANNEL_ID else SILENT_CHANNEL_ID
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        startForeground(remNotifId, createNotification(remainingJob, remChannel), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                    } else {
+                        startForeground(remNotifId, createNotification(remainingJob, remChannel))
+                    }
+                }
             }
         })
 
