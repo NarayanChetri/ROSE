@@ -7,7 +7,9 @@ import rikka.shizuku.Shizuku
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 object ShizukuManager {
@@ -337,5 +339,91 @@ object ShizukuManager {
         val cleanSrc = normalize(srcPath)
         val cleanDest = normalize(destPath)
         return runCommand("mv ${shellEscape(cleanSrc)} ${shellEscape(cleanDest)}")
+    }
+
+    /**
+     * High performance recursive file search within [searchRoot] using native find and stat via Shizuku.
+     */
+    suspend fun searchFiles(
+        searchRoot: String,
+        query: String,
+        filterType: FileType? = null,
+        showHiddenFiles: Boolean = false,
+        maxResults: Int = 100
+    ): List<FileItem> = withContext(Dispatchers.IO) {
+        if (!isAvailable() || !hasPermission()) return@withContext emptyList()
+        val normalizedRoot = normalize(searchRoot)
+        val cleanRoot = if (normalizedRoot == "/" || !normalizedRoot.endsWith("/")) normalizedRoot else normalizedRoot.dropLast(1)
+        val escapedRoot = shellEscape(cleanRoot)
+        val sanitizedQuery = query.replace("'", "").replace("\"", "").replace("*", "").replace(";", "").replace("|", "").trim()
+        if (sanitizedQuery.isEmpty()) return@withContext emptyList()
+
+        val results = mutableListOf<FileItem>()
+        try {
+            val hiddenClause = if (!showHiddenFiles) "! -path '*/.*'" else ""
+            val cmd = "find $escapedRoot -maxdepth 8 $hiddenClause -iname '*$sanitizedQuery*' 2>/dev/null | head -n ${maxResults * 2}"
+            val process = runShizukuCommand(cmd)
+            val matchedPaths = mutableListOf<String>()
+            BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
+                lines.forEach { line ->
+                    val path = line.trim()
+                    if (path.isNotEmpty() && path != cleanRoot) {
+                        matchedPaths.add(path)
+                    }
+                }
+            }
+            process.waitFor()
+
+            if (matchedPaths.isNotEmpty()) {
+                for (chunk in matchedPaths.chunked(50)) {
+                    ensureActive()
+                    val statTargets = chunk.joinToString(" ") { shellEscape(it) }
+                    val statCmd = "stat -c '%F|%s|%Y|%n' $statTargets 2>/dev/null"
+                    val statProc = runShizukuCommand(statCmd)
+                    BufferedReader(InputStreamReader(statProc.inputStream)).useLines { lines ->
+                        lines.forEach { line ->
+                            val trimmed = line.trim()
+                            if (trimmed.isEmpty()) return@forEach
+                            val parts = trimmed.split('|', limit = 4)
+                            if (parts.size < 4) return@forEach
+                            val typeStr = parts[0]
+                            val sizeStr = parts[1]
+                            val timeStr = parts[2]
+                            val fullPath = parts[3]
+
+                            val file = File(fullPath)
+                            val name = file.name
+                            if (name.isEmpty() || name == "." || name == "..") return@forEach
+                            if (!showHiddenFiles && name.startsWith(".")) return@forEach
+
+                            val isDir = typeStr.contains("directory", ignoreCase = true)
+                            val size = if (isDir) 0L else (sizeStr.toLongOrNull() ?: 0L)
+                            val seconds = timeStr.toLongOrNull() ?: 0L
+                            val timestamp = seconds * 1000
+
+                            val item = FileItem(
+                                file = file,
+                                isDirectory = isDir,
+                                name = name,
+                                size = size,
+                                lastModified = timestamp,
+                                extension = if (isDir) "" else name.substringAfterLast('.', "").lowercase(),
+                                itemCount = null
+                            )
+                            if (filterType == null || item.matchesCategory(filterType)) {
+                                results.add(item)
+                            }
+                        }
+                    }
+                    statProc.waitFor()
+                    if (results.size >= maxResults) break
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error searching files via Shizuku in $cleanRoot", e)
+        }
+        results.take(maxResults).distinctBy { it.file.absolutePath }
     }
 }

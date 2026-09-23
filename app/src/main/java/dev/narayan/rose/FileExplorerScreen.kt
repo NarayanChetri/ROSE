@@ -407,9 +407,7 @@ fun FileExplorerScreen(
             isSearching = false
             searchQuery = ""
             viewModel.searchFiles("")
-            if (fromHome || currentView == "Recent" || currentView == "Category") {
-                onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
-            }
+            viewModel.activeSearchFilter = SearchFilter.ALL
         } else if (viewModel.currentZipFile != null) {
             // If we are deep inside a zip, go up one level.
             // If we are at the root of the zip, exit the zip view.
@@ -441,6 +439,8 @@ fun FileExplorerScreen(
                 onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
             }
         } else if (currentView == "Recent") {
+            viewModel.resetFiles()
+            viewModel.exitCategoryMode()
             onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
         } else {
             // Quick Access (and any other fromHome entry point, e.g. a file's
@@ -461,15 +461,16 @@ fun FileExplorerScreen(
         }
     }
 
-    val displayedFiles = if (currentView == "Recent") {
+    val displayedFiles = if (isSearching && searchQuery.isNotBlank()) {
+        if (currentView == "Category") viewModel.searchResults else viewModel.filteredSearchResults
+    } else if (currentView == "Recent") {
         viewModel.recentFiles
     } else if (currentView == "Category") {
         viewModel.categoryFiles
-    } else if (searchQuery.isBlank()) {
-        viewModel.files
     } else {
-        viewModel.searchResults
+        viewModel.files
     }
+
 
     // With the full-screen crossfade no longer keyed on `path`, the LazyColumn/LazyVerticalGrid
     // call sites persist across folder navigation, so their scroll state persists too unless we
@@ -490,7 +491,9 @@ fun FileExplorerScreen(
     var refreshAnimationToken by remember { mutableStateOf(0) }
     var isPullRefreshing by remember { mutableStateOf(false) }
 
-    val scrollResetKey = when (currentView) {
+    val scrollResetKey = if (isSearching) {
+        "search_${searchQuery}_${viewModel.activeSearchFilter}_$currentView"
+    } else when (currentView) {
         "Files" -> "${activeScrollKey}_${viewModel.sortBy}_${viewModel.sortOrder}_$refreshAnimationToken"
         "Category" -> "${viewModel.categoryTitle ?: ""}_${viewModel.categoryBucketId ?: ""}_${viewModel.sortBy}_${viewModel.sortOrder}_$refreshAnimationToken"
         else -> "${currentView}_${viewModel.sortBy}_${viewModel.sortOrder}_$refreshAnimationToken"
@@ -762,14 +765,24 @@ fun FileExplorerScreen(
                                         SelectionTopBar(viewModel)
                                     }
                                     "Search" -> {
-                                        SearchTopBar(searchQuery, onQueryChange = {
-                                            searchQuery = it
-                                            viewModel.searchFiles(it)
-                                        }, onBack = {
-                                            isSearching = false
-                                            searchQuery = ""
-                                            viewModel.searchFiles("")
-                                        })
+                                        Column {
+                                            SearchTopBar(searchQuery, onQueryChange = {
+                                                searchQuery = it
+                                                viewModel.searchFiles(it)
+                                            }, onBack = {
+                                                isSearching = false
+                                                searchQuery = ""
+                                                viewModel.searchFiles("")
+                                                viewModel.activeSearchFilter = SearchFilter.ALL
+                                            })
+                                            if (currentView != "Category") {
+                                                SearchFilterChipsRow(
+                                                    selectedFilter = viewModel.activeSearchFilter,
+                                                    onFilterSelected = { viewModel.activeSearchFilter = it },
+                                                    counts = viewModel.searchFilterCounts
+                                                )
+                                            }
+                                        }
                                     }
                                     else -> {
                                         val handleBack = {
@@ -783,9 +796,7 @@ fun FileExplorerScreen(
                                                 isSearching = false
                                                 searchQuery = ""
                                                 viewModel.searchFiles("")
-                                                if (fromHome || currentView == "Recent" || currentView == "Category") {
-                                                    onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
-                                                }
+                                                viewModel.activeSearchFilter = SearchFilter.ALL
                                             } else if (viewModel.currentZipFile != null) {
                                                 if (viewModel.currentZipEntryPath.isNotEmpty()) {
                                                     viewModel.navigateZipUp()
@@ -812,6 +823,8 @@ fun FileExplorerScreen(
                                                     onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
                                                 }
                                             } else if (currentView == "Recent") {
+                                                viewModel.resetFiles()
+                                                viewModel.exitCategoryMode()
                                                 onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
                                             } else {
                                                 if (fromHome && viewModel.currentPath == startPath) {
@@ -1167,10 +1180,12 @@ fun FileExplorerScreen(
                                 // from flickering on screen for a single frame.
                                 val isInitialLoad = (currentView == "Category" && viewModel.categoryFilterType == null) ||
                                         (currentView == "Recent" && viewModel.recentFiles.isEmpty() && viewModel.categoryFilterType == null)
-                                val isContentLoading = when (currentView) {
+                                val isContentLoading = if (isSearching && searchQuery.isNotBlank()) {
+                                    false // Searching renders immediately inside AnimatedContent via SearchLoadingView / SearchEmptyStateView
+                                } else when (currentView) {
                                     "Category" -> (viewModel.isCategoryLoading || viewModel.isRefreshing || isInitialLoad) && displayedFiles.isEmpty()
                                     "Recent" -> (viewModel.isRecentLoading || viewModel.isRefreshing || isInitialLoad) && displayedFiles.isEmpty()
-                                    else -> (viewModel.isLoading || viewModel.isRefreshing || viewModel.isRecursiveSearching) && displayedFiles.isEmpty()
+                                    else -> (viewModel.isLoading || viewModel.isRefreshing) && displayedFiles.isEmpty()
                                 }
 
                                 var showCenteredLoading by remember { mutableStateOf(false) }
@@ -1224,14 +1239,14 @@ fun FileExplorerScreen(
                                         label = "FolderTransition",
                                         modifier = Modifier.fillMaxSize()
                                     ) { state ->
-                                        val displayedFilesFinal = if (state.view == "Recent") {
+                                        val displayedFilesFinal = if (isSearching && searchQuery.isNotBlank()) {
+                                            if (state.view == "Category") viewModel.searchResults else viewModel.filteredSearchResults
+                                        } else if (state.view == "Recent") {
                                             viewModel.recentFiles
                                         } else if (state.view == "Category") {
                                             viewModel.categoryFiles
-                                        } else if (searchQuery.isBlank()) {
-                                            viewModel.files
                                         } else {
-                                            viewModel.searchResults
+                                            viewModel.files
                                         }
 
                                         val shouldGroup = state.view == "Recent" && searchQuery.isBlank()
@@ -1252,12 +1267,26 @@ fun FileExplorerScreen(
                                         val isCurrentlyLoading = when (state.view) {
                                             "Category" -> viewModel.isCategoryLoading || isPullRefreshing
                                             "Recent" -> viewModel.isRecentLoading || isPullRefreshing
-                                            else -> viewModel.isLoading || isPullRefreshing || viewModel.isRecursiveSearching
+                                            else -> viewModel.isLoading || isPullRefreshing
                                         }
 
                                         val isNavigatingOrResetting = pendingScrollReset || isPullRefreshing || (scrollResetKey != lastScrollResetKey)
 
-                                        if (displayedFilesFinal.isEmpty() && !isCurrentlyLoading) {
+                                        if (isSearching && searchQuery.isNotBlank() && displayedFilesFinal.isEmpty()) {
+                                            if (viewModel.isRecursiveSearching) {
+                                                SearchLoadingView(
+                                                    query = searchQuery,
+                                                    categoryName = if (state.view == "Category") viewModel.categoryTitle else null,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            } else {
+                                                SearchEmptyStateView(
+                                                    query = searchQuery,
+                                                    filter = viewModel.activeSearchFilter,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            }
+                                        } else if (displayedFilesFinal.isEmpty() && !isCurrentlyLoading) {
                                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                                 Text(if (searchQuery.isEmpty()) stringResource(R.string.no_files_found) else stringResource(R.string.no_results_for_query, searchQuery))
                                             }
@@ -2687,7 +2716,14 @@ fun SearchTopBar(query: String, onQueryChange: (String) -> Unit, onBack: () -> U
         },
         navigationIcon = {
             IconButton(onClick = { onBack() }) {
-                Icon(Icons.Default.ArrowBack, null)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.content_desc_back))
+            }
+        },
+        actions = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(Icons.Default.Close, contentDescription = stringResource(R.string.action_cancel))
+                }
             }
         }
     )

@@ -54,3 +54,15 @@ data class FileItem(
 enum class FileType {
     FOLDER, APK, ZIP, PDF, IMAGE, VIDEO, AUDIO, DOCUMENT, OTHER
 }
+
+fun FileItem.matchesCategory(type: FileType): Boolean {
+    return when (type) {
+        FileType.DOCUMENT -> this.fileType == FileType.DOCUMENT || this.fileType == FileType.PDF
+        FileType.IMAGE -> this.fileType == FileType.IMAGE
+        FileType.VIDEO -> this.fileType == FileType.VIDEO
+        FileType.AUDIO -> this.fileType == FileType.AUDIO
+        FileType.APK -> this.fileType == FileType.APK
+        FileType.ZIP -> this.fileType == FileType.ZIP
+        else -> this.fileType == type
+    }
+}
