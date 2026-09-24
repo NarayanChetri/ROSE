@@ -379,7 +379,12 @@ fun FileExplorerScreen(
                     viewModel.browseCategory(startCategory.first, startCategory.second)
                 }
             }
-            startRecent -> viewModel.loadRecentFiles()
+            startRecent -> {
+                viewModel.clearScrollPosition("recent")
+                viewModel.loadRecentFiles()
+                listState.scrollToItem(0, 0)
+                gridState.scrollToItem(0, 0)
+            }
             startPath != null -> {
                 if (SafManager.isSafUri(startPath)) {
                     viewModel.loadFiles(startPath)
@@ -551,7 +556,7 @@ fun FileExplorerScreen(
             // Material Files style: check if we have a saved scroll position for
             // this path (e.g. from navigating back). If so, restore it; otherwise
             // start at the top for a new folder/sort.
-            val savedPos = viewModel.getScrollPosition(activeScrollKey)
+            val savedPos = if (activeScrollKey == "recent") null else viewModel.getScrollPosition(activeScrollKey)
             if (savedPos != null) {
                 val targetIndex = savedPos.first.coerceIn(0, (displayedFiles.size - 1).coerceAtLeast(0))
                 listState.scrollToItem(targetIndex, savedPos.second)
@@ -761,6 +766,8 @@ fun FileExplorerScreen(
                     modifier = Modifier.fillMaxSize().then(
                         if (currentView == "Recent" && onExitToHome != null && !isSearching && !viewModel.isSelectionMode) {
                             Modifier.pointerInput(Unit) {
+                                val touchSlop = viewConfiguration.touchSlop
+                                val swipeThreshold = 56.dp.toPx()
                                 awaitEachGesture {
                                     val down = awaitFirstDown(pass = PointerEventPass.Initial)
                                     var totalX = 0f
@@ -770,8 +777,12 @@ fun FileExplorerScreen(
                                         val event = awaitPointerEvent(pass = PointerEventPass.Initial)
                                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
                                         if (!change.pressed) {
-                                            if (isHorizontal == true && totalX < -120f) {
-                                                onExitToHome()
+                                            if (isHorizontal == true) {
+                                                change.consume()
+                                                if (totalX < -swipeThreshold) {
+                                                    viewModel.lastSwipeToHomeTimestamp = System.currentTimeMillis()
+                                                    onExitToHome()
+                                                }
                                             }
                                             break
                                         }
@@ -780,9 +791,12 @@ fun FileExplorerScreen(
                                         totalX += dragX
                                         totalY += dragY
                                         if (isHorizontal == null) {
-                                            if (Math.abs(totalX) > 40 || Math.abs(totalY) > 40) {
-                                                isHorizontal = Math.abs(totalX) > Math.abs(totalY) * 1.5f
+                                            if (Math.abs(totalX) > touchSlop || Math.abs(totalY) > touchSlop) {
+                                                isHorizontal = Math.abs(totalX) > Math.abs(totalY) * 1.2f
                                             }
+                                        }
+                                        if (isHorizontal == true) {
+                                            change.consume()
                                         }
                                     }
                                 }
@@ -1443,7 +1457,7 @@ fun FileExplorerScreen(
                                                                 onClick = {
                                                                     if (viewModel.isSelectionMode) {
                                                                         viewModel.toggleSelection(fileItem)
-                                                                    } else {
+                                                                    } else if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
                                                                         onFileClick(fileItem)
                                                                     }
                                                                 },
@@ -1488,7 +1502,7 @@ fun FileExplorerScreen(
                                                                 onClick = {
                                                                     if (viewModel.isSelectionMode) {
                                                                         viewModel.toggleSelection(fileItem)
-                                                                    } else {
+                                                                    } else if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
                                                                         onFileClick(fileItem)
                                                                     }
                                                                 },
@@ -1600,7 +1614,7 @@ fun FileExplorerScreen(
                                                                                 lastNonZipView = currentView
                                                                                 viewModel.openArchive(fileItem.file)
                                                                                 currentView = "Files"
-                                                                            } else {
+                                                                            } else if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
                                                                                 onFileClick(fileItem)
                                                                             }
                                                                         }
@@ -1666,7 +1680,7 @@ fun FileExplorerScreen(
                                                                         lastNonZipView = currentView
                                                                         viewModel.openArchive(fileItem.file)
                                                                         currentView = "Files"
-                                                                    } else {
+                                                                    } else if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
                                                                         onFileClick(fileItem)
                                                                     }
                                                                 }
@@ -1756,7 +1770,7 @@ fun FileExplorerScreen(
                                                                                 lastNonZipView = currentView
                                                                                 viewModel.openArchive(fileItem.file)
                                                                                 currentView = "Files"
-                                                                            } else {
+                                                                            } else if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
                                                                                 onFileClick(fileItem)
                                                                             }
                                                                         }
@@ -1880,7 +1894,7 @@ fun FileExplorerScreen(
                                                                         lastNonZipView = currentView
                                                                         viewModel.openArchive(fileItem.file)
                                                                         currentView = "Files"
-                                                                    } else {
+                                                                    } else if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
                                                                         onFileClick(fileItem)
                                                                     }
                                                                 }

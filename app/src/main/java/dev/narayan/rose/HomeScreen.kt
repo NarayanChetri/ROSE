@@ -123,8 +123,10 @@ fun HomeScreen(
     // Restore scroll on mount ONLY if the listState was actually reset to (0,0)
     // (e.g. by Activity recreation or navigation disposal) and we have a
     // non-zero saved position.
-    LaunchedEffect(Unit) {
-        if (viewModel.homeScrollIndex != 0 || viewModel.homeScrollOffset != 0) {
+    LaunchedEffect(viewModel.homeScrollIndex, viewModel.homeScrollOffset) {
+        if (viewModel.homeScrollIndex == 0 && viewModel.homeScrollOffset == 0) {
+            listState.scrollToItem(0, 0)
+        } else {
             val listStateWasReset = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
             if (listStateWasReset) {
                 // Material Files style: wait for the list to have enough items to
@@ -141,14 +143,9 @@ fun HomeScreen(
     }
 
 
-    var visible by remember { mutableStateOf(viewModel.hasRunEntranceAnimation) }
+    var visible by remember { mutableStateOf(true) }
     LaunchedEffect(Unit) {
-        if (!visible) {
-            // Small delay for the first time entrance
-            kotlinx.coroutines.delay(100)
-            visible = true
-            viewModel.hasRunEntranceAnimation = true
-        }
+        viewModel.hasRunEntranceAnimation = true
     }
 
     // Animation only runs once per app launch
@@ -221,6 +218,8 @@ fun HomeScreen(
         modifier = Modifier.fillMaxSize().then(
             if (!isSearching) {
                 Modifier.pointerInput(Unit) {
+                    val touchSlop = viewConfiguration.touchSlop
+                    val swipeThreshold = 56.dp.toPx()
                     awaitEachGesture {
                         val down = awaitFirstDown(pass = PointerEventPass.Initial)
                         var totalX = 0f
@@ -230,8 +229,11 @@ fun HomeScreen(
                             val event = awaitPointerEvent(pass = PointerEventPass.Initial)
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
                             if (!change.pressed) {
-                                if (isHorizontal == true && totalX > 120f) {
-                                    onOpenRecent()
+                                if (isHorizontal == true) {
+                                    change.consume()
+                                    if (totalX > swipeThreshold) {
+                                        onOpenRecent()
+                                    }
                                 }
                                 break
                             }
@@ -240,9 +242,12 @@ fun HomeScreen(
                             totalX += dragX
                             totalY += dragY
                             if (isHorizontal == null) {
-                                if (Math.abs(totalX) > 40 || Math.abs(totalY) > 40) {
-                                    isHorizontal = Math.abs(totalX) > Math.abs(totalY) * 1.5f
+                                if (Math.abs(totalX) > touchSlop || Math.abs(totalY) > touchSlop) {
+                                    isHorizontal = Math.abs(totalX) > Math.abs(totalY) * 1.2f
                                 }
+                            }
+                            if (isHorizontal == true) {
+                                change.consume()
                             }
                         }
                     }
@@ -575,28 +580,23 @@ fun HomeScreen(
                 }
 
                 item(key = "recent_files") {
-                    AnimatedVisibility(
-                        visible = visible,
-                        enter = fadeIn(tween(300, delayMillis = 100)) + slideInVertically(tween(300, delayMillis = 100)) { it / 12 }
-                    ) {
-                        RecentFilesSection(
-                            viewModel = viewModel,
-                            recentFiles = viewModel.recentFiles,
-                            showDividers = viewModel.showListDividers,
-                            onOpenRecent = onOpenRecent,
-                            onOpenPath = onOpenPath,
-                            onFileClick = onFileClick,
-                            onOpenWithClick = onOpenWithClick,
-                            onShareClick = onShareClick,
-                            onRenameClick = { fileForRename = it },
-                            onDeleteClick = { fileForDelete = it },
-                            onExtractClick = {
-                                viewModel.prepareExtraction(it.file)
-                                android.widget.Toast.makeText(context, context.getString(R.string.toast_archive_ready_extract), android.widget.Toast.LENGTH_SHORT).show()
-                            },
-                            onPropertiesClick = { viewModel.showProperties(it) }
-                        )
-                    }
+                    RecentFilesSection(
+                        viewModel = viewModel,
+                        recentFiles = viewModel.recentFiles,
+                        showDividers = viewModel.showListDividers,
+                        onOpenRecent = onOpenRecent,
+                        onOpenPath = onOpenPath,
+                        onFileClick = onFileClick,
+                        onOpenWithClick = onOpenWithClick,
+                        onShareClick = onShareClick,
+                        onRenameClick = { fileForRename = it },
+                        onDeleteClick = { fileForDelete = it },
+                        onExtractClick = {
+                            viewModel.prepareExtraction(it.file)
+                            android.widget.Toast.makeText(context, context.getString(R.string.toast_archive_ready_extract), android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        onPropertiesClick = { viewModel.showProperties(it) }
+                    )
                 }
 
                 if (viewModel.showQuickAccess) {
@@ -1091,21 +1091,24 @@ private fun RecentFilesSection(
         Card(
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-            modifier = Modifier.fillMaxWidth().animateContentSize()
+            modifier = Modifier.fillMaxWidth()
         ) {
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 2000.dp),
-                userScrollEnabled = false
+            Column(
+                modifier = Modifier.fillMaxWidth()
             ) {
-                itemsIndexed(recents, key = { _, item -> item.file.absolutePath }) { index, item ->
-                    Column(modifier = Modifier.animateItem()) {
+                recents.forEachIndexed { index, item ->
+                    Column {
                         var showFileMenu by remember { mutableStateOf(false) }
                         val color = recentFileIconFor(item.fileType).second
 
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { onFileClick(item) }
+                                .clickable {
+                                    if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
+                                        onFileClick(item)
+                                    }
+                                }
                                 .padding(horizontal = 16.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {

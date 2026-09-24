@@ -168,6 +168,7 @@ class MainActivity : ComponentActivity() {
                 val activeJobs by JobManager.activeJobs.collectAsState()
                 val hasActiveDownload = activeJobs.values.any { it.type is dev.narayan.rose.filejob.FileJobType.Download }
                 var showNotificationPrimer by remember { mutableStateOf(false) }
+                val coroutineScope = rememberCoroutineScope()
 
                 // Delete, Recycle and Restore are near-instant (typically just a file move
                 // or metadata update), so showing the full detail dialog or mini bar
@@ -210,7 +211,6 @@ class MainActivity : ComponentActivity() {
 
                 if (showNotificationPrimer) {
                     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-                    val coroutineScope = rememberCoroutineScope()
 
                     fun dismissPrimer(onDismissed: () -> Unit = {}) {
                         coroutineScope.launch {
@@ -564,19 +564,26 @@ class MainActivity : ComponentActivity() {
                                                 screen = AppScreen.Files(category = type to title)
                                             },
                                             onOpenRecent = {
+                                                viewModel.clearScrollPosition("recent")
                                                 viewModel.resetFiles()
                                                 viewModel.loadRecentFiles()
+                                                coroutineScope.launch {
+                                                    explorerListState.scrollToItem(0, 0)
+                                                    explorerGridState.scrollToItem(0, 0)
+                                                }
                                                 screen = AppScreen.Files(recent = true)
                                             },
                                             onFileClick = { fileItem ->
-                                                if (fileItem.fileType == FileType.ZIP) {
-                                                    viewModel.resetFiles()
-                                                    screen = AppScreen.Files(
-                                                        startPath = fileItem.file.absolutePath,
-                                                        fromHome = true
-                                                    )
-                                                } else {
-                                                    openFile(fileItem)
+                                                if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
+                                                    if (fileItem.fileType == FileType.ZIP) {
+                                                        viewModel.resetFiles()
+                                                        screen = AppScreen.Files(
+                                                            startPath = fileItem.file.absolutePath,
+                                                            fromHome = true
+                                                        )
+                                                    } else {
+                                                        openFile(fileItem)
+                                                    }
                                                 }
                                             },
                                             onOpenWithClick = { openFileWith(it) },
@@ -598,13 +605,22 @@ class MainActivity : ComponentActivity() {
                                             onExitToHome = {
                                                 viewModel.resetFiles()
                                                 viewModel.exitCategoryMode()
+                                                viewModel.homeScrollIndex = 0
+                                                viewModel.homeScrollOffset = 0
+                                                coroutineScope.launch {
+                                                    homeListState.scrollToItem(0, 0)
+                                                }
                                                 if (sharedUris != null) {
                                                     screen = AppScreen.SaveAs(sharedUris!!, true)
                                                 } else {
                                                     screen = AppScreen.Home
                                                 }
                                             },
-                                            onFileClick = { fileItem -> openFile(fileItem) },
+                                            onFileClick = { fileItem ->
+                                                if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
+                                                    openFile(fileItem)
+                                                }
+                                            },
                                             onOpenWithClick = { openFileWith(it) },
                                             onShareClick = { fileItems -> shareFiles(fileItems) },
                                             listState = explorerListState,
