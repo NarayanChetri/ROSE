@@ -115,6 +115,10 @@ object RecycleBinManager {
                 } catch (e2: Exception) {
                     tempFile.delete()
                     false
+                } finally {
+                    if (tempFile.exists()) {
+                        runCatching { tempFile.delete() }
+                    }
                 }
             }
         }

@@ -2482,6 +2482,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         categoryTitle = null
         categoryFilterType = null
         categoryBucketId = null
+        val oldZip = currentZipFile
+        cleanupActiveArchiveCache(oldZip)
         currentZipFile = null
         cachedZipPassword = null
         currentZipSourcePath = null
@@ -2496,7 +2498,24 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun cleanupActiveArchiveCache(zipFile: File?) {
+        if (zipFile != null && zipFile.absolutePath.contains("view_archives")) {
+            viewModelScope.launch(Dispatchers.IO) {
+                runCatching {
+                    val sessionDir = zipFile.parentFile
+                    if (sessionDir != null && sessionDir.parentFile?.name == "view_archives") {
+                        sessionDir.deleteRecursively()
+                    } else {
+                        zipFile.delete()
+                    }
+                }
+            }
+        }
+    }
+
     fun closeArchive() {
+        val oldZip = currentZipFile
+        cleanupActiveArchiveCache(oldZip)
         currentZipFile = null
         cachedZipPassword = null
         currentZipSourcePath = null
@@ -3354,6 +3373,9 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     fun dismissUpdateSheet() {
         cancelUpdateDownload()
         resetUpdateCheck()
+        runCatching {
+            File(getApplication<Application>().cacheDir, "rose-update.apk").delete()
+        }
     }
 
     fun setAutoCheckUpdates(enabled: Boolean) {
@@ -3612,6 +3634,9 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         if (updateDownloadState is UpdateDownloadState.Downloading) {
             updateDownloadState = UpdateDownloadState.Idle
             updateDownloadTag = null
+        }
+        runCatching {
+            File(getApplication<Application>().cacheDir, "rose-update.apk").delete()
         }
     }
 

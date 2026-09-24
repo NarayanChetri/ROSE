@@ -295,7 +295,10 @@ fun FileExplorerScreen(
     onOpenWithClick: (FileItem) -> Unit = {},
     onShareClick: (List<FileItem>) -> Unit = {},
     listState: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(),
-    gridState: androidx.compose.foundation.lazy.grid.LazyGridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    gridState: androidx.compose.foundation.lazy.grid.LazyGridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState(),
+    backHandlerEnabled: Boolean = true,
+    onSearchActiveChange: (Boolean) -> Unit = {},
+    onOpenPath: ((String, FileItem?) -> Unit)? = null
 ) {
     val context = LocalContext.current
 
@@ -306,6 +309,10 @@ fun FileExplorerScreen(
     var pendingDelete: PendingDelete? by remember { mutableStateOf<PendingDelete?>(null) }
     var isSearching by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+
+    LaunchedEffect(isSearching) {
+        onSearchActiveChange(isSearching)
+    }
     var currentView by remember(startPath, startCategory, startRecent) {
         mutableStateOf(
             when {
@@ -420,7 +427,7 @@ fun FileExplorerScreen(
         onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
     }
 
-    BackHandler(enabled = true) {
+    BackHandler(enabled = backHandlerEnabled) {
 
         if (viewModel.propertiesFile != null) {
             viewModel.closeProperties()
@@ -763,46 +770,7 @@ fun FileExplorerScreen(
             }
             else -> {
                 Scaffold(
-                    modifier = Modifier.fillMaxSize().then(
-                        if (currentView == "Recent" && onExitToHome != null && !isSearching && !viewModel.isSelectionMode) {
-                            Modifier.pointerInput(Unit) {
-                                val touchSlop = viewConfiguration.touchSlop
-                                val swipeThreshold = 56.dp.toPx()
-                                awaitEachGesture {
-                                    val down = awaitFirstDown(pass = PointerEventPass.Initial)
-                                    var totalX = 0f
-                                    var totalY = 0f
-                                    var isHorizontal: Boolean? = null
-                                    while (true) {
-                                        val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                        if (!change.pressed) {
-                                            if (isHorizontal == true) {
-                                                change.consume()
-                                                if (totalX < -swipeThreshold) {
-                                                    viewModel.lastSwipeToHomeTimestamp = System.currentTimeMillis()
-                                                    onExitToHome()
-                                                }
-                                            }
-                                            break
-                                        }
-                                        val dragX = change.position.x - change.previousPosition.x
-                                        val dragY = change.position.y - change.previousPosition.y
-                                        totalX += dragX
-                                        totalY += dragY
-                                        if (isHorizontal == null) {
-                                            if (Math.abs(totalX) > touchSlop || Math.abs(totalY) > touchSlop) {
-                                                isHorizontal = Math.abs(totalX) > Math.abs(totalY) * 1.2f
-                                            }
-                                        }
-                                        if (isHorizontal == true) {
-                                            change.consume()
-                                        }
-                                    }
-                                }
-                            }
-                        } else Modifier
-                    ),
+                    modifier = Modifier.fillMaxSize(),
                     topBar = {
                         Surface(
                             shadowElevation = 3.dp,
@@ -1797,9 +1765,13 @@ fun FileExplorerScreen(
                                                                             if (parent != null) {
                                                                                 isSearching = false
                                                                                 searchQuery = ""
-                                                                                viewModel.navigateTo(parent, true)
-                                                                                viewModel.highlightedFile = fileItem
-                                                                                currentView = "Files"
+                                                                                if (currentView == "Recent" && onOpenPath != null) {
+                                                                                    onOpenPath(parent.absolutePath, fileItem)
+                                                                                } else {
+                                                                                    viewModel.navigateTo(parent, true)
+                                                                                    viewModel.highlightedFile = fileItem
+                                                                                    currentView = "Files"
+                                                                                }
                                                                             }
                                                                         }
                                                                     } else null,
@@ -1921,9 +1893,13 @@ fun FileExplorerScreen(
                                                                     if (parent != null) {
                                                                         isSearching = false
                                                                         searchQuery = ""
-                                                                        viewModel.navigateTo(parent, true)
-                                                                        viewModel.highlightedFile = fileItem
-                                                                        currentView = "Files"
+                                                                        if (currentView == "Recent" && onOpenPath != null) {
+                                                                            onOpenPath(parent.absolutePath, fileItem)
+                                                                        } else {
+                                                                            viewModel.navigateTo(parent, true)
+                                                                            viewModel.highlightedFile = fileItem
+                                                                            currentView = "Files"
+                                                                        }
                                                                     }
                                                                 }
                                                             } else null,

@@ -232,6 +232,9 @@ object TextEncodingHelper {
                 }
                 tempFile.delete()
                 throw e
+            } finally {
+                runCatching { if (tempFile.exists()) tempFile.delete() }
+                runCatching { if (backupFile != null && backupFile.exists() && targetFile.exists()) backupFile.delete() }
             }
 
             // Notify Android MediaStore of updated file size and timestamp

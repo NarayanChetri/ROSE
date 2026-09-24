@@ -30,7 +30,7 @@ class RoseApplication : Application(), ImageLoaderFactory {
             .diskCache {
                 DiskCache.Builder()
                     .directory(File(cacheDir, "image_cache"))
-                    .maxSizeBytes(50L * 1024L * 1024L) // 50MB maximum disk cache
+                    .maxSizeBytes(25L * 1024L * 1024L) // 25MB maximum disk cache
                     .build()
             }
             .crossfade(true)

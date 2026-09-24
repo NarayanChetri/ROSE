@@ -89,7 +89,8 @@ fun HomeScreen(
     onShareClick: (FileItem) -> Unit,
     onSettingsClick: () -> Unit,
     onAboutClick: () -> Unit,
-    onRecycleBinClick: () -> Unit
+    onRecycleBinClick: () -> Unit,
+    onSearchActiveChange: (Boolean) -> Unit = {}
 ) {
     LaunchedEffect(Unit) {
         // Refresh everything when coming back to home screen
@@ -166,6 +167,10 @@ fun HomeScreen(
     var showMenu by remember { mutableStateOf(false) }
     var isSearching by remember { mutableStateOf(false) }
 
+    LaunchedEffect(isSearching) {
+        onSearchActiveChange(isSearching)
+    }
+
     LaunchedEffect(Unit) {
         viewModel.exitCategoryMode()
         viewModel.resetFiles()
@@ -215,45 +220,7 @@ fun HomeScreen(
 
     val context = androidx.compose.ui.platform.LocalContext.current
     Scaffold(
-        modifier = Modifier.fillMaxSize().then(
-            if (!isSearching) {
-                Modifier.pointerInput(Unit) {
-                    val touchSlop = viewConfiguration.touchSlop
-                    val swipeThreshold = 56.dp.toPx()
-                    awaitEachGesture {
-                        val down = awaitFirstDown(pass = PointerEventPass.Initial)
-                        var totalX = 0f
-                        var totalY = 0f
-                        var isHorizontal: Boolean? = null
-                        while (true) {
-                            val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            if (!change.pressed) {
-                                if (isHorizontal == true) {
-                                    change.consume()
-                                    if (totalX > swipeThreshold) {
-                                        onOpenRecent()
-                                    }
-                                }
-                                break
-                            }
-                            val dragX = change.position.x - change.previousPosition.x
-                            val dragY = change.position.y - change.previousPosition.y
-                            totalX += dragX
-                            totalY += dragY
-                            if (isHorizontal == null) {
-                                if (Math.abs(totalX) > touchSlop || Math.abs(totalY) > touchSlop) {
-                                    isHorizontal = Math.abs(totalX) > Math.abs(totalY) * 1.2f
-                                }
-                            }
-                            if (isHorizontal == true) {
-                                change.consume()
-                            }
-                        }
-                    }
-                }
-            } else Modifier
-        ),
+        modifier = Modifier.fillMaxSize(),
         topBar = {
             Surface(shadowElevation = 0.dp) {
                 Column {
