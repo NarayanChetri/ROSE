@@ -17,6 +17,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -214,6 +218,37 @@ fun HomeScreen(
 
     val context = androidx.compose.ui.platform.LocalContext.current
     Scaffold(
+        modifier = Modifier.fillMaxSize().then(
+            if (!isSearching) {
+                Modifier.pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(pass = PointerEventPass.Initial)
+                        var totalX = 0f
+                        var totalY = 0f
+                        var isHorizontal: Boolean? = null
+                        while (true) {
+                            val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) {
+                                if (isHorizontal == true && totalX > 120f) {
+                                    onOpenRecent()
+                                }
+                                break
+                            }
+                            val dragX = change.position.x - change.previousPosition.x
+                            val dragY = change.position.y - change.previousPosition.y
+                            totalX += dragX
+                            totalY += dragY
+                            if (isHorizontal == null) {
+                                if (Math.abs(totalX) > 40 || Math.abs(totalY) > 40) {
+                                    isHorizontal = Math.abs(totalX) > Math.abs(totalY) * 1.5f
+                                }
+                            }
+                        }
+                    }
+                }
+            } else Modifier
+        ),
         topBar = {
             Surface(shadowElevation = 0.dp) {
                 Column {

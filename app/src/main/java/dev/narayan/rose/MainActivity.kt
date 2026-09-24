@@ -49,6 +49,8 @@ class MainActivity : ComponentActivity() {
 
     internal val viewModel: RoseViewModel by viewModels()
 
+    private val tempOpenedFiles = java.util.concurrent.ConcurrentHashMap.newKeySet<File>()
+
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -461,38 +463,49 @@ class MainActivity : ComponentActivity() {
                                     targetState = screen,
                                     transitionSpec = {
                                         val target = targetState
-                                        when (target) {
-                                            is AppScreen.Files -> {
-                                                if (target.isFromAllFiles) {
-                                                    // Snappier transition for All Files
-                                                    (fadeIn(tween(250, easing = FastOutSlowInEasing)) +
-                                                            slideInVertically(tween(250, easing = FastOutSlowInEasing)) { it / 20 })
-                                                        .togetherWith(fadeOut(tween(150, easing = FastOutSlowInEasing)))
-                                                        .using(SizeTransform(clip = false))
-                                                } else {
-                                                    (fadeIn(tween(200, easing = FastOutSlowInEasing)) +
-                                                            scaleIn(initialScale = 0.96f, animationSpec = tween(200, easing = FastOutSlowInEasing)))
-                                                        .togetherWith(fadeOut(tween(100, easing = FastOutSlowInEasing)))
+                                        val initial = initialState
+                                        if (initial is AppScreen.Home && target is AppScreen.Files && target.recent) {
+                                            (slideInHorizontally(animationSpec = tween(320, easing = FastOutSlowInEasing)) { -it } + fadeIn(tween(250)))
+                                                .togetherWith(slideOutHorizontally(animationSpec = tween(320, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(200)))
+                                                .using(SizeTransform(clip = false))
+                                        } else if (initial is AppScreen.Files && initial.recent && target is AppScreen.Home) {
+                                            (slideInHorizontally(animationSpec = tween(320, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(250)))
+                                                .togetherWith(slideOutHorizontally(animationSpec = tween(320, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(200)))
+                                                .using(SizeTransform(clip = false))
+                                        } else {
+                                            when (target) {
+                                                is AppScreen.Files -> {
+                                                    if (target.isFromAllFiles) {
+                                                        // Snappier transition for All Files
+                                                        (fadeIn(tween(250, easing = FastOutSlowInEasing)) +
+                                                                slideInVertically(tween(250, easing = FastOutSlowInEasing)) { it / 20 })
+                                                            .togetherWith(fadeOut(tween(150, easing = FastOutSlowInEasing)))
+                                                            .using(SizeTransform(clip = false))
+                                                    } else {
+                                                        (fadeIn(tween(200, easing = FastOutSlowInEasing)) +
+                                                                scaleIn(initialScale = 0.96f, animationSpec = tween(200, easing = FastOutSlowInEasing)))
+                                                            .togetherWith(fadeOut(tween(100, easing = FastOutSlowInEasing)))
+                                                            .using(SizeTransform(clip = false))
+                                                    }
+                                                }
+                                                is AppScreen.Home, is AppScreen.RecycleBin -> {
+                                                    (fadeIn(tween(160, easing = FastOutSlowInEasing)) +
+                                                            scaleIn(initialScale = 0.97f, animationSpec = tween(160, easing = FastOutSlowInEasing)))
+                                                        .togetherWith(fadeOut(tween(90, easing = FastOutSlowInEasing)))
                                                         .using(SizeTransform(clip = false))
                                                 }
+                                                is AppScreen.SaveAs -> {
+                                                    (slideInVertically(animationSpec = tween(280, easing = FastOutSlowInEasing)) { it } + fadeIn())
+                                                        .togetherWith(slideOutVertically(animationSpec = tween(200)) { it } + fadeOut())
+                                                }
+                                                is AppScreen.Document -> {
+                                                    (fadeIn(tween(200, easing = FastOutSlowInEasing)) +
+                                                            scaleIn(initialScale = 0.98f, animationSpec = tween(200, easing = FastOutSlowInEasing)))
+                                                        .togetherWith(fadeOut(tween(120, easing = FastOutSlowInEasing)))
+                                                        .using(SizeTransform(clip = false))
+                                                }
+                                                else -> fadeIn(tween(180)) togetherWith fadeOut(tween(180))
                                             }
-                                            is AppScreen.Home, is AppScreen.RecycleBin -> {
-                                                (fadeIn(tween(160, easing = FastOutSlowInEasing)) +
-                                                        scaleIn(initialScale = 0.97f, animationSpec = tween(160, easing = FastOutSlowInEasing)))
-                                                    .togetherWith(fadeOut(tween(90, easing = FastOutSlowInEasing)))
-                                                    .using(SizeTransform(clip = false))
-                                            }
-                                            is AppScreen.SaveAs -> {
-                                                (slideInVertically(animationSpec = tween(280, easing = FastOutSlowInEasing)) { it } + fadeIn())
-                                                    .togetherWith(slideOutVertically(animationSpec = tween(200)) { it } + fadeOut())
-                                            }
-                                            is AppScreen.Document -> {
-                                                (fadeIn(tween(200, easing = FastOutSlowInEasing)) +
-                                                        scaleIn(initialScale = 0.98f, animationSpec = tween(200, easing = FastOutSlowInEasing)))
-                                                    .togetherWith(fadeOut(tween(120, easing = FastOutSlowInEasing)))
-                                                    .using(SizeTransform(clip = false))
-                                            }
-                                            else -> fadeIn(tween(180)) togetherWith fadeOut(tween(180))
                                         }
                                     },
                                     label = "ScreenTransition",
@@ -1067,7 +1080,12 @@ else {
                     return null
                 }
 
+                // Clean up previous temp_open_ files to prevent cache accumulation
+                cacheDir.listFiles()?.filter { it.name.startsWith("temp_open_") }?.forEach {
+                    runCatching { it.deleteRecursively() }
+                }
                 val cacheFile = File(cacheDir, "temp_open_${fileItem.name}")
+                tempOpenedFiles.add(cacheFile)
                 try {
                     cacheFile.outputStream().use { output ->
                         ArchiveManager.extractEntry(fileItem.virtualZipSource!!, fileItem.zipEntryPath ?: fileItem.name, output, effectivePassphrase)
@@ -1095,7 +1113,12 @@ else {
                     safUri
                 } else if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
                     val targetDir = externalCacheDir ?: cacheDir
+                    // Clean up previous open_restricted_ files to prevent cache bloat
+                    targetDir.listFiles()?.filter { it.name.startsWith("open_restricted_") }?.forEach {
+                        runCatching { it.deleteRecursively() }
+                    }
                     val cacheFile = File(targetDir, "open_restricted_${fileItem.name}")
+                    tempOpenedFiles.add(cacheFile)
                     if (cacheFile.exists()) {
                         cacheFile.delete()
                     }
@@ -1351,6 +1374,8 @@ else {
 
     override fun onDestroy() {
         super.onDestroy()
+        tempOpenedFiles.forEach { runCatching { it.deleteRecursively() } }
+        tempOpenedFiles.clear()
         Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
         Shizuku.removeBinderReceivedListener(shizukuBinderListener)
     }

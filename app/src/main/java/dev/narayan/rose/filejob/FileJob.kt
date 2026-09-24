@@ -90,7 +90,7 @@ object FileOperationRunner {
                             onProgress(job)
                             JobManager.updateJob(job)
 
-                            val target = getNonConflictingTarget(appContext, type.targetDir, source.displayName)
+                            val target = getNonConflictingTarget(appContext, type.targetDir, source.displayName, sourcePath = source.path, isCopy = true)
                             val success = copyRecursive(appContext, source.path, target, job) {
                                 onProgress(it)
                                 JobManager.updateJob(it)
@@ -401,17 +401,24 @@ object FileOperationRunner {
 
     private fun checkExists(context: Context, path: String): Boolean {
         return if (SafManager.isRestrictedPath(path)) {
-            SafManager.exists(context, path)
+            if (SafManager.hasPermission(context, path) && SafManager.exists(context, path)) {
+                true
+            } else if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()) {
+                dev.narayan.rose.ShizukuManager.exists(path)
+            } else {
+                SafManager.exists(context, path)
+            }
         } else {
             try {
-                Files.exists(Paths.get(path))
+                val f = java.io.File(path)
+                f.exists() || Files.exists(Paths.get(path))
             } catch (e: Exception) {
                 false
             }
         }
     }
 
-    private fun getNonConflictingTarget(context: Context, targetDir: Path, displayName: String, sourcePath: String? = null): Path {
+    private fun getNonConflictingTarget(context: Context, targetDir: Path, displayName: String, sourcePath: String? = null, isCopy: Boolean = false): Path {
         val lastDot = displayName.lastIndexOf('.')
         val (name, ext) = if (lastDot > 0 && !displayName.startsWith(".")) {
             displayName.substring(0, lastDot) to displayName.substring(lastDot)
@@ -422,14 +429,23 @@ object FileOperationRunner {
         var target = targetDir.resolve(displayName)
 
         // If move and target is same as source, it's a no-op
-        if (sourcePath != null && sourcePath == target.toString()) {
+        if (!isCopy && sourcePath != null && sourcePath == target.toString()) {
             return target
         }
 
         var count = 1
-        while (checkExists(context, target.toString())) {
+        val isSameAsSource = isCopy && sourcePath != null && (
+            sourcePath == target.toString() ||
+            runCatching { java.io.File(sourcePath).canonicalPath == target.toFile().canonicalPath }.getOrDefault(false)
+        )
+
+        if (isSameAsSource || checkExists(context, target.toString())) {
             target = targetDir.resolve("$name ($count)$ext")
             count++
+            while (checkExists(context, target.toString())) {
+                target = targetDir.resolve("$name ($count)$ext")
+                count++
+            }
         }
         return target
     }
@@ -502,16 +518,21 @@ object FileOperationRunner {
         ) {
             val cleanSrc = dev.narayan.rose.ShizukuManager.normalize(sourcePath)
             val cleanDest = dev.narayan.rose.ShizukuManager.normalize(targetPath)
+            if (cleanSrc == cleanDest) {
+                return false
+            }
 
             // Ensure target directory exists for shell cp
-            val destParent = target.parent.toString()
-            if (SafManager.isRestrictedPath(destParent)) {
-                val cleanParent = dev.narayan.rose.ShizukuManager.normalize(destParent)
-                dev.narayan.rose.ShizukuManager.runCommandSync(
-                    "mkdir -p ${dev.narayan.rose.ShizukuManager.shellEscape(cleanParent)}"
-                )
-            } else {
-                java.io.File(destParent).mkdirs()
+            val destParent = target.parent?.toString()
+            if (destParent != null) {
+                if (SafManager.isRestrictedPath(destParent)) {
+                    val cleanParent = dev.narayan.rose.ShizukuManager.normalize(destParent)
+                    dev.narayan.rose.ShizukuManager.runCommandSync(
+                        "mkdir -p ${dev.narayan.rose.ShizukuManager.shellEscape(cleanParent)}"
+                    )
+                } else {
+                    java.io.File(destParent).mkdirs()
+                }
             }
 
             val exitCode = dev.narayan.rose.ShizukuManager.runCommandSync(

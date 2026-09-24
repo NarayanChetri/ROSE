@@ -758,6 +758,37 @@ fun FileExplorerScreen(
             }
             else -> {
                 Scaffold(
+                    modifier = Modifier.fillMaxSize().then(
+                        if (currentView == "Recent" && onExitToHome != null && !isSearching && !viewModel.isSelectionMode) {
+                            Modifier.pointerInput(Unit) {
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(pass = PointerEventPass.Initial)
+                                    var totalX = 0f
+                                    var totalY = 0f
+                                    var isHorizontal: Boolean? = null
+                                    while (true) {
+                                        val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                        if (!change.pressed) {
+                                            if (isHorizontal == true && totalX < -120f) {
+                                                onExitToHome()
+                                            }
+                                            break
+                                        }
+                                        val dragX = change.position.x - change.previousPosition.x
+                                        val dragY = change.position.y - change.previousPosition.y
+                                        totalX += dragX
+                                        totalY += dragY
+                                        if (isHorizontal == null) {
+                                            if (Math.abs(totalX) > 40 || Math.abs(totalY) > 40) {
+                                                isHorizontal = Math.abs(totalX) > Math.abs(totalY) * 1.5f
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else Modifier
+                    ),
                     topBar = {
                         Surface(
                             shadowElevation = 3.dp,
@@ -3296,6 +3327,20 @@ fun FileIcon(
                                 FileTypeBadge(placeholderIcon, if (fileItem.fileType == FileType.IMAGE) Color(0xFF4C8DFF) else Color(0xFF9C6ADE), iconSize, Modifier.fillMaxSize())
                             }
                         }
+                    }
+                } else if (SafManager.isRestrictedPath(fileItem.file.absolutePath)) {
+                    val thumbBitmap by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = fileItem.file.absolutePath) {
+                        value = RestrictedThumbnailLoader.loadThumbnail(context, fileItem.file.absolutePath, fileItem.fileType)
+                    }
+                    if (thumbBitmap != null) {
+                        Image(
+                            bitmap = thumbBitmap!!.asImageBitmap(),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        FileTypeBadge(placeholderIcon, if (fileItem.fileType == FileType.IMAGE) Color(0xFF4C8DFF) else Color(0xFF9C6ADE), iconSize, Modifier.fillMaxSize())
                     }
                 } else {
                     AsyncImage(

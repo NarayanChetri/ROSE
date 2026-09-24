@@ -56,7 +56,10 @@ fun SaveAsScreen(
         if (SafManager.isRestrictedPath(path)) {
             scope.launch(Dispatchers.IO) {
                 val success = if (SafManager.hasPermission(context, currentDir.absolutePath)) {
-                    SafManager.createDirectory(context, path)
+                    val safResult = SafManager.createDirectory(context, path)
+                    if (!safResult && ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
+                        ShizukuManager.createFolder(currentDir.absolutePath, name)
+                    } else safResult
                 } else if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
                     ShizukuManager.createFolder(currentDir.absolutePath, name)
                 } else false

@@ -1836,7 +1836,11 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 val baseName = if (displayName.contains(".")) displayName.substringBeforeLast('.') else displayName
                 val safeBase = baseName.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(50)
 
-                val targetDir = File(context.cacheDir, "view_archives/${System.currentTimeMillis()}")
+                val viewArchivesRoot = File(context.cacheDir, "view_archives")
+                if (viewArchivesRoot.exists()) {
+                    viewArchivesRoot.listFiles()?.forEach { runCatching { it.deleteRecursively() } }
+                }
+                val targetDir = File(viewArchivesRoot, "${System.currentTimeMillis()}")
                 targetDir.mkdirs()
                 val tempFile = File(targetDir, "$safeBase.$effectiveExt")
                 context.contentResolver.openInputStream(uri)?.use { input ->
@@ -2493,7 +2497,10 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch(Dispatchers.IO) {
                 val path = "${currentPath.trimEnd('/')}/$trimmedName"
                 val success = if (SafManager.hasPermission(getApplication(), currentPath)) {
-                    SafManager.createDirectory(getApplication(), path)
+                    val safResult = SafManager.createDirectory(getApplication(), path)
+                    if (!safResult && ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
+                        ShizukuManager.createFolder(currentPath, trimmedName)
+                    } else safResult
                 } else if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
                     ShizukuManager.createFolder(currentPath, trimmedName)
                 } else false
@@ -2573,8 +2580,9 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             isLoading = true
             var success = true
+            var tempFile: File? = null
             try {
-                val tempFile = File(getApplication<Application>().cacheDir, "temp_extract.zip")
+                tempFile = File(getApplication<Application>().cacheDir, "temp_extract_${System.currentTimeMillis()}.zip")
                 getApplication<Application>().contentResolver.openInputStream(uri)?.use { input ->
                     tempFile.outputStream().use { output ->
                         input.copyTo(output)
@@ -2633,6 +2641,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 success = false
             } finally {
+                tempFile?.let { runCatching { it.delete() } }
                 withContext(Dispatchers.Main) {
                     isLoading = false
                     onComplete(success)
