@@ -15,6 +15,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -48,6 +49,8 @@ import dev.narayan.rose.update.UpdateBottomSheet
 class MainActivity : ComponentActivity() {
 
     internal val viewModel: RoseViewModel by viewModels()
+
+    private val tempOpenedFiles = java.util.concurrent.ConcurrentHashMap.newKeySet<File>()
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -166,6 +169,7 @@ class MainActivity : ComponentActivity() {
                 val activeJobs by JobManager.activeJobs.collectAsState()
                 val hasActiveDownload = activeJobs.values.any { it.type is dev.narayan.rose.filejob.FileJobType.Download }
                 var showNotificationPrimer by remember { mutableStateOf(false) }
+                val coroutineScope = rememberCoroutineScope()
 
                 // Delete, Recycle and Restore are near-instant (typically just a file move
                 // or metadata update), so showing the full detail dialog or mini bar
@@ -208,7 +212,6 @@ class MainActivity : ComponentActivity() {
 
                 if (showNotificationPrimer) {
                     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-                    val coroutineScope = rememberCoroutineScope()
 
                     fun dismissPrimer(onDismissed: () -> Unit = {}) {
                         coroutineScope.launch {
@@ -364,6 +367,12 @@ class MainActivity : ComponentActivity() {
                     val recycleBinListState = androidx.compose.foundation.lazy.rememberLazyListState()
                     val explorerListState = androidx.compose.foundation.lazy.rememberLazyListState()
                     val explorerGridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+                    val homePagerState = androidx.compose.foundation.pager.rememberPagerState(
+                        initialPage = 1,
+                        pageCount = { 2 }
+                    )
+                    var isHomeSearching by remember { mutableStateOf(false) }
+                    var isRecentSearching by remember { mutableStateOf(false) }
 
                     if (hasStoragePermission()) {
                         var screen by remember {
@@ -461,38 +470,49 @@ class MainActivity : ComponentActivity() {
                                     targetState = screen,
                                     transitionSpec = {
                                         val target = targetState
-                                        when (target) {
-                                            is AppScreen.Files -> {
-                                                if (target.isFromAllFiles) {
-                                                    // Snappier transition for All Files
-                                                    (fadeIn(tween(250, easing = FastOutSlowInEasing)) +
-                                                            slideInVertically(tween(250, easing = FastOutSlowInEasing)) { it / 20 })
-                                                        .togetherWith(fadeOut(tween(150, easing = FastOutSlowInEasing)))
-                                                        .using(SizeTransform(clip = false))
-                                                } else {
-                                                    (fadeIn(tween(200, easing = FastOutSlowInEasing)) +
-                                                            scaleIn(initialScale = 0.96f, animationSpec = tween(200, easing = FastOutSlowInEasing)))
-                                                        .togetherWith(fadeOut(tween(100, easing = FastOutSlowInEasing)))
+                                        val initial = initialState
+                                        if (initial is AppScreen.Home && target is AppScreen.Files && target.recent) {
+                                            (slideInHorizontally(animationSpec = tween(320, easing = FastOutSlowInEasing)) { -it } + fadeIn(tween(250)))
+                                                .togetherWith(slideOutHorizontally(animationSpec = tween(320, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(200)))
+                                                .using(SizeTransform(clip = false))
+                                        } else if (initial is AppScreen.Files && initial.recent && target is AppScreen.Home) {
+                                            (slideInHorizontally(animationSpec = tween(320, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(250)))
+                                                .togetherWith(slideOutHorizontally(animationSpec = tween(320, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(200)))
+                                                .using(SizeTransform(clip = false))
+                                        } else {
+                                            when (target) {
+                                                is AppScreen.Files -> {
+                                                    if (target.isFromAllFiles) {
+                                                        // Snappier transition for All Files
+                                                        (fadeIn(tween(250, easing = FastOutSlowInEasing)) +
+                                                                slideInVertically(tween(250, easing = FastOutSlowInEasing)) { it / 20 })
+                                                            .togetherWith(fadeOut(tween(150, easing = FastOutSlowInEasing)))
+                                                            .using(SizeTransform(clip = false))
+                                                    } else {
+                                                        (fadeIn(tween(200, easing = FastOutSlowInEasing)) +
+                                                                scaleIn(initialScale = 0.96f, animationSpec = tween(200, easing = FastOutSlowInEasing)))
+                                                            .togetherWith(fadeOut(tween(100, easing = FastOutSlowInEasing)))
+                                                            .using(SizeTransform(clip = false))
+                                                    }
+                                                }
+                                                is AppScreen.Home, is AppScreen.RecycleBin -> {
+                                                    (fadeIn(tween(160, easing = FastOutSlowInEasing)) +
+                                                            scaleIn(initialScale = 0.97f, animationSpec = tween(160, easing = FastOutSlowInEasing)))
+                                                        .togetherWith(fadeOut(tween(90, easing = FastOutSlowInEasing)))
                                                         .using(SizeTransform(clip = false))
                                                 }
+                                                is AppScreen.SaveAs -> {
+                                                    (slideInVertically(animationSpec = tween(280, easing = FastOutSlowInEasing)) { it } + fadeIn())
+                                                        .togetherWith(slideOutVertically(animationSpec = tween(200)) { it } + fadeOut())
+                                                }
+                                                is AppScreen.Document -> {
+                                                    (fadeIn(tween(200, easing = FastOutSlowInEasing)) +
+                                                            scaleIn(initialScale = 0.98f, animationSpec = tween(200, easing = FastOutSlowInEasing)))
+                                                        .togetherWith(fadeOut(tween(120, easing = FastOutSlowInEasing)))
+                                                        .using(SizeTransform(clip = false))
+                                                }
+                                                else -> fadeIn(tween(180)) togetherWith fadeOut(tween(180))
                                             }
-                                            is AppScreen.Home, is AppScreen.RecycleBin -> {
-                                                (fadeIn(tween(160, easing = FastOutSlowInEasing)) +
-                                                        scaleIn(initialScale = 0.97f, animationSpec = tween(160, easing = FastOutSlowInEasing)))
-                                                    .togetherWith(fadeOut(tween(90, easing = FastOutSlowInEasing)))
-                                                    .using(SizeTransform(clip = false))
-                                            }
-                                            is AppScreen.SaveAs -> {
-                                                (slideInVertically(animationSpec = tween(280, easing = FastOutSlowInEasing)) { it } + fadeIn())
-                                                    .togetherWith(slideOutVertically(animationSpec = tween(200)) { it } + fadeOut())
-                                            }
-                                            is AppScreen.Document -> {
-                                                (fadeIn(tween(200, easing = FastOutSlowInEasing)) +
-                                                        scaleIn(initialScale = 0.98f, animationSpec = tween(200, easing = FastOutSlowInEasing)))
-                                                    .togetherWith(fadeOut(tween(120, easing = FastOutSlowInEasing)))
-                                                    .using(SizeTransform(clip = false))
-                                            }
-                                            else -> fadeIn(tween(180)) togetherWith fadeOut(tween(180))
                                         }
                                     },
                                     label = "ScreenTransition",
@@ -519,59 +539,157 @@ class MainActivity : ComponentActivity() {
                                     }
 
                                     when (currentScreen) {
-                                        is AppScreen.Home -> HomeScreen(
-                                            viewModel = viewModel,
-                                            listState = homeListState,
-                                            sharedTransitionScope = this@SharedTransitionLayout,
-                                            animatedVisibilityScope = this@AnimatedContent,
-                                            onOpenPath = { path, fileToHighlight ->
-                                                val isFromAllFiles = path == Environment.getExternalStorageDirectory().absolutePath && fileToHighlight == null
-                                                // Always reset - this only clears category/zip metadata
-                                                // (categoryTitle, categoryFilterType, currentZipFile,
-                                                // categoryFiles), never `files`/rootCache, so it can't
-                                                // cause a "blank flash" here. Skipping it for All Files
-                                                // used to leave a stale categoryFilterType set (from a
-                                                // previously-browsed category still hanging around this
-                                                // session) which made setSortOrder() silently re-sort the
-                                                // invisible categoryFiles list instead of the visible one
-                                                // - "sort does nothing in All Files" until a manual
-                                                // refresh, which reloads through a path that ignores
-                                                // categoryFilterType entirely.
-                                                viewModel.resetFiles()
-                                                screen = AppScreen.Files(
-                                                    startPath = path,
-                                                    fromHome = true,
-                                                    highlightFile = fileToHighlight,
-                                                    isFromAllFiles = isFromAllFiles
-                                                )
-                                            },
-                                            onOpenCategory = { type, title ->
-                                                viewModel.resetFiles()
-                                                viewModel.browseCategory(type, title)
-                                                screen = AppScreen.Files(category = type to title)
-                                            },
-                                            onOpenRecent = {
-                                                viewModel.resetFiles()
-                                                viewModel.loadRecentFiles()
-                                                screen = AppScreen.Files(recent = true)
-                                            },
-                                            onFileClick = { fileItem ->
-                                                if (fileItem.fileType == FileType.ZIP) {
-                                                    viewModel.resetFiles()
-                                                    screen = AppScreen.Files(
-                                                        startPath = fileItem.file.absolutePath,
-                                                        fromHome = true
+                                        is AppScreen.Home -> {
+                                            val canSwipe = !isHomeSearching && !isRecentSearching && !viewModel.isSelectionMode
+
+                                            LaunchedEffect(currentScreen) {
+                                                if (homePagerState.currentPage != 1) {
+                                                    homePagerState.scrollToPage(1)
+                                                }
+                                            }
+
+                                            LaunchedEffect(homePagerState.currentPage) {
+                                                if (homePagerState.currentPage == 0) {
+                                                    viewModel.loadRecentFiles()
+                                                }
+                                            }
+
+                                            LaunchedEffect(homePagerState) {
+                                                var wasScrolling = false
+                                                var dragStartPage = homePagerState.currentPage
+                                                var maxOffset = 0f
+                                                snapshotFlow {
+                                                    Triple(
+                                                        homePagerState.isScrollInProgress,
+                                                        homePagerState.currentPage,
+                                                        homePagerState.currentPageOffsetFraction
+                                                    )
+                                                }.collect { (isScrolling, page, offsetFraction) ->
+                                                    if (isScrolling) {
+                                                        if (!wasScrolling) {
+                                                            wasScrolling = true
+                                                            dragStartPage = page
+                                                            maxOffset = kotlin.math.abs(offsetFraction)
+                                                        } else {
+                                                            maxOffset = maxOf(maxOffset, kotlin.math.abs(offsetFraction))
+                                                        }
+                                                    } else if (wasScrolling) {
+                                                        wasScrolling = false
+                                                        val pageChanged = page != dragStartPage
+                                                        val significantSwipe = maxOffset > 0.08f
+                                                        if (pageChanged || significantSwipe) {
+                                                            viewModel.lastSwipeToHomeTimestamp = System.currentTimeMillis()
+                                                        }
+                                                        dragStartPage = page
+                                                        maxOffset = 0f
+                                                    }
+                                                }
+                                            }
+
+                                            BackHandler(enabled = (homePagerState.currentPage == 0 && !isRecentSearching && !viewModel.isSelectionMode)) {
+                                                coroutineScope.launch {
+                                                    homePagerState.animateScrollToPage(1)
+                                                }
+                                            }
+
+                                            androidx.compose.foundation.pager.HorizontalPager(
+                                                state = homePagerState,
+                                                userScrollEnabled = canSwipe,
+                                                modifier = Modifier.fillMaxSize()
+                                            ) { pageIndex ->
+                                                if (pageIndex == 0) {
+                                                    FileExplorerScreen(
+                                                        viewModel = viewModel,
+                                                        startPath = null,
+                                                        startCategory = null,
+                                                        startRecent = true,
+                                                        fromHome = true,
+                                                        highlightFile = null,
+                                                        isFromAllFiles = false,
+                                                        backHandlerEnabled = (homePagerState.currentPage == 0),
+                                                        onSearchActiveChange = { isRecentSearching = it },
+                                                        onOpenPath = { path, fileToHighlight ->
+                                                            viewModel.resetFiles()
+                                                            screen = AppScreen.Files(
+                                                                startPath = path,
+                                                                fromHome = true,
+                                                                highlightFile = fileToHighlight
+                                                            )
+                                                        },
+                                                        sharedTransitionScope = this@SharedTransitionLayout,
+                                                        animatedVisibilityScope = this@AnimatedContent,
+                                                        onExitToHome = {
+                                                            coroutineScope.launch {
+                                                                homePagerState.animateScrollToPage(1)
+                                                            }
+                                                        },
+                                                        onFileClick = { fileItem ->
+                                                            if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
+                                                                if (fileItem.fileType == FileType.ZIP) {
+                                                                    viewModel.resetFiles()
+                                                                    screen = AppScreen.Files(
+                                                                        startPath = fileItem.file.absolutePath,
+                                                                        fromHome = true
+                                                                    )
+                                                                } else {
+                                                                    openFile(fileItem)
+                                                                }
+                                                            }
+                                                        },
+                                                        onOpenWithClick = { openFileWith(it) },
+                                                        onShareClick = { fileItems -> shareFiles(fileItems) },
+                                                        listState = explorerListState,
+                                                        gridState = explorerGridState
                                                     )
                                                 } else {
-                                                    openFile(fileItem)
+                                                    HomeScreen(
+                                                        viewModel = viewModel,
+                                                        listState = homeListState,
+                                                        onSearchActiveChange = { isHomeSearching = it },
+                                                        sharedTransitionScope = this@SharedTransitionLayout,
+                                                        animatedVisibilityScope = this@AnimatedContent,
+                                                        onOpenPath = { path, fileToHighlight ->
+                                                            val isFromAllFiles = path == Environment.getExternalStorageDirectory().absolutePath && fileToHighlight == null
+                                                            viewModel.resetFiles()
+                                                            screen = AppScreen.Files(
+                                                                startPath = path,
+                                                                fromHome = true,
+                                                                highlightFile = fileToHighlight,
+                                                                isFromAllFiles = isFromAllFiles
+                                                            )
+                                                        },
+                                                        onOpenCategory = { type, title ->
+                                                            viewModel.resetFiles()
+                                                            viewModel.browseCategory(type, title)
+                                                            screen = AppScreen.Files(category = type to title)
+                                                        },
+                                                        onOpenRecent = {
+                                                            coroutineScope.launch {
+                                                                homePagerState.animateScrollToPage(0)
+                                                            }
+                                                        },
+                                                        onFileClick = { fileItem ->
+                                                            if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
+                                                                if (fileItem.fileType == FileType.ZIP) {
+                                                                    viewModel.resetFiles()
+                                                                    screen = AppScreen.Files(
+                                                                        startPath = fileItem.file.absolutePath,
+                                                                        fromHome = true
+                                                                    )
+                                                                } else {
+                                                                    openFile(fileItem)
+                                                                }
+                                                            }
+                                                        },
+                                                        onOpenWithClick = { openFileWith(it) },
+                                                        onShareClick = { fileItem -> shareFiles(listOf(fileItem)) },
+                                                        onSettingsClick = { screen = AppScreen.Settings },
+                                                        onAboutClick = { screen = AppScreen.About },
+                                                        onRecycleBinClick = { screen = AppScreen.RecycleBin }
+                                                    )
                                                 }
-                                            },
-                                            onOpenWithClick = { openFileWith(it) },
-                                            onShareClick = { fileItem -> shareFiles(listOf(fileItem)) },
-                                            onSettingsClick = { screen = AppScreen.Settings },
-                                            onAboutClick = { screen = AppScreen.About },
-                                            onRecycleBinClick = { screen = AppScreen.RecycleBin }
-                                        )
+                                            }
+                                        }
                                         is AppScreen.Files -> FileExplorerScreen(
                                             viewModel = viewModel,
                                             startPath = currentScreen.startPath,
@@ -585,13 +703,31 @@ class MainActivity : ComponentActivity() {
                                             onExitToHome = {
                                                 viewModel.resetFiles()
                                                 viewModel.exitCategoryMode()
+                                                viewModel.homeScrollIndex = 0
+                                                viewModel.homeScrollOffset = 0
+                                                coroutineScope.launch {
+                                                    homeListState.scrollToItem(0, 0)
+                                                    homePagerState.scrollToPage(1)
+                                                }
                                                 if (sharedUris != null) {
                                                     screen = AppScreen.SaveAs(sharedUris!!, true)
                                                 } else {
                                                     screen = AppScreen.Home
                                                 }
                                             },
-                                            onFileClick = { fileItem -> openFile(fileItem) },
+                                            onOpenPath = { path, fileToHighlight ->
+                                                viewModel.resetFiles()
+                                                screen = AppScreen.Files(
+                                                    startPath = path,
+                                                    fromHome = true,
+                                                    highlightFile = fileToHighlight
+                                                )
+                                            },
+                                            onFileClick = { fileItem ->
+                                                if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
+                                                    openFile(fileItem)
+                                                }
+                                            },
                                             onOpenWithClick = { openFileWith(it) },
                                             onShareClick = { fileItems -> shareFiles(fileItems) },
                                             listState = explorerListState,
@@ -826,15 +962,7 @@ class MainActivity : ComponentActivity() {
     private fun cleanupOldViewArchives() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val dir = File(cacheDir, "view_archives")
-                if (dir.exists() && dir.isDirectory) {
-                    val oneDayAgo = System.currentTimeMillis() - 24 * 60 * 60 * 1000
-                    dir.listFiles()?.forEach { child ->
-                        if (child.lastModified() < oneDayAgo) {
-                            child.deleteRecursively()
-                        }
-                    }
-                }
+                CacheCleaner.cleanViewArchives(this@MainActivity, viewModel.currentZipFile?.absolutePath)
             } catch (e: Exception) {}
         }
     }
@@ -918,6 +1046,9 @@ class MainActivity : ComponentActivity() {
         if (fileItems.isEmpty()) return
 
         lifecycleScope.launch(Dispatchers.IO) {
+            // Clean up old temporary share files before starting new share
+            CacheCleaner.cleanAllShareFiles(this@MainActivity)
+            val newlyCreatedTempFiles = mutableListOf<File>()
             val uris = ArrayList<Uri>()
             var folderFound = false
 
@@ -932,6 +1063,7 @@ class MainActivity : ComponentActivity() {
                     val effectivePassphrase = passphrase ?: cached
 
                     if (item.isEncrypted && effectivePassphrase == null) {
+                        newlyCreatedTempFiles.forEach { runCatching { it.delete() } }
                         withContext(Dispatchers.Main) {
                             viewModel.passphrasePromptItem = item
                             viewModel.passphraseAction = { pw -> shareFiles(fileItems, pw) }
@@ -950,9 +1082,12 @@ class MainActivity : ComponentActivity() {
                                 viewModel.cachedZipPassword = effectivePassphrase
                             }
                         }
+                        newlyCreatedTempFiles.add(cacheFile)
                         uris.add(FileProvider.getUriForFile(this@MainActivity, "${packageName}.provider", cacheFile))
                     } catch (e: Exception) {
+                        runCatching { cacheFile.delete() }
                         if (ArchiveManager.isEncryptionError(e)) {
+                            newlyCreatedTempFiles.forEach { runCatching { it.delete() } }
                             withContext(Dispatchers.Main) {
                                 viewModel.cachedZipPassword = null
                                 if (effectivePassphrase != null) {
@@ -967,8 +1102,7 @@ class MainActivity : ComponentActivity() {
                             Toast.makeText(this@MainActivity, getString(R.string.toast_failed_to_extract, item.name, e.message ?: ""), Toast.LENGTH_SHORT).show()
                         }
                     }
-                }
-else {
+                } else {
                     val path = item.file.absolutePath
                     if (SafManager.isRestrictedPath(path)) {
                         // Files here don't exist from java.io.File's point of view
@@ -977,13 +1111,22 @@ else {
                             uris.add(safUri)
                         } else if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
                             val targetDir = externalCacheDir ?: cacheDir
-                            val cacheFile = File(targetDir, "shared_restricted_${item.name}")
-                            if (ShizukuManager.copyToFile(path, cacheFile)) {
-                                uris.add(FileProvider.getUriForFile(
-                                    this@MainActivity,
-                                    "${applicationContext.packageName}.provider",
-                                    cacheFile
-                                ))
+                            val cacheFile = File(targetDir, "shared_restricted_${System.currentTimeMillis()}_${item.name}")
+                            var copySuccess = false
+                            try {
+                                copySuccess = ShizukuManager.copyToFile(path, cacheFile)
+                                if (copySuccess && cacheFile.exists() && cacheFile.length() > 0) {
+                                    newlyCreatedTempFiles.add(cacheFile)
+                                    uris.add(FileProvider.getUriForFile(
+                                        this@MainActivity,
+                                        "${applicationContext.packageName}.provider",
+                                        cacheFile
+                                    ))
+                                } else {
+                                    runCatching { cacheFile.delete() }
+                                }
+                            } catch (e: Exception) {
+                                runCatching { cacheFile.delete() }
                             }
                         } else {
                             folderFound = true
@@ -1000,8 +1143,11 @@ else {
                 }
             }
 
+            tempOpenedFiles.addAll(newlyCreatedTempFiles)
+
             withContext(Dispatchers.Main) {
                 if (uris.isEmpty()) {
+                    newlyCreatedTempFiles.forEach { runCatching { it.delete() } }
                     if (folderFound) {
                         Toast.makeText(this@MainActivity, getString(R.string.toast_folders_cannot_be_shared), Toast.LENGTH_SHORT).show()
                     }
@@ -1067,7 +1213,12 @@ else {
                     return null
                 }
 
+                // Clean up previous temp_open_ files to prevent cache accumulation
+                cacheDir.listFiles()?.filter { it.name.startsWith("temp_open_") }?.forEach {
+                    runCatching { it.deleteRecursively() }
+                }
                 val cacheFile = File(cacheDir, "temp_open_${fileItem.name}")
+                tempOpenedFiles.add(cacheFile)
                 try {
                     cacheFile.outputStream().use { output ->
                         ArchiveManager.extractEntry(fileItem.virtualZipSource!!, fileItem.zipEntryPath ?: fileItem.name, output, effectivePassphrase)
@@ -1077,6 +1228,10 @@ else {
                     }
                     FileProvider.getUriForFile(this, "${packageName}.provider", cacheFile)
                 } catch (e: Exception) {
+                    runCatching {
+                        cacheFile.delete()
+                        tempOpenedFiles.remove(cacheFile)
+                    }
                     if (ArchiveManager.isEncryptionError(e)) {
                         viewModel.cachedZipPassword = null
                         if (effectivePassphrase != null) {
@@ -1095,7 +1250,12 @@ else {
                     safUri
                 } else if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
                     val targetDir = externalCacheDir ?: cacheDir
+                    // Clean up previous open_restricted_ files to prevent cache bloat
+                    targetDir.listFiles()?.filter { it.name.startsWith("open_restricted_") }?.forEach {
+                        runCatching { it.deleteRecursively() }
+                    }
                     val cacheFile = File(targetDir, "open_restricted_${fileItem.name}")
+                    tempOpenedFiles.add(cacheFile)
                     if (cacheFile.exists()) {
                         cacheFile.delete()
                     }
@@ -1106,6 +1266,10 @@ else {
                             cacheFile
                         )
                     } else {
+                        runCatching {
+                            cacheFile.delete()
+                            tempOpenedFiles.remove(cacheFile)
+                        }
                         Toast.makeText(this, getString(R.string.toast_couldnt_access_file), Toast.LENGTH_SHORT).show()
                         return null
                     }
@@ -1342,6 +1506,10 @@ else {
                 viewModel.onShizukuResult(true, currentPath)
             }
         }
+        cleanupOldViewArchives()
+        lifecycleScope.launch(Dispatchers.IO) {
+            CacheCleaner.cleanStaleShareFiles(this@MainActivity, maxAgeMs = 60_000L)
+        }
     }
 
     override fun onStop() {
@@ -1351,6 +1519,11 @@ else {
 
     override fun onDestroy() {
         super.onDestroy()
+        tempOpenedFiles.forEach { runCatching { it.deleteRecursively() } }
+        tempOpenedFiles.clear()
+        CacheCleaner.cleanTemporaryOpenFiles(this)
+        CacheCleaner.cleanAllShareFiles(this)
+        CacheCleaner.cleanViewArchives(this)
         Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
         Shizuku.removeBinderReceivedListener(shizukuBinderListener)
     }

@@ -295,7 +295,10 @@ fun FileExplorerScreen(
     onOpenWithClick: (FileItem) -> Unit = {},
     onShareClick: (List<FileItem>) -> Unit = {},
     listState: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(),
-    gridState: androidx.compose.foundation.lazy.grid.LazyGridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    gridState: androidx.compose.foundation.lazy.grid.LazyGridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState(),
+    backHandlerEnabled: Boolean = true,
+    onSearchActiveChange: (Boolean) -> Unit = {},
+    onOpenPath: ((String, FileItem?) -> Unit)? = null
 ) {
     val context = LocalContext.current
 
@@ -306,6 +309,10 @@ fun FileExplorerScreen(
     var pendingDelete: PendingDelete? by remember { mutableStateOf<PendingDelete?>(null) }
     var isSearching by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+
+    LaunchedEffect(isSearching) {
+        onSearchActiveChange(isSearching)
+    }
     var currentView by remember(startPath, startCategory, startRecent) {
         mutableStateOf(
             when {
@@ -379,7 +386,12 @@ fun FileExplorerScreen(
                     viewModel.browseCategory(startCategory.first, startCategory.second)
                 }
             }
-            startRecent -> viewModel.loadRecentFiles()
+            startRecent -> {
+                viewModel.clearScrollPosition("recent")
+                viewModel.loadRecentFiles()
+                listState.scrollToItem(0, 0)
+                gridState.scrollToItem(0, 0)
+            }
             startPath != null -> {
                 if (SafManager.isSafUri(startPath)) {
                     viewModel.loadFiles(startPath)
@@ -415,7 +427,7 @@ fun FileExplorerScreen(
         onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
     }
 
-    BackHandler(enabled = true) {
+    BackHandler(enabled = backHandlerEnabled) {
 
         if (viewModel.propertiesFile != null) {
             viewModel.closeProperties()
@@ -551,7 +563,7 @@ fun FileExplorerScreen(
             // Material Files style: check if we have a saved scroll position for
             // this path (e.g. from navigating back). If so, restore it; otherwise
             // start at the top for a new folder/sort.
-            val savedPos = viewModel.getScrollPosition(activeScrollKey)
+            val savedPos = if (activeScrollKey == "recent") null else viewModel.getScrollPosition(activeScrollKey)
             if (savedPos != null) {
                 val targetIndex = savedPos.first.coerceIn(0, (displayedFiles.size - 1).coerceAtLeast(0))
                 listState.scrollToItem(targetIndex, savedPos.second)
@@ -758,6 +770,7 @@ fun FileExplorerScreen(
             }
             else -> {
                 Scaffold(
+                    modifier = Modifier.fillMaxSize(),
                     topBar = {
                         Surface(
                             shadowElevation = 3.dp,
@@ -1412,7 +1425,7 @@ fun FileExplorerScreen(
                                                                 onClick = {
                                                                     if (viewModel.isSelectionMode) {
                                                                         viewModel.toggleSelection(fileItem)
-                                                                    } else {
+                                                                    } else if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
                                                                         onFileClick(fileItem)
                                                                     }
                                                                 },
@@ -1457,7 +1470,7 @@ fun FileExplorerScreen(
                                                                 onClick = {
                                                                     if (viewModel.isSelectionMode) {
                                                                         viewModel.toggleSelection(fileItem)
-                                                                    } else {
+                                                                    } else if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
                                                                         onFileClick(fileItem)
                                                                     }
                                                                 },
@@ -1569,7 +1582,7 @@ fun FileExplorerScreen(
                                                                                 lastNonZipView = currentView
                                                                                 viewModel.openArchive(fileItem.file)
                                                                                 currentView = "Files"
-                                                                            } else {
+                                                                            } else if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
                                                                                 onFileClick(fileItem)
                                                                             }
                                                                         }
@@ -1635,7 +1648,7 @@ fun FileExplorerScreen(
                                                                         lastNonZipView = currentView
                                                                         viewModel.openArchive(fileItem.file)
                                                                         currentView = "Files"
-                                                                    } else {
+                                                                    } else if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
                                                                         onFileClick(fileItem)
                                                                     }
                                                                 }
@@ -1725,7 +1738,7 @@ fun FileExplorerScreen(
                                                                                 lastNonZipView = currentView
                                                                                 viewModel.openArchive(fileItem.file)
                                                                                 currentView = "Files"
-                                                                            } else {
+                                                                            } else if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
                                                                                 onFileClick(fileItem)
                                                                             }
                                                                         }
@@ -1752,9 +1765,13 @@ fun FileExplorerScreen(
                                                                             if (parent != null) {
                                                                                 isSearching = false
                                                                                 searchQuery = ""
-                                                                                viewModel.navigateTo(parent, true)
-                                                                                viewModel.highlightedFile = fileItem
-                                                                                currentView = "Files"
+                                                                                if (currentView == "Recent" && onOpenPath != null) {
+                                                                                    onOpenPath(parent.absolutePath, fileItem)
+                                                                                } else {
+                                                                                    viewModel.navigateTo(parent, true)
+                                                                                    viewModel.highlightedFile = fileItem
+                                                                                    currentView = "Files"
+                                                                                }
                                                                             }
                                                                         }
                                                                     } else null,
@@ -1849,7 +1866,7 @@ fun FileExplorerScreen(
                                                                         lastNonZipView = currentView
                                                                         viewModel.openArchive(fileItem.file)
                                                                         currentView = "Files"
-                                                                    } else {
+                                                                    } else if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
                                                                         onFileClick(fileItem)
                                                                     }
                                                                 }
@@ -1876,9 +1893,13 @@ fun FileExplorerScreen(
                                                                     if (parent != null) {
                                                                         isSearching = false
                                                                         searchQuery = ""
-                                                                        viewModel.navigateTo(parent, true)
-                                                                        viewModel.highlightedFile = fileItem
-                                                                        currentView = "Files"
+                                                                        if (currentView == "Recent" && onOpenPath != null) {
+                                                                            onOpenPath(parent.absolutePath, fileItem)
+                                                                        } else {
+                                                                            viewModel.navigateTo(parent, true)
+                                                                            viewModel.highlightedFile = fileItem
+                                                                            currentView = "Files"
+                                                                        }
                                                                     }
                                                                 }
                                                             } else null,
@@ -3296,6 +3317,20 @@ fun FileIcon(
                                 FileTypeBadge(placeholderIcon, if (fileItem.fileType == FileType.IMAGE) Color(0xFF4C8DFF) else Color(0xFF9C6ADE), iconSize, Modifier.fillMaxSize())
                             }
                         }
+                    }
+                } else if (SafManager.isRestrictedPath(fileItem.file.absolutePath)) {
+                    val thumbBitmap by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = fileItem.file.absolutePath) {
+                        value = RestrictedThumbnailLoader.loadThumbnail(context, fileItem.file.absolutePath, fileItem.fileType)
+                    }
+                    if (thumbBitmap != null) {
+                        Image(
+                            bitmap = thumbBitmap!!.asImageBitmap(),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        FileTypeBadge(placeholderIcon, if (fileItem.fileType == FileType.IMAGE) Color(0xFF4C8DFF) else Color(0xFF9C6ADE), iconSize, Modifier.fillMaxSize())
                     }
                 } else {
                     AsyncImage(

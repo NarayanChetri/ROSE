@@ -41,7 +41,7 @@ import java.io.File
  * Settings, redesigned: grouped cards per section with a leading icon,
  * rather than one long scrolling list. Behaviour is unchanged from before.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, coil.annotation.ExperimentalCoilApi::class)
 @Composable
 fun SettingsScreen(
     viewModel: RoseViewModel,
@@ -219,6 +219,8 @@ fun SettingsScreen(
                                 withContext(Dispatchers.IO) {
                                     context.imageLoader.memoryCache?.clear()
                                     context.imageLoader.diskCache?.clear()
+                                    RestrictedThumbnailLoader.clearMemoryCache()
+                                    CacheCleaner.cleanAllCache(context)
                                 }
                                 Toast.makeText(context, context.getString(R.string.settings_toast_cache_cleared), Toast.LENGTH_SHORT).show()
                             }

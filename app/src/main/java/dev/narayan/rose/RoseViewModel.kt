@@ -21,6 +21,7 @@ import dev.narayan.rose.update.SemanticVersion
 import dev.narayan.rose.update.UpdatePreferences
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.StateFlow
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
@@ -165,8 +166,72 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     var categoryFiles by mutableStateOf(listOf<FileItem>())
         private set
 
-    var recentFiles by mutableStateOf(listOf<FileItem>())
+    private val recentFilesCacheFile: File by lazy {
+        File(getApplication<Application>().filesDir, "recent_files_cache.json")
+    }
+
+    private fun loadCachedRecentFiles(): List<FileItem> {
+        return try {
+            if (!recentFilesCacheFile.exists()) return emptyList()
+            val text = recentFilesCacheFile.readText()
+            if (text.isBlank()) return emptyList()
+            val array = JSONArray(text)
+            val list = mutableListOf<FileItem>()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val path = obj.getString("path")
+                val file = File(path)
+                if (file.exists() && file.isFile) {
+                    val name = obj.optString("name", file.name)
+                    val size = obj.optLong("size", file.length())
+                    val lastModified = obj.optLong("lastModified", file.lastModified())
+                    val mimeType = if (obj.has("mimeType") && !obj.isNull("mimeType")) obj.getString("mimeType") else null
+                    list.add(
+                        FileItem(
+                            file = file,
+                            isDirectory = false,
+                            name = name,
+                            size = size,
+                            lastModified = lastModified,
+                            extension = file.extension.lowercase(),
+                            mimeType = mimeType
+                        )
+                    )
+                }
+            }
+            list
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun saveCachedRecentFiles(items: List<FileItem>) {
+        try {
+            val array = JSONArray()
+            for (item in items.take(20)) {
+                val obj = JSONObject().apply {
+                    put("path", item.file.absolutePath)
+                    put("name", item.name)
+                    put("size", item.size)
+                    put("lastModified", item.lastModified)
+                    if (item.mimeType != null) {
+                        put("mimeType", item.mimeType)
+                    }
+                }
+                array.put(obj)
+            }
+            val tempFile = File(getApplication<Application>().filesDir, "recent_files_cache.tmp")
+            tempFile.writeText(array.toString())
+            tempFile.renameTo(recentFilesCacheFile)
+        } catch (e: Exception) {
+            // Ignore cache write errors
+        }
+    }
+
+    var recentFiles by mutableStateOf(loadCachedRecentFiles())
         private set
+
+    var lastSwipeToHomeTimestamp by mutableLongStateOf(0L)
 
     var showHiddenFiles by mutableStateOf(settings.showHiddenFiles)
         private set
@@ -660,12 +725,17 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     private val pathScrollPositions = mutableMapOf<String, Pair<Int, Int>>()
 
     fun saveScrollPosition(path: String, index: Int, offset: Int) {
-        if (path.isEmpty()) return
+        if (path.isEmpty() || path == "recent") return
         pathScrollPositions[path] = index to offset
     }
 
     fun getScrollPosition(path: String): Pair<Int, Int>? {
+        if (path == "recent") return null
         return pathScrollPositions[path]
+    }
+
+    fun clearScrollPosition(path: String) {
+        pathScrollPositions.remove(path)
     }
 
     private var rootCache: List<FileItem>? = null
@@ -1043,6 +1113,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     withContext(Dispatchers.Main) {
                         files = files.filter { it.file.absolutePath !in affectedPaths }
                         recentFiles = recentFiles.filter { it.file.absolutePath !in affectedPaths }
+                        saveCachedRecentFiles(recentFiles)
                         categoryFiles = categoryFiles.filter { it.file.absolutePath !in affectedPaths }
                         invalidateCategoryCache()
                         invalidateDirectoryCache(currentPath)
@@ -1836,7 +1907,11 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 val baseName = if (displayName.contains(".")) displayName.substringBeforeLast('.') else displayName
                 val safeBase = baseName.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(50)
 
-                val targetDir = File(context.cacheDir, "view_archives/${System.currentTimeMillis()}")
+                val viewArchivesRoot = File(context.cacheDir, "view_archives")
+                if (viewArchivesRoot.exists()) {
+                    viewArchivesRoot.listFiles()?.forEach { runCatching { it.deleteRecursively() } }
+                }
+                val targetDir = File(viewArchivesRoot, "${System.currentTimeMillis()}")
                 targetDir.mkdirs()
                 val tempFile = File(targetDir, "$safeBase.$effectiveExt")
                 context.contentResolver.openInputStream(uri)?.use { input ->
@@ -2071,6 +2146,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 val recents = fetchRecentFileItems()
                 withContext(Dispatchers.Main) {
                     recentFiles = recents
+                    saveCachedRecentFiles(recents)
                 }
             } finally {
                 withContext(Dispatchers.Main) {
@@ -2406,6 +2482,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         categoryTitle = null
         categoryFilterType = null
         categoryBucketId = null
+        val oldZip = currentZipFile
+        cleanupActiveArchiveCache(oldZip)
         currentZipFile = null
         cachedZipPassword = null
         currentZipSourcePath = null
@@ -2420,7 +2498,24 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun cleanupActiveArchiveCache(zipFile: File?) {
+        if (zipFile != null && zipFile.absolutePath.contains("view_archives")) {
+            viewModelScope.launch(Dispatchers.IO) {
+                runCatching {
+                    val sessionDir = zipFile.parentFile
+                    if (sessionDir != null && sessionDir.parentFile?.name == "view_archives") {
+                        sessionDir.deleteRecursively()
+                    } else {
+                        zipFile.delete()
+                    }
+                }
+            }
+        }
+    }
+
     fun closeArchive() {
+        val oldZip = currentZipFile
+        cleanupActiveArchiveCache(oldZip)
         currentZipFile = null
         cachedZipPassword = null
         currentZipSourcePath = null
@@ -2465,6 +2560,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             recentFiles = recentFiles.map {
                 if (it.file.absolutePath == fileItem.file.absolutePath) updatedItem else it
             }
+            saveCachedRecentFiles(recentFiles)
 
             categoryFiles = categoryFiles.map {
                 if (it.file.absolutePath == fileItem.file.absolutePath) updatedItem else it
@@ -2493,7 +2589,10 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch(Dispatchers.IO) {
                 val path = "${currentPath.trimEnd('/')}/$trimmedName"
                 val success = if (SafManager.hasPermission(getApplication(), currentPath)) {
-                    SafManager.createDirectory(getApplication(), path)
+                    val safResult = SafManager.createDirectory(getApplication(), path)
+                    if (!safResult && ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
+                        ShizukuManager.createFolder(currentPath, trimmedName)
+                    } else safResult
                 } else if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
                     ShizukuManager.createFolder(currentPath, trimmedName)
                 } else false
@@ -2573,8 +2672,9 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             isLoading = true
             var success = true
+            var tempFile: File? = null
             try {
-                val tempFile = File(getApplication<Application>().cacheDir, "temp_extract.zip")
+                tempFile = File(getApplication<Application>().cacheDir, "temp_extract_${System.currentTimeMillis()}.zip")
                 getApplication<Application>().contentResolver.openInputStream(uri)?.use { input ->
                     tempFile.outputStream().use { output ->
                         input.copyTo(output)
@@ -2633,6 +2733,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 success = false
             } finally {
+                tempFile?.let { runCatching { it.delete() } }
                 withContext(Dispatchers.Main) {
                     isLoading = false
                     onComplete(success)
@@ -3272,6 +3373,9 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     fun dismissUpdateSheet() {
         cancelUpdateDownload()
         resetUpdateCheck()
+        runCatching {
+            File(getApplication<Application>().cacheDir, "rose-update.apk").delete()
+        }
     }
 
     fun setAutoCheckUpdates(enabled: Boolean) {
@@ -3530,6 +3634,9 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         if (updateDownloadState is UpdateDownloadState.Downloading) {
             updateDownloadState = UpdateDownloadState.Idle
             updateDownloadTag = null
+        }
+        runCatching {
+            File(getApplication<Application>().cacheDir, "rose-update.apk").delete()
         }
     }
 

@@ -55,22 +55,40 @@ object SafManager {
                 lowPath.endsWith("/android/obb") || lowPath.contains("/android/obb/")
     }
 
+    private fun normalizePath(path: String): String {
+        var p = path.replace(Regex("/+"), "/")
+        val primary = primaryStorage()
+        if (p.startsWith("/sdcard")) {
+            p = p.replaceFirst("/sdcard", primary)
+        } else if (p.startsWith("/mnt/sdcard")) {
+            p = p.replaceFirst("/mnt/sdcard", primary)
+        }
+        return p
+    }
+
     /** Splits a restricted [path] into (documentId of Android/data or Android/obb, relative path beyond it). */
     private fun splitAndroidSubRoot(path: String): Pair<String, String>? {
+        val norm = normalizePath(path)
         val primary = primaryStorage()
         val dataRoot = "$primary/Android/data"
         val obbRoot = "$primary/Android/obb"
         val (docId, root) = when {
-            path == dataRoot || path.startsWith("$dataRoot/") -> DOC_ID_ANDROID_DATA to dataRoot
-            path == obbRoot || path.startsWith("$obbRoot/") -> DOC_ID_ANDROID_OBB to obbRoot
+            norm == dataRoot || norm.startsWith("$dataRoot/") -> DOC_ID_ANDROID_DATA to dataRoot
+            norm == obbRoot || norm.startsWith("$obbRoot/") -> DOC_ID_ANDROID_OBB to obbRoot
             else -> return null
         }
-        return docId to path.removePrefix(root).removePrefix("/")
+        return docId to norm.removePrefix(root).removePrefix("/")
     }
 
     private fun documentIdForPath(path: String): String? {
         val (rootDocId, relative) = splitAndroidSubRoot(path) ?: return null
         return if (relative.isEmpty()) rootDocId else "$rootDocId/$relative"
+    }
+
+    private fun treeMatches(treeId: String, fullDocId: String): Boolean {
+        if (fullDocId == treeId) return true
+        if (treeId.endsWith(":")) return fullDocId.startsWith(treeId)
+        return fullDocId.startsWith("$treeId/")
     }
 
     // ---------------------------------------------------------------------
@@ -152,7 +170,7 @@ object SafManager {
             .map { it.uri }
             .find { uri -> 
                 val treeId = try { DocumentsContract.getTreeDocumentId(uri) } catch (e: Exception) { null }
-                treeId != null && (fullDocId == treeId || fullDocId.startsWith("$treeId/"))
+                treeId != null && treeMatches(treeId, fullDocId)
             } ?: return null
 
         var doc = DocumentFile.fromSingleUri(
@@ -199,7 +217,20 @@ object SafManager {
         getDocumentFile(context, path)?.isDirectory == true
 
     /** Content Uri for a path, suitable for ACTION_VIEW / ACTION_SEND with FLAG_GRANT_READ_URI_PERMISSION. */
-    fun getContentUri(context: Context, path: String): Uri? = getDocumentFile(context, path)?.uri
+    fun getContentUri(context: Context, path: String): Uri? {
+        val doc = getDocumentFile(context, path)
+        if (doc != null) return doc.uri
+        val (rootDocId, relativePath) = splitAndroidSubRoot(path) ?: return null
+        val fullDocId = if (relativePath.isEmpty()) rootDocId else "$rootDocId/$relativePath"
+        val treeUri = context.contentResolver.persistedUriPermissions
+            .filter { it.isReadPermission }
+            .map { it.uri }
+            .find { uri -> 
+                val treeId = try { DocumentsContract.getTreeDocumentId(uri) } catch (e: Exception) { null }
+                treeId != null && treeMatches(treeId, fullDocId)
+            } ?: return null
+        return DocumentsContract.buildDocumentUriUsingTree(treeUri, fullDocId)
+    }
 
     // ---------------------------------------------------------------------
     // Listing
