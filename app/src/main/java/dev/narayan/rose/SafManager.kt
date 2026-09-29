@@ -58,7 +58,7 @@ object SafManager {
                 lowPath.endsWith("/android/obb") || lowPath.contains("/android/obb/")
     }
 
-    private fun normalizePath(path: String): String {
+    fun normalizePath(path: String): String {
         var p = path.replace(Regex("/+"), "/")
         val primary = primaryStorage()
         if (p.startsWith("/sdcard")) {
@@ -67,6 +67,38 @@ object SafManager {
             p = p.replaceFirst("/mnt/sdcard", primary)
         }
         return p
+    }
+
+    fun isSamePath(path1: String, path2: String): Boolean {
+        val clean1 = normalizePath(path1).trimEnd('/')
+        val clean2 = normalizePath(path2).trimEnd('/')
+        if (clean1.equals(clean2, ignoreCase = true)) return true
+        return try {
+            if (!isSafUri(clean1) && !isSafUri(clean2)) {
+                File(clean1).canonicalPath.equals(File(clean2).canonicalPath, ignoreCase = true)
+            } else false
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    fun isSubdirectoryOrSame(childPath: String, parentPath: String): Boolean {
+        val cleanChild = normalizePath(childPath).trimEnd('/')
+        val cleanParent = normalizePath(parentPath).trimEnd('/')
+        if (isSamePath(cleanChild, cleanParent)) return true
+
+        val pWithSlash = "$cleanParent/"
+        if (cleanChild.startsWith(pWithSlash, ignoreCase = true)) return true
+
+        return try {
+            if (!isSafUri(cleanChild) && !isSafUri(cleanParent)) {
+                val child = File(cleanChild).canonicalFile
+                val parent = File(cleanParent).canonicalFile
+                child == parent || child.canonicalPath.startsWith(parent.canonicalPath + File.separator)
+            } else false
+        } catch (e: Exception) {
+            false
+        }
     }
 
     /** Splits a restricted [path] into (documentId of Android/data or Android/obb, relative path beyond it). */
@@ -418,7 +450,12 @@ object SafManager {
         if (exists(context, path)) return isDirectory(context, path)
         val parentPath = path.substringBeforeLast("/")
         val dirName = path.substringAfterLast("/")
-        val parentDoc = getDocumentFile(context, parentPath) ?: return false
+        var parentDoc = getDocumentFile(context, parentPath)
+        if (parentDoc == null || !parentDoc.exists()) {
+            createDirectory(context, parentPath)
+            parentDoc = getDocumentFile(context, parentPath)
+        }
+        if (parentDoc == null) return false
         return try {
             if (parentDoc.uri.authority == AUTHORITY) {
                 DocumentsContract.createDocument(context.contentResolver, parentDoc.uri, DocumentsContract.Document.MIME_TYPE_DIR, dirName) != null
@@ -446,33 +483,25 @@ object SafManager {
 
         val parent = getOrCreateParentDocumentFile(context, path) ?: return null
 
-        try { parent.findFile(fileName)?.delete() } catch (ignored: Exception) {}
+        try {
+            val existing = getDocumentFile(context, path)
+            if (existing != null && existing.exists()) {
+                existing.delete()
+            }
+        } catch (ignored: Exception) {}
 
         val createdUri = try {
-            parent.createFile(resolvedMimeType, fileName)?.uri
-                ?: DocumentsContract.createDocument(context.contentResolver, parent.uri, resolvedMimeType, fileName)
+            DocumentsContract.createDocument(context.contentResolver, parent.uri, resolvedMimeType, fileName)
+                ?: parent.createFile(resolvedMimeType, fileName)?.uri
         } catch (e: Exception) {
             try {
-                DocumentsContract.createDocument(context.contentResolver, parent.uri, resolvedMimeType, fileName)
+                parent.createFile(resolvedMimeType, fileName)?.uri
             } catch (e2: Exception) {
                 null
             }
         } ?: return null
 
-        val created = DocumentFile.fromSingleUri(context, createdUri) ?: return null
-
-        val actualName = created.name
-        if (extension.isNotEmpty() && actualName != null && actualName != fileName) {
-            try {
-                if (actualName.endsWith(".$extension.$extension") || actualName == "$fileName.$extension") {
-                    DocumentsContract.renameDocument(context.contentResolver, created.uri, fileName)
-                } else if (!actualName.contains(".") && fileName.contains(".")) {
-                    DocumentsContract.renameDocument(context.contentResolver, created.uri, fileName)
-                }
-            } catch (ignored: Exception) {}
-        }
-
-        return DocumentFile.fromSingleUri(context, created.uri) ?: created
+        return DocumentFile.fromSingleUri(context, createdUri)
     }
 
     /**
@@ -535,9 +564,57 @@ object SafManager {
         }
     }
 
+    /**
+     * Moves a document or folder within the same SAF DocumentProvider using DocumentsContract.moveDocument.
+     * This performs an instantaneous native filesystem move inside the ExternalStorageProvider.
+     */
+    fun moveDocument(context: Context, sourcePath: String, targetParentPath: String): Boolean {
+        val srcDoc = getDocumentFile(context, sourcePath) ?: return false
+        val srcParentPath = sourcePath.substringBeforeLast("/", "")
+        if (srcParentPath.isEmpty()) return false
+        val srcParentDoc = getDocumentFile(context, srcParentPath) ?: return false
+        val targetParentDoc = getDocumentFile(context, targetParentPath) ?: return false
+
+        if (srcDoc.uri.authority != targetParentDoc.uri.authority) return false
+
+        return try {
+            val movedUri = DocumentsContract.moveDocument(
+                context.contentResolver,
+                srcDoc.uri,
+                srcParentDoc.uri,
+                targetParentDoc.uri
+            )
+            movedUri != null
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     // ---------------------------------------------------------------------
-    // Streams
+    // Streams & Descriptors (Fast I/O)
     // ---------------------------------------------------------------------
+
+    fun openFileDescriptor(context: Context, path: String, mode: String = "r"): android.os.ParcelFileDescriptor? {
+        val uri = getContentUri(context, path) ?: return null
+        return try {
+            context.contentResolver.openFileDescriptor(uri, mode)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun openFileDescriptorForNewFile(context: Context, path: String, mimeType: String? = null): android.os.ParcelFileDescriptor? {
+        val doc = createFileDocument(context, path, mimeType) ?: return null
+        return try {
+            context.contentResolver.openFileDescriptor(doc.uri, "wt")
+        } catch (e: Exception) {
+            try {
+                context.contentResolver.openFileDescriptor(doc.uri, "w")
+            } catch (e2: Exception) {
+                null
+            }
+        }
+    }
 
     fun openInputStream(context: Context, path: String): InputStream? {
         val doc = getDocumentFile(context, path) ?: return null

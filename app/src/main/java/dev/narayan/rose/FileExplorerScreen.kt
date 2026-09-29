@@ -1104,12 +1104,46 @@ fun FileExplorerScreen(
                                                 .padding(horizontal = 4.dp),
                                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.1f)
                                         )
+                                        val context = LocalContext.current
+                                        val isMoveToSameFolder = !viewModel.isCopyOperation && viewModel.clipboardFiles.isNotEmpty() &&
+                                            viewModel.clipboardFiles.all { item ->
+                                                val parent = item.file.parent ?: ""
+                                                SafManager.isSamePath(parent, viewModel.currentPath)
+                                            }
+
+                                        val isRecursiveNesting = viewModel.clipboardFiles.any { item ->
+                                            item.isDirectory && SafManager.isSubdirectoryOrSame(viewModel.currentPath, item.file.absolutePath)
+                                        }
+
+                                        val isSpecialView = currentView == "Category" || currentView == "Recent" || viewModel.currentZipFile != null
+                                        val isPasteDisabled = isSpecialView || isMoveToSameFolder || isRecursiveNesting
+
                                         Row(
                                             modifier = Modifier
                                                 .clip(RoundedCornerShape(16.dp))
                                                 .then(
-                                                    if (currentView == "Category" || currentView == "Recent" || viewModel.currentZipFile != null) {
-                                                        Modifier.alpha(0.5f)
+                                                    if (isPasteDisabled) {
+                                                        Modifier.alpha(0.38f).clickable {
+                                                            when {
+                                                                currentView == "Category" || currentView == "Recent" -> {
+                                                                    Toast.makeText(context, context.getString(R.string.toast_cannot_paste_here), Toast.LENGTH_SHORT).show()
+                                                                }
+                                                                viewModel.currentZipFile != null -> {
+                                                                    Toast.makeText(context, context.getString(R.string.toast_cannot_paste_in_archive), Toast.LENGTH_SHORT).show()
+                                                                }
+                                                                isMoveToSameFolder -> {
+                                                                    Toast.makeText(context, context.getString(R.string.toast_source_dest_same), Toast.LENGTH_SHORT).show()
+                                                                }
+                                                                isRecursiveNesting -> {
+                                                                    val msg = if (viewModel.isCopyOperation) {
+                                                                        context.getString(R.string.toast_cannot_copy_into_subfolder)
+                                                                    } else {
+                                                                        context.getString(R.string.toast_cannot_move_into_subfolder)
+                                                                    }
+                                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                                }
+                                                            }
+                                                        }
                                                     } else {
                                                         Modifier.clickable {
                                                             viewModel.pasteFiles()

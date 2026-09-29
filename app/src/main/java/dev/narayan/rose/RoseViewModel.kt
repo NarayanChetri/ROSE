@@ -2337,6 +2337,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         val copying = isCopyOperation
         val targetDir = currentPath
 
+        if (itemsToPaste.isEmpty()) return
+
         if (sourceZip != null) {
             val passphrase = if (sourceZip == currentZipFile) cachedZipPassword else null
             // Zip extraction still handled in ViewModel for now or could be a job too
@@ -2360,14 +2362,61 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         } else {
-            val sources = itemsToPaste.map { it.file.absolutePath }
-            val displayNames = itemsToPaste.map { it.name }
+            if (targetDir.isEmpty() || currentView == "Category" || currentView == "Recent") {
+                android.widget.Toast.makeText(getApplication(), R.string.toast_cannot_paste_here, android.widget.Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            if (currentZipFile != null) {
+                android.widget.Toast.makeText(getApplication(), R.string.toast_cannot_paste_in_archive, android.widget.Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            // Moving into the same folder validation
+            if (!copying) {
+                val allInSameFolder = itemsToPaste.all { item ->
+                    val parent = item.file.parent ?: ""
+                    SafManager.isSamePath(parent, targetDir)
+                }
+                if (allInSameFolder) {
+                    android.widget.Toast.makeText(getApplication(), R.string.toast_source_dest_same, android.widget.Toast.LENGTH_SHORT).show()
+                    return
+                }
+            }
+
+            // Recursive nesting validation (cannot copy/move a directory into itself or any of its subdirectories)
+            val recursiveItem = itemsToPaste.find { item ->
+                item.isDirectory && SafManager.isSubdirectoryOrSame(targetDir, item.file.absolutePath)
+            }
+            if (recursiveItem != null) {
+                val msgRes = if (copying) R.string.toast_cannot_copy_into_subfolder else R.string.toast_cannot_move_into_subfolder
+                android.widget.Toast.makeText(getApplication(), msgRes, android.widget.Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            // Filter out items that are already in targetDir for Move operation
+            val effectiveItems = if (!copying) {
+                itemsToPaste.filterNot { item ->
+                    val parent = item.file.parent ?: ""
+                    SafManager.isSamePath(parent, targetDir)
+                }
+            } else {
+                itemsToPaste
+            }
+
+            if (effectiveItems.isEmpty()) {
+                android.widget.Toast.makeText(getApplication(), R.string.toast_source_dest_same, android.widget.Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            val sources = effectiveItems.map { it.file.absolutePath }
+            val displayNames = effectiveItems.map { it.name }
             if (copying) {
                 dev.narayan.rose.filejob.FileJobService.startCopy(getApplication(), sources, displayNames, targetDir)
             } else {
                 dev.narayan.rose.filejob.FileJobService.startMove(getApplication(), sources, displayNames, targetDir)
+                clipboardFiles.clear()
             }
-            clipboardFiles.clear()
             exitSelectionMode()
             invalidateDirectoryCache(targetDir)
             viewModelScope.launch {
@@ -2761,7 +2810,13 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         return result
     }
 
-    // ----- Category browsing (Home screen) -----
+    val currentView: String
+        get() = when {
+            categoryFilterType != null || categoryTitle != null -> "Category"
+            currentPath == "recent" -> "Recent"
+            currentZipFile != null -> "Archive"
+            else -> "Files"
+        }
 
     var categoryTitle by mutableStateOf<String?>(null)
         private set

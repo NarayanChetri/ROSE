@@ -37,6 +37,7 @@ object JobManager {
     // a cancel button press could be silently ignored for an in-flight job.
     // ConcurrentHashMap-backed set gives proper cross-thread visibility.
     private val cancelledJobs = Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
+    private val completedJobs = Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
     private val pausedJobs = Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
     private val pauseLock = Object()
 
@@ -55,6 +56,7 @@ object JobManager {
     // that thread actually finishes and calls completeJob() -> removeJob().
     fun cancelJob(jobId: String) {
         cancelledJobs.add(jobId)
+        completedJobs.add(jobId)
         pausedJobs.remove(jobId)
         synchronized(pauseLock) {
             pauseLock.notifyAll()
@@ -63,6 +65,7 @@ object JobManager {
     }
 
     fun isCancelled(jobId: String): Boolean = cancelledJobs.contains(jobId)
+    fun isCompleted(jobId: String): Boolean = completedJobs.contains(jobId)
 
     fun pauseJob(jobId: String) {
         pausedJobs.add(jobId)
@@ -108,26 +111,33 @@ object JobManager {
     }
 
     fun updateJob(job: FileJob) {
-        // If the job was already cancelled, don't let a stray progress update
-        // from the background thread (which hasn't noticed the cancellation
-        // yet) resurrect it in the UI - the user already dismissed it.
-        if (cancelledJobs.contains(job.id)) return
+        // If the job was already cancelled or completed, don't let a stray progress update
+        // from a background thread (which hasn't noticed completion yet) resurrect it in the UI.
+        if (cancelledJobs.contains(job.id) || completedJobs.contains(job.id)) return
 
         // Multiple job threads can call this concurrently (overlapping jobs are
         // explicitly supported - see FileJobService). `update` does an atomic
         // compare-and-set loop, so there's no read-modify-write race between
         // callers dropping each other's updates the way a manual
         // `.value.toMutableMap(); ...; .value = current` would.
-        _activeJobs.update { current -> current + (job.id to job.copy()) }
+        _activeJobs.update { current ->
+            if (current.containsKey(job.id) || !completedJobs.contains(job.id)) {
+                current + (job.id to job.copy())
+            } else {
+                current
+            }
+        }
     }
 
     fun removeJob(jobId: String) {
+        completedJobs.add(jobId)
         _activeJobs.update { current -> current - jobId }
         cancelledJobs.remove(jobId)
     }
 
     /** Marks a job finished, tells anyone listening the outcome, and cleans it up. */
     fun completeJob(job: FileJob, success: Boolean, error: String? = null) {
+        completedJobs.add(job.id)
         _jobEvents.tryEmit(JobResult(job.id, job.copy(), success, error))
         removeJob(job.id)
     }

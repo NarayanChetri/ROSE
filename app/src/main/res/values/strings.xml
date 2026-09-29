@@ -453,4 +453,9 @@
     <string name="job_action_resume">Resume</string>
     <string name="job_action_pause">Pause</string>
     <string name="job_status_paused">Paused</string>
+    <string name="toast_source_dest_same">Source and destination folders are the same</string>
+    <string name="toast_cannot_move_into_subfolder">Cannot move a folder into itself or its subfolder</string>
+    <string name="toast_cannot_copy_into_subfolder">Cannot copy a folder into itself or its subfolder</string>
+    <string name="toast_cannot_paste_here">Cannot paste here</string>
+    <string name="toast_cannot_paste_in_archive">Cannot paste inside an archive</string>
 </resources>

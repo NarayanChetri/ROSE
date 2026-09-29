@@ -86,7 +86,7 @@ object FileOperationRunner {
                         type.sources.forEach { source ->
                             if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
 
-                            if (isDirectory(appContext, source.path) && isSubdirectoryOrSame(type.targetDir.toString(), source.path)) {
+                            if (isDirectory(appContext, source.path) && SafManager.isSubdirectoryOrSame(type.targetDir.toString(), source.path)) {
                                 throw IllegalArgumentException("Cannot copy a directory into itself or its subdirectories: ${source.displayName}")
                             }
 
@@ -124,7 +124,7 @@ object FileOperationRunner {
                         type.sources.forEach { source ->
                             if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
 
-                            if (isDirectory(appContext, source.path) && isSubdirectoryOrSame(type.targetDir.toString(), source.path)) {
+                            if (isDirectory(appContext, source.path) && SafManager.isSubdirectoryOrSame(type.targetDir.toString(), source.path)) {
                                 throw IllegalArgumentException("Cannot move a directory into itself or its subdirectories: ${source.displayName}")
                             }
 
@@ -135,7 +135,7 @@ object FileOperationRunner {
                             val target = getNonConflictingTarget(appContext, type.targetDir, source.displayName, sourcePath = source.path, isCopy = false)
 
                             // If same file, skip
-                            if (source.path == target.toString()) {
+                            if (source.path == target.toString() || SafManager.isSamePath(source.path, target.toString())) {
                                 job.processedItems++
                                 return@forEach
                             }
@@ -399,14 +399,14 @@ object FileOperationRunner {
                 var totalBytes = 0L
                 var totalCount = 0
                 for (source in sources) {
-                    if (JobManager.isCancelled(job.id)) return@Thread
+                    if (JobManager.isCancelled(job.id) || JobManager.isCompleted(job.id)) return@Thread
                     val path = source.path
                     val isRestricted = SafManager.isRestrictedPath(path) || SafManager.isSafUri(path)
                     if (!isRestricted) {
                         val f = java.io.File(path)
                         if (f.isDirectory) {
                             fun fastDirScan(dir: java.io.File) {
-                                if (JobManager.isCancelled(job.id)) return
+                                if (JobManager.isCancelled(job.id) || JobManager.isCompleted(job.id)) return
                                 dir.listFiles()?.forEach { child ->
                                     if (child.isDirectory) {
                                         fastDirScan(child)
@@ -439,7 +439,7 @@ object FileOperationRunner {
                         }
                     } else {
                         fun scanSaf(p: String) {
-                            if (JobManager.isCancelled(job.id)) return
+                            if (JobManager.isCancelled(job.id) || JobManager.isCompleted(job.id)) return
                             val children = SafManager.listFiles(context, p)
                             children.forEach { child ->
                                 if (child.isDirectory) {
@@ -458,7 +458,7 @@ object FileOperationRunner {
                         }
                     }
                 }
-                if (!JobManager.isCancelled(job.id) && totalBytes > 0) {
+                if (!JobManager.isCancelled(job.id) && !JobManager.isCompleted(job.id) && totalBytes > 0) {
                     job.totalBytes = totalBytes
                     if (totalCount > 0) job.totalItems = totalCount
                     job.isIndeterminate = false
@@ -492,22 +492,7 @@ object FileOperationRunner {
     }
 
     private fun isSubdirectoryOrSame(childPath: String, parentPath: String): Boolean {
-        val cleanChild = childPath.trimEnd('/', '\\')
-        val cleanParent = parentPath.trimEnd('/', '\\')
-        if (cleanChild.equals(cleanParent, ignoreCase = true)) return true
-
-        try {
-            if (!SafManager.isSafUri(cleanChild) && !SafManager.isSafUri(cleanParent)) {
-                val child = Paths.get(cleanChild).toAbsolutePath().normalize()
-                val parent = Paths.get(cleanParent).toAbsolutePath().normalize()
-                if (child == parent || child.startsWith(parent)) {
-                    return true
-                }
-            }
-        } catch (_: Exception) {}
-
-        val pWithSlash = if (cleanParent.endsWith("/")) cleanParent else "$cleanParent/"
-        return cleanChild.startsWith(pWithSlash, ignoreCase = true)
+        return SafManager.isSubdirectoryOrSame(childPath, parentPath)
     }
 
     private fun checkExists(context: Context, path: String): Boolean {
@@ -540,14 +525,13 @@ object FileOperationRunner {
         var target = targetDir.resolve(displayName)
 
         // If move and target is same as source, it's a no-op
-        if (!isCopy && sourcePath != null && sourcePath == target.toString()) {
+        if (!isCopy && sourcePath != null && (sourcePath == target.toString() || SafManager.isSamePath(sourcePath, target.toString()))) {
             return target
         }
 
         var count = 1
         val isSameAsSource = isCopy && sourcePath != null && (
-            sourcePath == target.toString() ||
-            runCatching { java.io.File(sourcePath).canonicalPath == target.toFile().canonicalPath }.getOrDefault(false)
+            sourcePath == target.toString() || SafManager.isSamePath(sourcePath, target.toString())
         )
 
         if (isSameAsSource || checkExists(context, target.toString())) {
@@ -741,10 +725,12 @@ object FileOperationRunner {
         job: FileJob? = null,
         onProgress: ((FileJob) -> Unit)? = null
     ) {
-        val chunkSize = 2L * 1024L * 1024L // 2 MB chunks
+        val chunkSize = 4L * 1024L * 1024L // 4 MB chunks for optimal sendfile throughput
         var position = 0L
         var lastReportedPos = 0L
         var lastUpdate = 0L
+        var useDirectBuffer = false
+        var directBuffer: java.nio.ByteBuffer? = null
 
         fun reportDelta() {
             if (job == null || onProgress == null) return
@@ -758,20 +744,55 @@ object FileOperationRunner {
             onProgress(job)
         }
 
-        while (position < fileSize) {
+        val actualSize = if (fileSize > 0) fileSize else try { srcChannel.size() } catch (e: Exception) { 0L }
+
+        while (actualSize <= 0L || position < actualSize) {
             if (job != null) {
                 if (JobManager.isCancelled(job.id)) {
                     throw java.io.InterruptedIOException("Copy cancelled")
                 }
                 JobManager.checkWaitIfPaused(job.id)
             }
-            val count = Math.min(chunkSize, fileSize - position)
-            val transferred = srcChannel.transferTo(position, count, destChannel)
-            if (transferred <= 0) break
-            position += transferred
+
+            val count = if (actualSize > 0) Math.min(chunkSize, actualSize - position) else chunkSize
+            var bytesThisLoop = 0L
+
+            if (!useDirectBuffer) {
+                try {
+                    val transferred = srcChannel.transferTo(position, count, destChannel)
+                    if (transferred > 0) {
+                        bytesThisLoop = transferred
+                    } else {
+                        // transferTo returned 0, fallback to direct buffer
+                        useDirectBuffer = true
+                    }
+                } catch (e: Exception) {
+                    useDirectBuffer = true
+                }
+            }
+
+            if (useDirectBuffer) {
+                if (directBuffer == null) {
+                    directBuffer = java.nio.ByteBuffer.allocateDirect(4 * 1024 * 1024)
+                }
+                directBuffer.clear()
+                if (actualSize > 0 && directBuffer.capacity() > (actualSize - position)) {
+                    directBuffer.limit((actualSize - position).toInt())
+                }
+                val read = srcChannel.read(directBuffer, position)
+                if (read <= 0) break
+                directBuffer.flip()
+                while (directBuffer.hasRemaining()) {
+                    destChannel.write(directBuffer)
+                }
+                bytesThisLoop = read.toLong()
+            }
+
+            if (bytesThisLoop <= 0) break
+            position += bytesThisLoop
 
             val now = System.currentTimeMillis()
-            if (now - lastUpdate >= 100 || position >= fileSize) {
+            if (now - lastUpdate >= 100 || (actualSize > 0 && position >= actualSize)) {
                 reportDelta()
                 lastUpdate = now
             }
@@ -788,11 +809,9 @@ object FileOperationRunner {
         activeProcesses: List<Process> = emptyList()
     ) {
         try {
-            val bufferedInput = if (input is java.io.BufferedInputStream) input else java.io.BufferedInputStream(input, 512 * 1024)
-            val bufferedOutput = if (output is java.io.BufferedOutputStream) output else java.io.BufferedOutputStream(output, 512 * 1024)
-            bufferedInput.use { inp ->
-                bufferedOutput.use { out ->
-                    val buffer = ByteArray(1024 * 1024) // 1 MB buffer for high throughput
+            input.use { inp ->
+                output.use { out ->
+                    val buffer = ByteArray(2 * 1024 * 1024) // 2 MB buffer for fast fallback throughput
                     var bytesRead: Int
                     var fileBytesRead = 0L
                     var lastReportedFileBytes = 0L
@@ -858,13 +877,12 @@ object FileOperationRunner {
         val targetPath = target.toString()
         val sourceIsDir = knownIsDir ?: isDirectory(context, sourcePath)
 
-        if (sourceIsDir && isSubdirectoryOrSame(targetPath, sourcePath)) {
+        if (sourceIsDir && SafManager.isSubdirectoryOrSame(targetPath, sourcePath)) {
             return false
         }
 
         val sourceRestricted = SafManager.isRestrictedPath(sourcePath)
         val targetRestricted = SafManager.isRestrictedPath(targetPath)
-        val sourceIsPath = !SafManager.isSafUri(sourcePath) && !sourceRestricted
 
         if (sourceIsDir) {
             if (targetRestricted) {
@@ -898,30 +916,82 @@ object FileOperationRunner {
             }
             return allChildrenSuccess
         } else {
-            // Direct local file to direct local file -> Zero-copy FileChannel!
-            if (sourceIsPath && !targetRestricted) {
-                val source = Paths.get(sourcePath)
-                target.parent?.let { if (!Files.exists(it)) Files.createDirectories(it) }
-                val fileSize = knownSize ?: try { Files.size(source) } catch (e: Exception) { 0L }
-                return try {
-                    java.io.FileInputStream(source.toFile()).channel.use { srcChannel ->
-                        java.io.FileOutputStream(target.toFile()).channel.use { destChannel ->
-                            copyChannelWithProgress(srcChannel, destChannel, fileSize, job, onProgress)
-                        }
+            val fileSize = knownSize ?: if (sourceRestricted || SafManager.isSafUri(sourcePath)) {
+                if (sourceRestricted && dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(sourcePath)) {
+                    dev.narayan.rose.ShizukuManager.getFileSize(sourcePath)
+                } else {
+                    SafManager.getReliableSize(context, sourcePath)
+                }
+            } else {
+                try { Files.size(Paths.get(sourcePath)) } catch (e: Exception) { 0L }
+            }
+
+            fun cleanTarget() {
+                if (targetRestricted) {
+                    if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(targetPath)) {
+                        val clean = dev.narayan.rose.ShizukuManager.normalize(targetPath)
+                        dev.narayan.rose.ShizukuManager.runCommandSync("rm -rf ${dev.narayan.rose.ShizukuManager.shellEscape(clean)}")
+                    } else {
+                        SafManager.delete(context, targetPath)
                     }
-                    job?.let { it.processedItems++ }
-                    true
-                } catch (e: Exception) {
-                    if (JobManager.isCancelled(job?.id ?: "")) {
-                        try { Files.deleteIfExists(target) } catch (ignored: Exception) {}
-                        throw java.io.InterruptedIOException("Cancelled")
-                    }
+                } else {
                     try { Files.deleteIfExists(target) } catch (ignored: Exception) {}
-                    false
                 }
             }
 
-            // Restricted or SAF streaming
+            // High Performance Path: FileChannel (zero-copy kernel sendfile via ParcelFileDescriptor / NIO)
+            var srcChannel: java.nio.channels.FileChannel? = null
+            var srcCloseable: java.io.Closeable? = null
+            var destChannel: java.nio.channels.FileChannel? = null
+            var destCloseable: java.io.Closeable? = null
+
+            try {
+                // Open source channel
+                if (sourceRestricted || SafManager.isSafUri(sourcePath)) {
+                    val pfd = SafManager.openFileDescriptor(context, sourcePath, "r")
+                    if (pfd != null) {
+                        val stream = android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd)
+                        srcCloseable = stream
+                        srcChannel = stream.channel
+                    }
+                } else {
+                    val fis = java.io.FileInputStream(java.io.File(sourcePath))
+                    srcCloseable = fis
+                    srcChannel = fis.channel
+                }
+
+                // Open dest channel
+                if (targetRestricted) {
+                    val pfd = SafManager.openFileDescriptorForNewFile(context, targetPath)
+                    if (pfd != null) {
+                        val stream = android.os.ParcelFileDescriptor.AutoCloseOutputStream(pfd)
+                        destCloseable = stream
+                        destChannel = stream.channel
+                    }
+                } else {
+                    target.parent?.let { if (!Files.exists(it)) Files.createDirectories(it) }
+                    val fos = java.io.FileOutputStream(target.toFile())
+                    destCloseable = fos
+                    destChannel = fos.channel
+                }
+
+                if (srcChannel != null && destChannel != null) {
+                    copyChannelWithProgress(srcChannel, destChannel, fileSize, job, onProgress)
+                    job?.let { it.processedItems++ }
+                    return true
+                }
+            } catch (e: Exception) {
+                cleanTarget()
+                if (JobManager.isCancelled(job?.id ?: "")) {
+                    throw java.io.InterruptedIOException("Cancelled")
+                }
+                // If channel copy failed, fall through to streaming fallback below
+            } finally {
+                try { srcCloseable?.close() } catch (ignored: Exception) {}
+                try { destCloseable?.close() } catch (ignored: Exception) {}
+            }
+
+            // Fallback: Streaming via Process / InputStream
             var inputProcess: Process? = null
             var outputProcess: Process? = null
 
@@ -959,22 +1029,12 @@ object FileOperationRunner {
                 Files.newOutputStream(target)
             }
 
-            val size = knownSize ?: if (sourceRestricted || SafManager.isSafUri(sourcePath)) {
-                if (sourceRestricted && dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(sourcePath)) {
-                    dev.narayan.rose.ShizukuManager.getFileSize(sourcePath)
-                } else {
-                    SafManager.getReliableSize(context, sourcePath)
-                }
-            } else {
-                Files.size(Paths.get(sourcePath))
-            }
-
             if (input != null && output != null) {
                 return try {
                     copyFileWithProgress(
                         input,
                         output,
-                        size,
+                        fileSize,
                         job,
                         onProgress,
                         listOfNotNull(inputProcess, outputProcess)
@@ -982,16 +1042,7 @@ object FileOperationRunner {
                     job?.let { it.processedItems++ }
                     true
                 } catch (e: Exception) {
-                    if (targetRestricted) {
-                        if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(targetPath)) {
-                            val clean = dev.narayan.rose.ShizukuManager.normalize(targetPath)
-                            dev.narayan.rose.ShizukuManager.runCommandSync("rm -rf ${dev.narayan.rose.ShizukuManager.shellEscape(clean)}")
-                        } else {
-                            SafManager.delete(context, targetPath)
-                        }
-                    } else {
-                        try { Files.deleteIfExists(target) } catch (ignored: Exception) {}
-                    }
+                    cleanTarget()
                     false
                 }
             }
@@ -1012,16 +1063,20 @@ object FileOperationRunner {
         }
 
         val targetPath = target.toString()
-        if (isDirectory(context, sourcePath) && isSubdirectoryOrSame(targetPath, sourcePath)) {
+        if (isDirectory(context, sourcePath) && SafManager.isSubdirectoryOrSame(targetPath, sourcePath)) {
             return false
         }
         val sourceRestricted = SafManager.isRestrictedPath(sourcePath)
         val targetRestricted = SafManager.isRestrictedPath(targetPath)
 
-        // For moves within the same non-restricted storage, use fast atomic filesystem move
+        // 1. Direct local file to direct local file -> Fast atomic filesystem move
         if (!sourceRestricted && !targetRestricted && !SafManager.isSafUri(sourcePath)) {
             return try {
                 Files.move(Paths.get(sourcePath), target, StandardCopyOption.REPLACE_EXISTING)
+                job?.let {
+                    it.processedItems++
+                    onProgress?.invoke(it)
+                }
                 true
             } catch (e: Exception) {
                 // If atomic move fails (e.g. cross filesystem boundary), fall through to copy + delete
@@ -1032,7 +1087,49 @@ object FileOperationRunner {
             }
         }
 
-        // For moves involving restricted storage (e.g. Android/data to Downloads):
+        // 2. Shizuku atomic move (instantaneous for any local paths, including Android/data to Android/data)
+        if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()
+            && !SafManager.isSafUri(sourcePath) && !SafManager.isSafUri(targetPath)) {
+            val cleanSrc = dev.narayan.rose.ShizukuManager.normalize(sourcePath)
+            val cleanTarget = dev.narayan.rose.ShizukuManager.normalize(targetPath)
+            val parent = java.io.File(cleanTarget).parent
+            if (parent != null) {
+                val cleanParent = dev.narayan.rose.ShizukuManager.normalize(parent)
+                dev.narayan.rose.ShizukuManager.runCommandSync("mkdir -p ${dev.narayan.rose.ShizukuManager.shellEscape(cleanParent)}")
+            }
+            val exitCode = dev.narayan.rose.ShizukuManager.runCommandSync(
+                "mv ${dev.narayan.rose.ShizukuManager.shellEscape(cleanSrc)} ${dev.narayan.rose.ShizukuManager.shellEscape(cleanTarget)}"
+            )
+            if (exitCode == 0) {
+                job?.let {
+                    it.processedItems++
+                    onProgress?.invoke(it)
+                }
+                return true
+            }
+        }
+
+        // 3. Same SAF DocumentProvider atomic move (e.g. Android/data to Android/data via DocumentsContract.moveDocument)
+        if (sourceRestricted && targetRestricted) {
+            val targetParent = target.parent?.toString()
+            if (targetParent != null) {
+                val moved = SafManager.moveDocument(context, sourcePath, targetParent)
+                if (moved) {
+                    val expectedName = target.fileName.toString()
+                    val actualSrcName = sourcePath.substringAfterLast('/')
+                    if (expectedName != actualSrcName) {
+                        SafManager.rename(context, "$targetParent/$actualSrcName", expectedName)
+                    }
+                    job?.let {
+                        it.processedItems++
+                        onProgress?.invoke(it)
+                    }
+                    return true
+                }
+            }
+        }
+
+        // 4. Cross-provider fallback (e.g. Android/data to Downloads):
         // Stream copy first with real-time progress and cancel protection, then delete source
         if (copyRecursive(context, sourcePath, target, job, onProgress = onProgress)) {
             deleteRecursive(context, Paths.get(sourcePath), job, onProgress)
