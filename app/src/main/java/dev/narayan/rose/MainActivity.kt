@@ -703,10 +703,7 @@ class MainActivity : ComponentActivity() {
                                             onExitToHome = {
                                                 viewModel.resetFiles()
                                                 viewModel.exitCategoryMode()
-                                                viewModel.homeScrollIndex = 0
-                                                viewModel.homeScrollOffset = 0
                                                 coroutineScope.launch {
-                                                    homeListState.scrollToItem(0, 0)
                                                     homePagerState.scrollToPage(1)
                                                 }
                                                 if (sharedUris != null) {

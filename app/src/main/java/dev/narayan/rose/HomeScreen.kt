@@ -110,7 +110,9 @@ fun HomeScreen(
     // normal navigation; this sync with VM is for even deeper persistence.
     LaunchedEffect(listState) {
         snapshotFlow {
-            if (listState.layoutInfo.visibleItemsInfo.isNotEmpty()) {
+            if (listState.layoutInfo.visibleItemsInfo.isNotEmpty() &&
+                (listState.isScrollInProgress || listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0)
+            ) {
                 listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
             } else null
         }.collect { pos ->
@@ -124,10 +126,8 @@ fun HomeScreen(
     // Restore scroll on mount ONLY if the listState was actually reset to (0,0)
     // (e.g. by Activity recreation or navigation disposal) and we have a
     // non-zero saved position.
-    LaunchedEffect(viewModel.homeScrollIndex, viewModel.homeScrollOffset) {
-        if (viewModel.homeScrollIndex == 0 && viewModel.homeScrollOffset == 0) {
-            listState.scrollToItem(0, 0)
-        } else {
+    LaunchedEffect(Unit) {
+        if (viewModel.homeScrollIndex != 0 || viewModel.homeScrollOffset != 0) {
             val listStateWasReset = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
             if (listStateWasReset) {
                 // Material Files style: wait for the list to have enough items to
