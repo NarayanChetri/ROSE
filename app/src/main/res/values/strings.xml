@@ -446,4 +446,11 @@
     <string name="doc_failed_to_load">Failed to load document: %1$s</string>
     <string name="doc_empty_file">Empty file</string>
     <string name="doc_open_external">Open with other app</string>
+
+    <!-- Job cancellation and pause -->
+    <string name="job_cancel_confirm_title">Cancel operation?</string>
+    <string name="job_cancel_confirm_message">Do you want to cancel this transfer? Any partially transferred files will be discarded.</string>
+    <string name="job_action_resume">Resume</string>
+    <string name="job_action_pause">Pause</string>
+    <string name="job_status_paused">Paused</string>
 </resources>

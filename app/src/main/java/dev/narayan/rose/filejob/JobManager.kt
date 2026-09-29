@@ -37,6 +37,8 @@ object JobManager {
     // a cancel button press could be silently ignored for an in-flight job.
     // ConcurrentHashMap-backed set gives proper cross-thread visibility.
     private val cancelledJobs = Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
+    private val pausedJobs = Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
+    private val pauseLock = Object()
 
     // FIX: the previous version called removeJob(jobId) right after adding
     // jobId to cancelledJobs, and removeJob() itself does
@@ -53,10 +55,57 @@ object JobManager {
     // that thread actually finishes and calls completeJob() -> removeJob().
     fun cancelJob(jobId: String) {
         cancelledJobs.add(jobId)
+        pausedJobs.remove(jobId)
+        synchronized(pauseLock) {
+            pauseLock.notifyAll()
+        }
         _activeJobs.update { current -> current - jobId }
     }
 
     fun isCancelled(jobId: String): Boolean = cancelledJobs.contains(jobId)
+
+    fun pauseJob(jobId: String) {
+        pausedJobs.add(jobId)
+        _activeJobs.update { current ->
+            val job = current[jobId] ?: return@update current
+            current + (jobId to job.copy(isPaused = true))
+        }
+    }
+
+    fun resumeJob(jobId: String) {
+        pausedJobs.remove(jobId)
+        synchronized(pauseLock) {
+            pauseLock.notifyAll()
+        }
+        _activeJobs.update { current ->
+            val job = current[jobId] ?: return@update current
+            current + (jobId to job.copy(isPaused = false))
+        }
+    }
+
+    fun isPaused(jobId: String): Boolean = pausedJobs.contains(jobId)
+
+    @Throws(java.io.InterruptedIOException::class)
+    fun checkWaitIfPaused(jobId: String) {
+        while (isPaused(jobId)) {
+            if (isCancelled(jobId)) {
+                throw java.io.InterruptedIOException("Job cancelled while paused")
+            }
+            synchronized(pauseLock) {
+                if (isPaused(jobId) && !isCancelled(jobId)) {
+                    try {
+                        pauseLock.wait(200)
+                    } catch (e: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        throw java.io.InterruptedIOException("Job wait interrupted")
+                    }
+                }
+            }
+        }
+        if (isCancelled(jobId)) {
+            throw java.io.InterruptedIOException("Job cancelled")
+        }
+    }
 
     fun updateJob(job: FileJob) {
         // If the job was already cancelled, don't let a stray progress update

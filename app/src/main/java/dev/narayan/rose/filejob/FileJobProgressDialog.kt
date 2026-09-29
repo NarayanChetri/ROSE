@@ -50,6 +50,8 @@ import kotlinx.coroutines.delay
 fun FileJobProgressDialog(activeJobs: List<FileJob>, onDismissRequest: () -> Unit) {
     if (activeJobs.isEmpty()) return
 
+    var confirmingCancelJob by remember { mutableStateOf<FileJob?>(null) }
+
     Dialog(
         onDismissRequest = onDismissRequest,
         properties = DialogProperties(
@@ -99,11 +101,63 @@ fun FileJobProgressDialog(activeJobs: List<FileJob>, onDismissRequest: () -> Uni
                     modifier = Modifier.weight(1f, fill = false)
                 ) {
                     items(activeJobs, key = { it.id }) { job ->
-                        JobDetailCard(job = job, onCancel = { JobManager.cancelJob(job.id) })
+                        JobDetailCard(
+                            job = job,
+                            onCancel = {
+                                JobManager.pauseJob(job.id)
+                                confirmingCancelJob = job
+                            }
+                        )
                     }
                 }
             }
         }
+    }
+
+    confirmingCancelJob?.let { jobToCancel ->
+        AlertDialog(
+            onDismissRequest = {
+                JobManager.resumeJob(jobToCancel.id)
+                confirmingCancelJob = null
+            },
+            title = {
+                Text(
+                    text = stringResource(R.string.job_cancel_confirm_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.job_cancel_confirm_message),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val id = jobToCancel.id
+                        confirmingCancelJob = null
+                        JobManager.cancelJob(id)
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text(stringResource(R.string.action_cancel), fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        JobManager.resumeJob(jobToCancel.id)
+                        confirmingCancelJob = null
+                    }
+                ) {
+                    Text(stringResource(R.string.job_action_resume), fontWeight = FontWeight.SemiBold)
+                }
+            }
+        )
     }
 }
 
@@ -122,11 +176,17 @@ private fun JobDetailCard(job: FileJob, onCancel: () -> Unit) {
     var smoothedSpeedBps by remember(job.id) { mutableDoubleStateOf(0.0) }
 
     LaunchedEffect(job.id) {
-        var lastSampleTime = latestJob.startTime
-        var lastSampleBytes = 0L
+        var lastSampleTime = System.currentTimeMillis()
+        var lastSampleBytes = latestJob.processedBytes
         while (true) {
             delay(500)
             val nowMs = System.currentTimeMillis()
+            if (latestJob.isPaused) {
+                lastSampleTime = nowMs
+                lastSampleBytes = latestJob.processedBytes
+                smoothedSpeedBps = 0.0
+                continue
+            }
             val sampleBytes = latestJob.processedBytes
             val dtSec = (nowMs - lastSampleTime) / 1000.0
             if (dtSec > 0.05) {
@@ -185,7 +245,18 @@ private fun JobDetailCard(job: FileJob, onCancel: () -> Unit) {
                 }
                 Spacer(modifier = Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(text = stringResource(titleRes), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = stringResource(titleRes), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        if (latestJob.isPaused) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "(${stringResource(R.string.job_status_paused)})",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Normal,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
                     if (job.totalItems > 1) {
                         Text(
                             text = stringResource(R.string.job_item_progress, (job.processedItems + 1).coerceAtMost(job.totalItems), job.totalItems),
@@ -295,7 +366,7 @@ private fun JobDetailCard(job: FileJob, onCancel: () -> Unit) {
                     modifier = Modifier.weight(1f),
                     icon = Icons.Filled.Speed,
                     label = stringResource(R.string.job_stat_speed),
-                    value = if (smoothedSpeedBps >= 1.0) formatSpeed(smoothedSpeedBps) else "—"
+                    value = if (latestJob.isPaused) stringResource(R.string.job_status_paused) else if (smoothedSpeedBps >= 1.0) formatSpeed(smoothedSpeedBps) else "—"
                 )
                 StatChip(
                     modifier = Modifier.weight(1f),

@@ -30,11 +30,14 @@ object SafManager {
     /** Document Uri (not tree) for the root - used only as the picker's starting location. */
     private val ROOT_DOCUMENT_URI: Uri = DocumentsContract.buildDocumentUri(AUTHORITY, DOC_ID_ROOT)
 
-    fun isSafUri(path: String): Boolean = path.startsWith("content://") || path.startsWith("/content:/")
+    fun isSafUri(path: String): Boolean = path.startsWith("content://") || path.startsWith("content:/") || path.startsWith("/content:/")
 
     private fun normalizeSafPath(path: String): String {
         if (path.startsWith("/content:/")) {
-            return path.substring(1).replaceFirst("content:/", "content://")
+            return "content://" + path.removePrefix("/content:/").removePrefix("/")
+        }
+        if (path.startsWith("content:/") && !path.startsWith("content://")) {
+            return "content://" + path.removePrefix("content:/")
         }
         return path
     }
@@ -154,10 +157,15 @@ object SafManager {
 
     fun getDocumentFile(context: Context, path: String): DocumentFile? {
         if (isSafUri(path)) {
+            val parsedUri = Uri.parse(normalizeSafPath(path))
             return try {
-                DocumentFile.fromSingleUri(context, Uri.parse(normalizeSafPath(path)))
+                DocumentFile.fromTreeUri(context, parsedUri) ?: DocumentFile.fromSingleUri(context, parsedUri)
             } catch (e: Exception) {
-                null
+                try {
+                    DocumentFile.fromSingleUri(context, parsedUri)
+                } catch (e2: Exception) {
+                    null
+                }
             }
         }
         
@@ -399,9 +407,7 @@ object SafManager {
     }
 
     fun listChildPaths(context: Context, path: String): List<String> {
-        val doc = getDocumentFile(context, path) ?: return emptyList()
-        if (!doc.isDirectory) return emptyList()
-        return doc.listFiles().mapNotNull { it.uri.toString() }
+        return listFiles(context, path).map { it.file.path }
     }
 
     // ---------------------------------------------------------------------
@@ -410,8 +416,22 @@ object SafManager {
 
     fun createDirectory(context: Context, path: String): Boolean {
         if (exists(context, path)) return isDirectory(context, path)
-        val doc = getDocumentFile(context, path.substringBeforeLast("/")) ?: return false
-        return doc.createDirectory(path.substringAfterLast("/")) != null
+        val parentPath = path.substringBeforeLast("/")
+        val dirName = path.substringAfterLast("/")
+        val parentDoc = getDocumentFile(context, parentPath) ?: return false
+        return try {
+            if (parentDoc.uri.authority == AUTHORITY) {
+                DocumentsContract.createDocument(context.contentResolver, parentDoc.uri, DocumentsContract.Document.MIME_TYPE_DIR, dirName) != null
+            } else {
+                parentDoc.createDirectory(dirName) != null
+            }
+        } catch (e: Exception) {
+            try {
+                DocumentsContract.createDocument(context.contentResolver, parentDoc.uri, DocumentsContract.Document.MIME_TYPE_DIR, dirName) != null
+            } catch (e2: Exception) {
+                false
+            }
+        }
     }
 
     fun createFileDocument(context: Context, path: String, mimeType: String? = null): DocumentFile? {
@@ -426,27 +446,30 @@ object SafManager {
 
         val parent = getOrCreateParentDocumentFile(context, path) ?: return null
 
-        // IMPORTANT: always keep the full file name, extension included.
-        // Neither Android's local ExternalStorageProvider nor Google Drive's
-        // DocumentsProvider append the extension back for you - stripping it
-        // here is what caused "Save as offline" / copy results to land on
-        // disk with no extension (unknown file type when reopened). The one
-        // thing we DO want to avoid is a double extension if the provider
-        // *does* echo it back, so we check the resulting name after creation
-        // and repair it below rather than guessing beforehand.
-        parent.findFile(fileName)?.delete()
-        val created = parent.createFile(resolvedMimeType, fileName) ?: return null
+        try { parent.findFile(fileName)?.delete() } catch (ignored: Exception) {}
+
+        val createdUri = try {
+            parent.createFile(resolvedMimeType, fileName)?.uri
+                ?: DocumentsContract.createDocument(context.contentResolver, parent.uri, resolvedMimeType, fileName)
+        } catch (e: Exception) {
+            try {
+                DocumentsContract.createDocument(context.contentResolver, parent.uri, resolvedMimeType, fileName)
+            } catch (e2: Exception) {
+                null
+            }
+        } ?: return null
+
+        val created = DocumentFile.fromSingleUri(context, createdUri) ?: return null
 
         val actualName = created.name
         if (extension.isNotEmpty() && actualName != null && actualName != fileName) {
-            // Some providers append their own extension guess (e.g. turning
-            // "photo.jpg" into "photo.jpg.jpg"). Rename back to what we asked
-            // for so the file we track on disk actually matches.
-            if (actualName.endsWith(".$extension.$extension") || actualName == "$fileName.$extension") {
-                DocumentsContract.renameDocument(context.contentResolver, created.uri, fileName)
-            } else if (!actualName.contains(".") && fileName.contains(".")) {
-                DocumentsContract.renameDocument(context.contentResolver, created.uri, fileName)
-            }
+            try {
+                if (actualName.endsWith(".$extension.$extension") || actualName == "$fileName.$extension") {
+                    DocumentsContract.renameDocument(context.contentResolver, created.uri, fileName)
+                } else if (!actualName.contains(".") && fileName.contains(".")) {
+                    DocumentsContract.renameDocument(context.contentResolver, created.uri, fileName)
+                }
+            } catch (ignored: Exception) {}
         }
 
         return DocumentFile.fromSingleUri(context, created.uri) ?: created
