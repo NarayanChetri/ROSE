@@ -341,6 +341,68 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     private var _quickAccessExpanded = mutableStateOf(settings.quickAccessExpanded)
     val quickAccessExpanded: Boolean by _quickAccessExpanded
 
+    var quickAccessRemoved by mutableStateOf(settings.quickAccessRemoved)
+        private set
+
+    var quickAccessCustomPaths by mutableStateOf(settings.quickAccessCustomPaths)
+        private set
+
+    fun normalizePath(path: String): String {
+        return try {
+            File(path).canonicalPath
+        } catch (_: Exception) {
+            File(path).absolutePath.trimEnd(File.separatorChar)
+        }
+    }
+
+    /**
+     * Resolves default quick access folders: downloads, camera, documents.
+     */
+    fun getDefaultQuickAccessFolders(): List<Pair<String, String>> {
+        val list = mutableListOf<Pair<String, String>>()
+        val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        if (downloads.exists()) {
+            list.add("downloads" to downloads.absolutePath)
+        }
+        val dcim = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)
+        val camera = File(dcim, "Camera")
+        val targetCamera = if (camera.exists()) camera else dcim
+        if (targetCamera.exists()) {
+            list.add("camera" to targetCamera.absolutePath)
+        }
+        val documents = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+        if (documents.exists()) {
+            list.add("documents" to documents.absolutePath)
+        }
+        return list
+    }
+
+    fun getDefaultFolderIdForPath(path: String): String? {
+        val normalized = normalizePath(path)
+        for ((id, defaultPath) in getDefaultQuickAccessFolders()) {
+            if (normalizePath(defaultPath) == normalized) {
+                return id
+            }
+        }
+        return null
+    }
+
+    fun isFolderInQuickAccess(path: String): Boolean {
+        if (path.isBlank()) return false
+        val normalized = normalizePath(path)
+        for ((id, defaultPath) in getDefaultQuickAccessFolders()) {
+            if (!quickAccessRemoved.contains(id) && normalizePath(defaultPath) == normalized) {
+                return true
+            }
+        }
+        for (customPath in quickAccessCustomPaths) {
+            if (normalizePath(customPath) == normalized) {
+                return true
+            }
+        }
+        return false
+    }
+
     private var _externalStorageExpanded = mutableStateOf(settings.externalStorageExpanded)
     val externalStorageExpanded: Boolean by _externalStorageExpanded
 
@@ -1053,6 +1115,21 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             // Filter only those that exist or are standard
             _excludedFolders.value = defaults
             settings.excludedFolders = defaults
+        }
+
+        // Sanitize quick access custom paths to prevent duplicate key crashes
+        val activeDefaultNormalized = getDefaultQuickAccessFolders()
+            .filter { !quickAccessRemoved.contains(it.first) }
+            .map { normalizePath(it.second) }
+            .toSet()
+        val seen = mutableSetOf<String>()
+        val sanitizedCustom = quickAccessCustomPaths.filter { path ->
+            val norm = normalizePath(path)
+            !activeDefaultNormalized.contains(norm) && seen.add(norm)
+        }
+        if (sanitizedCustom.size != quickAccessCustomPaths.size) {
+            quickAccessCustomPaths = sanitizedCustom
+            settings.quickAccessCustomPaths = sanitizedCustom
         }
 
         // Clean up expired items from recycle bin
@@ -3233,14 +3310,6 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         currentPath = Environment.getExternalStorageDirectory().absolutePath
     }
 
-    // ----- Quick access (Home screen) -----
-
-    var quickAccessRemoved by mutableStateOf(settings.quickAccessRemoved)
-        private set
-
-    var quickAccessCustomPaths by mutableStateOf(settings.quickAccessCustomPaths)
-        private set
-
     var storageDevices = mutableStateListOf<StorageDevice>()
         private set
 
@@ -3437,14 +3506,33 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun addQuickAccessFolder(path: String) {
-        if (quickAccessCustomPaths.contains(path)) return
+        if (isFolderInQuickAccess(path)) return
+
+        // If it was a default folder that was previously removed, restore it
+        val defaultId = getDefaultFolderIdForPath(path)
+        if (defaultId != null && quickAccessRemoved.contains(defaultId)) {
+            val updated = quickAccessRemoved - defaultId
+            quickAccessRemoved = updated
+            settings.quickAccessRemoved = updated
+            return
+        }
+
+        val normalized = normalizePath(path)
+        val seen = quickAccessCustomPaths.map { normalizePath(it) }.toSet()
+        if (seen.contains(normalized)) return
+
         val updated = quickAccessCustomPaths + path
         quickAccessCustomPaths = updated
         settings.quickAccessCustomPaths = updated
     }
 
     fun removeQuickAccessFolder(path: String) {
-        val updated = quickAccessCustomPaths - path
+        val normalized = normalizePath(path)
+        val defaultId = getDefaultFolderIdForPath(path)
+        if (defaultId != null) {
+            removeDefaultQuickAccess(defaultId)
+        }
+        val updated = quickAccessCustomPaths.filter { normalizePath(it) != normalized }
         quickAccessCustomPaths = updated
         settings.quickAccessCustomPaths = updated
     }

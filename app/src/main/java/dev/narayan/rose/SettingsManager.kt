@@ -107,11 +107,31 @@ class SettingsManager(context: Context) {
     // paths joined with a delimiter to preserve the order they were added in
     // (SharedPreferences string sets don't guarantee ordering).
     var quickAccessCustomPaths: List<String>
-        get() = prefs.getString(KEY_QUICK_ACCESS_CUSTOM, "")
-            ?.split(QUICK_ACCESS_DELIMITER)
-            ?.filter { it.isNotBlank() }
-            ?: emptyList()
-        set(value) = prefs.edit { putString(KEY_QUICK_ACCESS_CUSTOM, value.joinToString(QUICK_ACCESS_DELIMITER)) }
+        get() {
+            val raw = prefs.getString(KEY_QUICK_ACCESS_CUSTOM, "") ?: return emptyList()
+            val list = raw.split(QUICK_ACCESS_DELIMITER).filter { it.isNotBlank() }
+            val seen = mutableSetOf<String>()
+            val result = mutableListOf<String>()
+            for (p in list) {
+                val normalized = try { java.io.File(p).canonicalPath } catch (_: Exception) { p.trimEnd(java.io.File.separatorChar) }
+                if (seen.add(normalized)) {
+                    result.add(p)
+                }
+            }
+            return result
+        }
+        set(value) {
+            val seen = mutableSetOf<String>()
+            val result = mutableListOf<String>()
+            for (p in value) {
+                if (p.isBlank()) continue
+                val normalized = try { java.io.File(p).canonicalPath } catch (_: Exception) { p.trimEnd(java.io.File.separatorChar) }
+                if (seen.add(normalized)) {
+                    result.add(p)
+                }
+            }
+            prefs.edit { putString(KEY_QUICK_ACCESS_CUSTOM, result.joinToString(QUICK_ACCESS_DELIMITER)) }
+        }
 
 
     // Last-scanned category counts (keyed by FileType.name), persisted so cold launches
