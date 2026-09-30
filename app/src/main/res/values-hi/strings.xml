@@ -3,7 +3,7 @@
     <!-- Application Details -->
     <string name="app_name">ROSE</string>
     <string name="app_description">विश्वसनीय ओपन-सोर्स एक्सप्लोरर</string>
-    <string name="about_app_description">बनाया गया क्योंकि मुझे Shizuku सपोर्ट के साथ एक सुरक्षित, ओपन-सोर्स, तेज़ और शक्तिशाली फ़ाइल मैनेजर चाहिए था। मेरे खाली समय ने असहमति जताई। पेश है ROSE।</string>
+    <string name="about_app_description">बनाया गया क्योंकि मुझे Shizuku सपोर्ट के साथ एक सुरक्षित, ओपन-सोर्स, तेज़ और शक्तिशाली फ़ाइल मैनेजर चाहिए था। पूरी तरह vibe-coded, लेकिन पेशेवर इंजीनियरिंग और गुणवत्ता के साथ निर्मित। पेश है ROSE।</string>
     <string name="about_author_name">Narayan Chetri</string>
     <string name="about_author_role">मुख्य डेवलपर</string>
     <string name="about_version">संस्करण</string>

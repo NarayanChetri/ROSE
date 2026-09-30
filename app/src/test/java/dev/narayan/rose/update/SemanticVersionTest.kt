@@ -75,7 +75,7 @@ class SemanticVersionTest {
 
     @Test
     fun testSkippedVersionLogic() {
-        // Current app version is 1.2.6
+        // Current app version is 1.2.8
         // Release 1.3.0 is skipped
         val skipped = "v1.3.0"
 

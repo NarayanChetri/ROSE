@@ -4,13 +4,14 @@
 
 ### **R**eliable **O**pen **S**ource **E**xplorer
 
-A fast, modern, beautiful, and privacy-first Android file manager built with **Kotlin** and **Jetpack Compose**.
+A fast, modern, beautiful, and privacy-first Android file manager built with **Kotlin** and **Jetpack Compose** — fully vibe-coded, but professionally engineered.
 
 [![Platform](https://img.shields.io/badge/Platform-Android_8.0+-3DDC84?style=flat-square\&logo=android\&logoColor=white)](https://github.com/NarayanChetri/ROSE/releases/latest)
 [![Latest Release](https://img.shields.io/github/v/release/NarayanChetri/ROSE?style=flat-square\&color=blue\&logo=github)](https://github.com/NarayanChetri/ROSE/releases/latest)
 [![Total Downloads](https://img.shields.io/github/downloads/NarayanChetri/ROSE/total?style=flat-square\&color=brightgreen\&logo=github)](https://github.com/NarayanChetri/ROSE/releases)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue?style=flat-square)](LICENSE)
 [![No Ads](https://img.shields.io/badge/Ads-Zero%20%2F%20Clean-success?style=flat-square)](#-features)
+[![Vibe Coded](https://img.shields.io/badge/Vibe%20Coded-Professionally%20Engineered-7C4DFF?style=flat-square)](#)
 [![Translation status](https://hosted.weblate.org/widgets/rose/-/app/svg-badge.svg)](https://hosted.weblate.org/engage/rose/)
 
 ---
@@ -18,7 +19,7 @@ A fast, modern, beautiful, and privacy-first Android file manager built with **K
 ### 📥 Download ROSE
 
 <a href="https://github.com/NarayanChetri/ROSE/releases/latest">
-  <img src="https://img.shields.io/badge/⚡_DOWNLOAD_LATEST_APK-v1.2.6_(FREE)-00C853?style=for-the-badge&logo=android&logoColor=white&labelColor=1a1f2c" alt="Download Latest APK" height="50">
+  <img src="https://img.shields.io/badge/⚡_DOWNLOAD_LATEST_APK-v1.2.8_(FREE)-00C853?style=for-the-badge&logo=android&logoColor=white&labelColor=1a1f2c" alt="Download Latest APK" height="50">
 </a>
 
   
@@ -148,5 +149,5 @@ ROSE is licensed under the **GNU General Public License v3.0 (GPL-3.0)**. See th
 If you find ROSE useful, consider giving the repository a **⭐ Star**. It helps others discover the project and supports continued development.
 
 <p align="center">
-  Built with ❤️ using Kotlin, Jetpack Compose, and open-source love.
+  Built with ❤️ using Kotlin, Jetpack Compose, and open-source love — fully vibe coded, professionally crafted.
 </p>

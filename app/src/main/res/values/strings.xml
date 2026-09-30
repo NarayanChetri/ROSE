@@ -2,7 +2,7 @@
     <!-- Application Details -->
     <string name="app_name">ROSE</string>
     <string name="app_description">Reliable Open-Source Explorer</string>
-    <string name="about_app_description">Made because I wanted a secure, open-source, fast, and powerful file manager with Shizuku support. My free time disagreed. Here\'s ROSE.</string>
+    <string name="about_app_description">Made because I wanted a secure, open-source, fast, and powerful file manager with Shizuku support. Fully vibe-coded, but professionally engineered with precision and care. Here\'s ROSE.</string>
     <string name="about_author_name">Narayan Chetri</string>
     <string name="about_author_role">Lead Developer</string>
     <string name="about_version">Version</string>
