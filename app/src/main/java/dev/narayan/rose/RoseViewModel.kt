@@ -459,6 +459,23 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
     var propertiesFile by mutableStateOf<FileItem?>(null)
     var highlightedFile by mutableStateOf<FileItem?>(null)
+    var highlightedPaths by mutableStateOf<Set<String>>(emptySet())
+
+    fun isPathHighlighted(path: String): Boolean {
+        val norm = ShizukuManager.normalize(path)
+        if (highlightedPaths.contains(norm)) return true
+        val single = highlightedFile
+        return single != null && ShizukuManager.normalize(single.file.absolutePath) == norm
+    }
+
+    fun highlightPaths(paths: List<String>) {
+        highlightedPaths = paths.map { ShizukuManager.normalize(it) }.toSet()
+    }
+
+    fun clearHighlight() {
+        highlightedFile = null
+        highlightedPaths = emptySet()
+    }
 
     var operationFailureReport by mutableStateOf<dev.narayan.rose.filejob.OperationFailureReport?>(null)
 
@@ -1185,10 +1202,9 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 if (targetPath != null && ShizukuManager.normalize(targetPath) == ShizukuManager.normalize(currentPath)) {
-                    val firstCreated = result.createdPaths.firstOrNull()
-                    if (firstCreated != null) {
+                    if (result.createdPaths.isNotEmpty()) {
                         withContext(Dispatchers.Main) {
-                            highlightedFile = FileItem(File(firstCreated))
+                            highlightPaths(result.createdPaths)
                         }
                     }
                 }

@@ -728,12 +728,11 @@ fun FileExplorerScreen(
         }
     }
 
-    LaunchedEffect(viewModel.highlightedFile, effectiveDisplayedFiles) {
-        val highlighted = viewModel.highlightedFile
-        if (highlighted != null && effectiveDisplayedFiles.isNotEmpty()) {
-            val normHighlighted = dev.narayan.rose.ShizukuManager.normalize(highlighted.file.absolutePath)
+    LaunchedEffect(viewModel.highlightedFile, viewModel.highlightedPaths, effectiveDisplayedFiles) {
+        val hasHighlight = viewModel.highlightedFile != null || viewModel.highlightedPaths.isNotEmpty()
+        if (hasHighlight && effectiveDisplayedFiles.isNotEmpty()) {
             val index = effectiveDisplayedFiles.indexOfFirst {
-                dev.narayan.rose.ShizukuManager.normalize(it.file.absolutePath) == normHighlighted
+                viewModel.isPathHighlighted(it.file.absolutePath)
             }
             if (index != -1) {
                 // Slight delay to ensure list is settled for smoother animation
@@ -746,7 +745,7 @@ fun FileExplorerScreen(
                 }
                 // Clear highlight after 1.5 seconds pulse effect
                 kotlinx.coroutines.delay(1500)
-                viewModel.highlightedFile = null
+                viewModel.clearHighlight()
             }
         }
     }
@@ -1406,7 +1405,7 @@ fun FileExplorerScreen(
                                                     ) {
                                                         items(pageFiles, key = { it.file.absolutePath }, contentType = { "grid_item" }) { fileItem ->
                                                             val index = pageFiles.indexOf(fileItem)
-                                                            val isHighlighted = viewModel.highlightedFile?.let { dev.narayan.rose.ShizukuManager.normalize(it.file.absolutePath) == dev.narayan.rose.ShizukuManager.normalize(fileItem.file.absolutePath) } ?: false
+                                                            val isHighlighted = viewModel.isPathHighlighted(fileItem.file.absolutePath)
                                                             FileGridItem(
                                                                 fileItem = fileItem,
                                                                 isSelected = viewModel.selectedFiles.contains(fileItem),
@@ -1449,7 +1448,7 @@ fun FileExplorerScreen(
                                                     ) {
                                                         itemsIndexed(pageFiles, key = { _, item -> item.file.absolutePath }, contentType = { _, _ -> "list_item" }) { index, fileItem ->
                                                             val isSelected = viewModel.selectedFiles.contains(fileItem)
-                                                            val isHighlighted = viewModel.highlightedFile?.let { dev.narayan.rose.ShizukuManager.normalize(it.file.absolutePath) == dev.narayan.rose.ShizukuManager.normalize(fileItem.file.absolutePath) } ?: false
+                                                            val isHighlighted = viewModel.isPathHighlighted(fileItem.file.absolutePath)
                                                             FileListItem(
                                                                 fileItem = fileItem,
                                                                 isSelected = isSelected,
@@ -1537,7 +1536,7 @@ fun FileExplorerScreen(
                                                             is ListItemType.File -> {
                                                                 val fileItem = item.fileItem
                                                                 val indexInFullList = displayedFilesFinal.indexOf(fileItem)
-                                                                val isHighlighted = viewModel.highlightedFile?.let { dev.narayan.rose.ShizukuManager.normalize(it.file.absolutePath) == dev.narayan.rose.ShizukuManager.normalize(fileItem.file.absolutePath) } ?: false
+                                                                val isHighlighted = viewModel.isPathHighlighted(fileItem.file.absolutePath)
                                                                 FileGridItem(
                                                                     fileItem = fileItem,
                                                                     isSelected = viewModel.selectedFiles.contains(fileItem),
@@ -1605,7 +1604,7 @@ fun FileExplorerScreen(
                                                 } else {
                                                     items(displayedFilesFinal, key = { it.file.absolutePath }, contentType = { "grid_item" }) { fileItem ->
                                                         val index = displayedFilesFinal.indexOf(fileItem)
-                                                        val isHighlighted = viewModel.highlightedFile?.let { dev.narayan.rose.ShizukuManager.normalize(it.file.absolutePath) == dev.narayan.rose.ShizukuManager.normalize(fileItem.file.absolutePath) } ?: false
+                                                        val isHighlighted = viewModel.isPathHighlighted(fileItem.file.absolutePath)
                                                         FileGridItem(
                                                             fileItem = fileItem,
                                                             isSelected = viewModel.selectedFiles.contains(fileItem),
@@ -1691,7 +1690,7 @@ fun FileExplorerScreen(
                                                             is ListItemType.File -> {
                                                                 val fileItem = item.fileItem
                                                                 val isSelected = viewModel.selectedFiles.contains(fileItem)
-                                                                val isHighlighted = viewModel.highlightedFile?.let { dev.narayan.rose.ShizukuManager.normalize(it.file.absolutePath) == dev.narayan.rose.ShizukuManager.normalize(fileItem.file.absolutePath) } ?: false
+                                                                val isHighlighted = viewModel.isPathHighlighted(fileItem.file.absolutePath)
                                                                 val indexInFullList = displayedFilesFinal.indexOf(fileItem)
                                                                 val isRoot = viewModel.currentPath == Environment.getExternalStorageDirectory().absolutePath
                                                                 FileListItem(
@@ -1820,7 +1819,7 @@ fun FileExplorerScreen(
                                                     item(key = "top_spacer") { Spacer(modifier = Modifier.height(8.dp)) }
                                                     itemsIndexed(displayedFilesFinal, key = { _, item -> item.file.absolutePath }, contentType = { _, _ -> "list_item" }) { index, fileItem ->
                                                         val isSelected = viewModel.selectedFiles.contains(fileItem)
-                                                        val isHighlighted = viewModel.highlightedFile?.let { dev.narayan.rose.ShizukuManager.normalize(it.file.absolutePath) == dev.narayan.rose.ShizukuManager.normalize(fileItem.file.absolutePath) } ?: false
+                                                        val isHighlighted = viewModel.isPathHighlighted(fileItem.file.absolutePath)
                                                         val isRoot = viewModel.currentPath == Environment.getExternalStorageDirectory().absolutePath
                                                         FileListItem(
                                                             fileItem = fileItem,
