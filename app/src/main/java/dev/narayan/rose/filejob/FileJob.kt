@@ -69,7 +69,7 @@ object FileOperationRunner {
                 JobManager.updateJob(job)
                 when (val type = job.type) {
                     is FileJobType.Copy -> {
-                        val directBytes = calculateDirectFilesTotalSize(type.sources)
+                        val directBytes = calculateDirectFilesTotalSize(appContext, type.sources)
                         if (directBytes != null) {
                             job.totalBytes = directBytes
                             job.totalItems = type.sources.size
@@ -107,7 +107,7 @@ object FileOperationRunner {
                         }
                     }
                     is FileJobType.Move -> {
-                        val directBytes = calculateDirectFilesTotalSize(type.sources)
+                        val directBytes = calculateDirectFilesTotalSize(appContext, type.sources)
                         if (directBytes != null) {
                             job.totalBytes = directBytes
                             job.totalItems = type.sources.size
@@ -371,19 +371,32 @@ object FileOperationRunner {
 
     // -- Helpers ----------------------------------------------------------
 
-    private fun calculateDirectFilesTotalSize(sources: List<SourcePath>): Long? {
+    private fun calculateDirectFilesTotalSize(context: Context, sources: List<SourcePath>): Long? {
         var sum = 0L
         for (source in sources) {
             val path = source.path
-            if (SafManager.isRestrictedPath(path) || SafManager.isSafUri(path)) {
-                return null
-            }
-            val f = java.io.File(path)
-            if (f.isDirectory) return null
-            if (f.isFile) {
-                sum += f.length()
+            if (SafManager.isSafUri(path)) return null
+            val isRestricted = SafManager.isRestrictedPath(path)
+            if (!isRestricted) {
+                val f = java.io.File(path)
+                if (f.isDirectory) return null
+                if (f.isFile) {
+                    sum += f.length()
+                } else {
+                    return null
+                }
+            } else if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()) {
+                val clean = dev.narayan.rose.ShizukuManager.normalize(path)
+                val isDir = dev.narayan.rose.ShizukuManager.runCommandSync(
+                    "[ -d ${dev.narayan.rose.ShizukuManager.shellEscape(clean)} ]"
+                ) == 0
+                if (isDir) return null
+                val size = dev.narayan.rose.ShizukuManager.getFileSize(clean)
+                sum += size
             } else {
-                return null
+                if (SafManager.isDirectory(context, path)) return null
+                val size = SafManager.getReliableSize(context, path)
+                sum += size
             }
         }
         return sum
@@ -423,19 +436,16 @@ object FileOperationRunner {
                         }
                     } else if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(path)) {
                         val clean = dev.narayan.rose.ShizukuManager.normalize(path)
-                        val folderSize = dev.narayan.rose.ShizukuManager.getFolderSize(clean)
-                        totalBytes += folderSize
-                        try {
-                            val countProc = dev.narayan.rose.ShizukuManager.newProcess(
-                                arrayOf("sh", "-c", "find ${dev.narayan.rose.ShizukuManager.shellEscape(clean)} 2>/dev/null | wc -l"),
-                                null, null
-                            )
-                            val countStr = countProc.inputStream.bufferedReader().readText().trim()
-                            countProc.waitFor()
-                            val c = countStr.toIntOrNull() ?: 1
-                            totalCount += (c - 1).coerceAtLeast(1)
-                        } catch (e: Exception) {
+                        val isDir = dev.narayan.rose.ShizukuManager.runCommandSync(
+                            "[ -d ${dev.narayan.rose.ShizukuManager.shellEscape(clean)} ]"
+                        ) == 0
+                        if (isDir) {
+                            val folderSize = dev.narayan.rose.ShizukuManager.getFolderSize(clean)
+                            totalBytes += folderSize
                             totalCount += 1
+                        } else {
+                            totalCount += 1
+                            totalBytes += dev.narayan.rose.ShizukuManager.getFileSize(clean)
                         }
                     } else {
                         fun scanSaf(p: String) {
@@ -811,7 +821,7 @@ object FileOperationRunner {
         try {
             input.use { inp ->
                 output.use { out ->
-                    val buffer = ByteArray(2 * 1024 * 1024) // 2 MB buffer for fast fallback throughput
+                    val buffer = ByteArray(8 * 1024 * 1024) // 8 MB buffer — 4x larger for better SAF fallback throughput
                     var bytesRead: Int
                     var fileBytesRead = 0L
                     var lastReportedFileBytes = 0L
@@ -884,6 +894,213 @@ object FileOperationRunner {
         val sourceRestricted = SafManager.isRestrictedPath(sourcePath)
         val targetRestricted = SafManager.isRestrictedPath(targetPath)
 
+        // Resolve fileSize upfront for all files before branching
+        val fileSize = if (sourceIsDir) 0L else {
+            knownSize ?: if (sourceRestricted || SafManager.isSafUri(sourcePath)) {
+                if (sourceRestricted && dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(sourcePath)) {
+                    dev.narayan.rose.ShizukuManager.getFileSize(sourcePath)
+                } else {
+                    SafManager.getReliableSize(context, sourcePath)
+                }
+            } else {
+                try { Files.size(Paths.get(sourcePath)) } catch (e: Exception) { 0L }
+            }
+        }
+
+        // If job totalBytes was unknown (e.g. single file where pre-scan was skipped
+        // or async calculation is still running), immediately set totalBytes and switch to determinate mode.
+        if (job != null && job.totalBytes == 0L && fileSize > 0L) {
+            job.totalBytes = fileSize
+            job.isIndeterminate = false
+            JobManager.updateJob(job)
+        }
+
+        // -- Fast path #1: Shizuku native cp (~300 MB/s, matches CX File Explorer) --------
+        // Applied for individual FILES only, and ONLY when at least one end is a restricted
+        // path (Android/data, Android/obb). For unrestricted paths (e.g. Camera -> Downloads)
+        // the NIO FileChannel path below gives smooth per-100ms progress updates at the same
+        // speed, so there is no benefit to routing through Shizuku and losing granular progress.
+        if (!sourceIsDir
+            && (sourceRestricted || targetRestricted)
+            && dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()
+            && !SafManager.isSafUri(sourcePath) && !SafManager.isSafUri(targetPath)) {
+            val cleanSrc = dev.narayan.rose.ShizukuManager.normalize(sourcePath)
+            val cleanDest = dev.narayan.rose.ShizukuManager.normalize(targetPath)
+            val cpDestParent = java.io.File(cleanDest).parent
+            if (cpDestParent != null) {
+                val cleanParent = dev.narayan.rose.ShizukuManager.normalize(cpDestParent)
+                dev.narayan.rose.ShizukuManager.runCommandSync(
+                    "mkdir -p ${dev.narayan.rose.ShizukuManager.shellEscape(cleanParent)}"
+                )
+            }
+
+            fun cleanTarget() {
+                try {
+                    val clean = dev.narayan.rose.ShizukuManager.normalize(cleanDest)
+                    dev.narayan.rose.ShizukuManager.runCommandSync("rm -rf ${dev.narayan.rose.ShizukuManager.shellEscape(clean)}")
+                } catch (ignored: Exception) {}
+            }
+
+            try {
+                // Launch cp -f asynchronously so we can poll dest size while it runs
+                val cpProcess = dev.narayan.rose.ShizukuManager.newProcess(
+                    arrayOf("sh", "-c", "cp -f ${dev.narayan.rose.ShizukuManager.shellEscape(cleanSrc)} ${dev.narayan.rose.ShizukuManager.shellEscape(cleanDest)}"),
+                    null, null
+                )
+
+                val isFinished = java.util.concurrent.atomic.AtomicBoolean(false)
+                val exitCodeHolder = java.util.concurrent.atomic.AtomicInteger(-1)
+                val errorMsgHolder = java.lang.StringBuilder()
+
+                val waitThread = Thread {
+                    try {
+                        try { cpProcess.outputStream.close() } catch (ignored: Exception) {}
+                        val errThread = Thread {
+                            try {
+                                cpProcess.errorStream.bufferedReader().useLines { lines ->
+                                    lines.forEach { line ->
+                                        if (errorMsgHolder.length < 1000) {
+                                            errorMsgHolder.appendLine(line)
+                                        }
+                                    }
+                                }
+                            } catch (ignored: Exception) {}
+                        }.apply { isDaemon = true; start() }
+
+                        val code = cpProcess.waitFor()
+                        exitCodeHolder.set(code)
+                        try { errThread.join(500) } catch (ignored: Exception) {}
+                    } catch (e: Exception) {
+                        android.util.Log.e("FileJob", "cpProcess waiter thread error", e)
+                        exitCodeHolder.set(-1)
+                    } finally {
+                        isFinished.set(true)
+                    }
+                }.apply {
+                    name = "ShizukuCpWaiter-${System.currentTimeMillis()}"
+                    isDaemon = true
+                    start()
+                }
+
+                val bytesAtFileStart = job?.processedBytes ?: 0L
+                val destFile = java.io.File(cleanDest)
+
+                // Poll dest size while cp is running -- gives real-time byte progress & speed
+                var lastPolledBytes = 0L
+                while (!isFinished.get()) {
+                    Thread.sleep(120)
+                    if (job != null && onProgress != null) {
+                        // Cancellation check: destroy the cp process, clean target, and bail
+                        if (JobManager.isCancelled(job.id)) {
+                            try { cpProcess.destroy() } catch (ignored: Exception) {}
+                            try { waitThread.join(500) } catch (ignored: Exception) {}
+                            cleanTarget()
+                            return false
+                        }
+                        try {
+                            JobManager.checkWaitIfPaused(job.id)
+                        } catch (e: Exception) {
+                            try { cpProcess.destroy() } catch (ignored: Exception) {}
+                            try { waitThread.join(500) } catch (ignored: Exception) {}
+                            cleanTarget()
+                            return false
+                        }
+
+                        // Poll current destination size:
+                        // 1. If not restricted, destFile.length() works directly and instantly in Java.
+                        // 2. If target is restricted (Android/data or Android/obb), java.io.File.length() returns 0
+                        //    due to Android 11+ UID isolation, so query Shizuku stat directly (~3ms).
+                        val rawDestBytes = if (!targetRestricted) {
+                            val len = destFile.length()
+                            if (len > 0L) len else {
+                                if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()) {
+                                    dev.narayan.rose.ShizukuManager.getFileSize(cleanDest)
+                                } else len
+                            }
+                        } else {
+                            val len = destFile.length()
+                            if (len > 0L) len else {
+                                dev.narayan.rose.ShizukuManager.getFileSize(cleanDest)
+                            }
+                        }
+
+                        val destBytes = if (fileSize > 0L) rawDestBytes.coerceIn(0L, fileSize) else rawDestBytes
+                        if (destBytes >= lastPolledBytes) {
+                            lastPolledBytes = destBytes
+                            job.processedBytes = bytesAtFileStart + destBytes
+                            if (job.totalBytes > 0L) {
+                                job.progress = (job.processedBytes.toFloat() / job.totalBytes).coerceIn(0f, 1f)
+                            }
+                            JobManager.updateJob(job)
+                            onProgress(job)
+                        }
+                    }
+                }
+
+                try { waitThread.join(2000) } catch (ignored: Exception) {}
+                val cpExitCode = exitCodeHolder.get()
+                if (cpExitCode == 0) {
+                    job?.let { j ->
+                        j.processedItems++
+                        // Set final bytes to exact file size
+                        val finalFileBytes = if (fileSize > 0L) fileSize else {
+                            if (targetRestricted) dev.narayan.rose.ShizukuManager.getFileSize(cleanDest)
+                            else destFile.length()
+                        }
+                        j.processedBytes = bytesAtFileStart + finalFileBytes
+                        if (j.totalBytes > 0L) {
+                            j.progress = (j.processedBytes.toFloat() / job.totalBytes).coerceIn(0f, 1f)
+                        }
+                        JobManager.updateJob(j)
+                        onProgress?.invoke(j)
+                    }
+                    return true
+                } else {
+                    android.util.Log.e("FileJob", "cp failed with exit code $cpExitCode: ${errorMsgHolder.toString().trim()}")
+                    cleanTarget()
+                }
+            } catch (e: Exception) {
+                if (job != null && JobManager.isCancelled(job.id)) {
+                    cleanTarget()
+                    return false
+                }
+                android.util.Log.e("FileJob", "Fast path cp failed with exception, falling through", e)
+                cleanTarget()
+            }
+            // Non-zero exit or exception -- fall through to SAF / channel path below
+        }
+
+        // -- Fast path #2: Same SAF provider copyDocument (instant, no JVM data crossing) ---
+        // Mirrors moveDocument() in moveRecursive(). Available on API 24+.
+        // Only run when Shizuku is NOT available/permitted so Fast Path #1 handles Shizuku with full speed & animation.
+        if (sourceRestricted && targetRestricted
+            && (!dev.narayan.rose.ShizukuManager.isAvailable() || !dev.narayan.rose.ShizukuManager.hasPermission())
+            && !SafManager.isSafUri(sourcePath) && !SafManager.isSafUri(targetPath)) {
+            val targetParentForCopy = target.parent?.toString()
+            if (targetParentForCopy != null) {
+                val copied = SafManager.copyDocument(context, sourcePath, targetParentForCopy)
+                if (copied) {
+                    val expectedName = target.fileName.toString()
+                    val actualSrcName = sourcePath.substringAfterLast('/')
+                    if (expectedName != actualSrcName) {
+                        SafManager.rename(context, "$targetParentForCopy/$actualSrcName", expectedName)
+                    }
+                    job?.let { j ->
+                        j.processedItems++
+                        if (fileSize > 0L) {
+                            j.processedBytes += fileSize
+                            if (j.totalBytes > 0L) {
+                                j.progress = (j.processedBytes.toFloat() / j.totalBytes).coerceIn(0f, 1f)
+                            }
+                            JobManager.updateJob(j)
+                            onProgress?.invoke(j)
+                        }
+                    }
+                    return true
+                }
+            }
+        }
+
         if (sourceIsDir) {
             if (targetRestricted) {
                 if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(targetPath)) {
@@ -899,6 +1116,7 @@ object FileOperationRunner {
             val children = listChildren(context, sourcePath)
             var allChildrenSuccess = true
             children.forEach { child ->
+                if (job != null && JobManager.isCancelled(job.id)) return false
                 job?.currentFileName = child.name
                 val childTarget = target.resolve(child.name)
                 if (!copyRecursive(
@@ -916,16 +1134,6 @@ object FileOperationRunner {
             }
             return allChildrenSuccess
         } else {
-            val fileSize = knownSize ?: if (sourceRestricted || SafManager.isSafUri(sourcePath)) {
-                if (sourceRestricted && dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(sourcePath)) {
-                    dev.narayan.rose.ShizukuManager.getFileSize(sourcePath)
-                } else {
-                    SafManager.getReliableSize(context, sourcePath)
-                }
-            } else {
-                try { Files.size(Paths.get(sourcePath)) } catch (e: Exception) { 0L }
-            }
-
             fun cleanTarget() {
                 if (targetRestricted) {
                     if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(targetPath)) {
@@ -991,39 +1199,17 @@ object FileOperationRunner {
                 try { destCloseable?.close() } catch (ignored: Exception) {}
             }
 
-            // Fallback: Streaming via Process / InputStream
-            var inputProcess: Process? = null
-            var outputProcess: Process? = null
-
+            // -- SAF InputStream fallback (Shizuku unavailable or cross-provider SAF URIs) --
+            // The old double-cat relay (cat src | Java | cat > dest) spawned two Shizuku
+            // processes making all data cross the JVM 3 times. Direct SAF streams are simpler.
             val input = if (sourceRestricted || SafManager.isSafUri(sourcePath)) {
-                if (sourceRestricted && dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(sourcePath)) {
-                    val cleanSrc = dev.narayan.rose.ShizukuManager.normalize(sourcePath)
-                    val escapedSrc = dev.narayan.rose.ShizukuManager.shellEscape(cleanSrc)
-                    val process = dev.narayan.rose.ShizukuManager.newProcess(arrayOf("sh", "-c", "cat $escapedSrc"), null, null)
-                    inputProcess = process
-                    process.inputStream
-                } else {
-                    SafManager.openInputStream(context, sourcePath)
-                }
+                SafManager.openInputStream(context, sourcePath)
             } else {
                 Files.newInputStream(Paths.get(sourcePath))
             }
 
             val output = if (targetRestricted) {
-                if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(targetPath)) {
-                    val cleanDest = dev.narayan.rose.ShizukuManager.normalize(targetPath)
-                    val escapedDest = dev.narayan.rose.ShizukuManager.shellEscape(cleanDest)
-                    val destParent = target.parent?.toString()
-                    if (destParent != null) {
-                        val cleanParent = dev.narayan.rose.ShizukuManager.normalize(destParent)
-                        dev.narayan.rose.ShizukuManager.runCommandSync("mkdir -p ${dev.narayan.rose.ShizukuManager.shellEscape(cleanParent)}")
-                    }
-                    val process = dev.narayan.rose.ShizukuManager.newProcess(arrayOf("sh", "-c", "cat > $escapedDest"), null, null)
-                    outputProcess = process
-                    process.outputStream
-                } else {
-                    SafManager.openOutputStreamForNewFile(context, targetPath)
-                }
+                SafManager.openOutputStreamForNewFile(context, targetPath)
             } else {
                 target.parent?.let { if (!Files.exists(it)) Files.createDirectories(it) }
                 Files.newOutputStream(target)
@@ -1037,7 +1223,7 @@ object FileOperationRunner {
                         fileSize,
                         job,
                         onProgress,
-                        listOfNotNull(inputProcess, outputProcess)
+                        emptyList()
                     )
                     job?.let { it.processedItems++ }
                     true
@@ -1051,6 +1237,20 @@ object FileOperationRunner {
     }
 
     // -- Move -------------------------------------------------------------
+
+    private fun getPackageDir(path: String): String? {
+        val clean = dev.narayan.rose.ShizukuManager.normalize(path)
+        val markerData = "/Android/data/"
+        val markerObb = "/Android/obb/"
+        val marker = when {
+            clean.contains(markerData) -> markerData
+            clean.contains(markerObb) -> markerObb
+            else -> null
+        } ?: return null
+        val after = clean.substringAfter(marker)
+        val pkg = after.substringBefore('/')
+        return if (pkg.isNotBlank()) pkg else null
+    }
 
     private fun moveRecursive(context: Context, sourcePath: String, target: Path, job: FileJob? = null, onProgress: ((FileJob) -> Unit)? = null): Boolean {
         if (job != null) {
@@ -1070,47 +1270,76 @@ object FileOperationRunner {
         val targetRestricted = SafManager.isRestrictedPath(targetPath)
 
         // 1. Direct local file to direct local file -> Fast atomic filesystem move
-        if (!sourceRestricted && !targetRestricted && !SafManager.isSafUri(sourcePath)) {
+        if (!sourceRestricted && !targetRestricted && !SafManager.isSafUri(sourcePath) && !SafManager.isSafUri(targetPath)) {
+            val srcFile = java.io.File(sourcePath)
+            val movedSize = if (srcFile.isFile) srcFile.length() else 0L
             return try {
                 Files.move(Paths.get(sourcePath), target, StandardCopyOption.REPLACE_EXISTING)
                 job?.let {
                     it.processedItems++
+                    if (movedSize > 0L) it.processedBytes += movedSize
+                    if (it.totalBytes > 0L) {
+                        it.progress = (it.processedBytes.toFloat() / it.totalBytes).coerceIn(0f, 1f)
+                    }
+                    JobManager.updateJob(it)
                     onProgress?.invoke(it)
                 }
                 true
             } catch (e: Exception) {
                 // If atomic move fails (e.g. cross filesystem boundary), fall through to copy + delete
                 if (copyRecursive(context, sourcePath, target, job, onProgress = onProgress)) {
-                    deleteRecursive(context, Paths.get(sourcePath), job, onProgress)
+                    deleteRecursive(context, Paths.get(sourcePath), null, null)
                     true
                 } else false
             }
         }
 
-        // 2. Shizuku atomic move (instantaneous for any local paths, including Android/data to Android/data)
-        if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()
+        // 2. Intra-package atomic move inside Android/data or Android/obb via Shizuku
+        // On Android 11+ FUSE, atomic rename ONLY succeeds if source and destination
+        // reside within the EXACT same package folder. Across different packages or
+        // between Downloads and Android/data, rename() returns EXDEV.
+        // For intra-package, atomic `mv` finishes in ~1ms!
+        if (sourceRestricted && targetRestricted
+            && dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()
             && !SafManager.isSafUri(sourcePath) && !SafManager.isSafUri(targetPath)) {
-            val cleanSrc = dev.narayan.rose.ShizukuManager.normalize(sourcePath)
-            val cleanTarget = dev.narayan.rose.ShizukuManager.normalize(targetPath)
-            val parent = java.io.File(cleanTarget).parent
-            if (parent != null) {
-                val cleanParent = dev.narayan.rose.ShizukuManager.normalize(parent)
-                dev.narayan.rose.ShizukuManager.runCommandSync("mkdir -p ${dev.narayan.rose.ShizukuManager.shellEscape(cleanParent)}")
-            }
-            val exitCode = dev.narayan.rose.ShizukuManager.runCommandSync(
-                "mv ${dev.narayan.rose.ShizukuManager.shellEscape(cleanSrc)} ${dev.narayan.rose.ShizukuManager.shellEscape(cleanTarget)}"
-            )
-            if (exitCode == 0) {
-                job?.let {
-                    it.processedItems++
-                    onProgress?.invoke(it)
+            val srcPkg = getPackageDir(sourcePath)
+            val dstPkg = getPackageDir(targetPath)
+            if (srcPkg != null && dstPkg != null && srcPkg == dstPkg) {
+                val cleanSrc = dev.narayan.rose.ShizukuManager.normalize(sourcePath)
+                val cleanTarget = dev.narayan.rose.ShizukuManager.normalize(targetPath)
+                val parent = java.io.File(cleanTarget).parent
+                if (parent != null) {
+                    val cleanParent = dev.narayan.rose.ShizukuManager.normalize(parent)
+                    dev.narayan.rose.ShizukuManager.runCommandSync("mkdir -p ${dev.narayan.rose.ShizukuManager.shellEscape(cleanParent)}")
                 }
-                return true
+                val isDir = dev.narayan.rose.ShizukuManager.runCommandSync("[ -d ${dev.narayan.rose.ShizukuManager.shellEscape(cleanSrc)} ]") == 0
+                val movedFileSize = if (isDir) {
+                    dev.narayan.rose.ShizukuManager.getFolderSize(cleanSrc)
+                } else {
+                    dev.narayan.rose.ShizukuManager.getFileSize(cleanSrc)
+                }
+                val exitCode = dev.narayan.rose.ShizukuManager.runCommandSync(
+                    "mv -f ${dev.narayan.rose.ShizukuManager.shellEscape(cleanSrc)} ${dev.narayan.rose.ShizukuManager.shellEscape(cleanTarget)}"
+                )
+                if (exitCode == 0) {
+                    job?.let {
+                        it.processedItems++
+                        if (movedFileSize > 0L) it.processedBytes += movedFileSize
+                        if (it.totalBytes > 0L) {
+                            it.progress = (it.processedBytes.toFloat() / it.totalBytes).coerceIn(0f, 1f)
+                        }
+                        JobManager.updateJob(it)
+                        onProgress?.invoke(it)
+                    }
+                    return true
+                }
             }
         }
 
         // 3. Same SAF DocumentProvider atomic move (e.g. Android/data to Android/data via DocumentsContract.moveDocument)
-        if (sourceRestricted && targetRestricted) {
+        // Used when Shizuku is not available.
+        if (sourceRestricted && targetRestricted
+            && (!dev.narayan.rose.ShizukuManager.isAvailable() || !dev.narayan.rose.ShizukuManager.hasPermission())) {
             val targetParent = target.parent?.toString()
             if (targetParent != null) {
                 val moved = SafManager.moveDocument(context, sourcePath, targetParent)
@@ -1122,6 +1351,12 @@ object FileOperationRunner {
                     }
                     job?.let {
                         it.processedItems++
+                        val sz = SafManager.getReliableSize(context, sourcePath)
+                        if (sz > 0L) it.processedBytes += sz
+                        if (it.totalBytes > 0L) {
+                            it.progress = (it.processedBytes.toFloat() / it.totalBytes).coerceIn(0f, 1f)
+                        }
+                        JobManager.updateJob(it)
                         onProgress?.invoke(it)
                     }
                     return true
@@ -1129,10 +1364,12 @@ object FileOperationRunner {
             }
         }
 
-        // 4. Cross-provider fallback (e.g. Android/data to Downloads):
-        // Stream copy first with real-time progress and cancel protection, then delete source
+        // 4. Cross-boundary move (e.g. Downloads to Android/data, Android/data to Downloads,
+        // or cross-package Android/data moves):
+        // Shizuku native copy first with real-time 300 MB/s speed, smooth progress animation,
+        // and full cancellation protection, then delete source without double-counting bytes.
         if (copyRecursive(context, sourcePath, target, job, onProgress = onProgress)) {
-            deleteRecursive(context, Paths.get(sourcePath), job, onProgress)
+            deleteRecursive(context, Paths.get(sourcePath), null, null)
             return true
         }
         return false
@@ -1155,13 +1392,13 @@ object FileOperationRunner {
         val size = if (file.isFile) file.length() else 0L
 
         if (SafManager.isRestrictedPath(pathStr)) {
-            if (SafManager.hasPermission(context, pathStr)) {
-                SafManager.delete(context, pathStr)
-            } else if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()) {
+            if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(pathStr)) {
                 val clean = dev.narayan.rose.ShizukuManager.normalize(pathStr)
                 dev.narayan.rose.ShizukuManager.runCommandSync(
                     "rm -rf ${dev.narayan.rose.ShizukuManager.shellEscape(clean)}"
                 )
+            } else if (SafManager.hasPermission(context, pathStr)) {
+                SafManager.delete(context, pathStr)
             }
             if (job != null && onProgress != null) {
                 job.processedBytes += size

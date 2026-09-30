@@ -179,7 +179,7 @@ private fun JobDetailCard(job: FileJob, onCancel: () -> Unit) {
         var lastSampleTime = System.currentTimeMillis()
         var lastSampleBytes = latestJob.processedBytes
         while (true) {
-            delay(500)
+            delay(250)
             val nowMs = System.currentTimeMillis()
             if (latestJob.isPaused) {
                 lastSampleTime = nowMs
@@ -191,11 +191,11 @@ private fun JobDetailCard(job: FileJob, onCancel: () -> Unit) {
             val dtSec = (nowMs - lastSampleTime) / 1000.0
             if (dtSec > 0.05) {
                 val instantSpeed = (sampleBytes - lastSampleBytes).coerceAtLeast(0L) / dtSec
-                // Exponential moving average over the 500ms samples - smooths
+                // Exponential moving average over the 250ms samples - smooths
                 // out the burst/pause pattern of real disk & network I/O into
-                // one steadily-updating number instead of a jumpy raw reading.
+                // a steadily-updating number with rapid initial display.
                 smoothedSpeedBps = if (smoothedSpeedBps <= 0.0) instantSpeed
-                else (smoothedSpeedBps * 0.7 + instantSpeed * 0.3)
+                else (smoothedSpeedBps * 0.6 + instantSpeed * 0.4)
             }
             lastSampleTime = nowMs
             lastSampleBytes = sampleBytes

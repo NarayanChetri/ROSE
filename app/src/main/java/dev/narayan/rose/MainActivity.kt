@@ -809,12 +809,6 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
 
-                            LaunchedEffect(otherJobs.isEmpty()) {
-                                if (otherJobs.isEmpty()) {
-                                    showJobDetailsDialog = false
-                                }
-                            }
-
                             // Global mini bar + detailed dialog for in-flight jobs - lives
                             // above the AnimatedContent so it survives Home <-> Files <->
                             // Recycle Bin navigation instead of resetting per screen.

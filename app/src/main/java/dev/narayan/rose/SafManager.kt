@@ -483,9 +483,11 @@ object SafManager {
 
         val parent = getOrCreateParentDocumentFile(context, path) ?: return null
 
+        // Only delete when a non-empty file already exists -- avoids 3 wasted Binder
+        // round-trips per file for brand-new paths. ExternalStorageProvider handles collisions.
         try {
             val existing = getDocumentFile(context, path)
-            if (existing != null && existing.exists()) {
+            if (existing != null && existing.exists() && existing.length() > 0) {
                 existing.delete()
             }
         } catch (ignored: Exception) {}
@@ -585,6 +587,28 @@ object SafManager {
                 targetParentDoc.uri
             )
             movedUri != null
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Copies a document or folder within the same SAF DocumentProvider using
+     * DocumentsContract.copyDocument (API 24+). Provider-side equivalent of moveDocument()
+     * -- all bytes are handled internally by ExternalStorageProvider so no data crosses the
+     * JVM or the Binder boundary. Near-instant for Android/data and Android/obb copies.
+     * Returns false if documents are from different authorities or if the operation fails.
+     */
+    fun copyDocument(context: Context, sourcePath: String, targetParentPath: String): Boolean {
+        val srcDoc = getDocumentFile(context, sourcePath) ?: return false
+        val targetParentDoc = getDocumentFile(context, targetParentPath) ?: return false
+        if (srcDoc.uri.authority != targetParentDoc.uri.authority) return false
+        return try {
+            DocumentsContract.copyDocument(
+                context.contentResolver,
+                srcDoc.uri,
+                targetParentDoc.uri
+            ) != null
         } catch (e: Exception) {
             false
         }

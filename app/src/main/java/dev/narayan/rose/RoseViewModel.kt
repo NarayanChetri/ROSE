@@ -2362,7 +2362,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         } else {
-            if (targetDir.isEmpty() || currentView == "Category" || currentView == "Recent") {
+            if (targetDir.isEmpty() || categoryFilterType != null) {
                 android.widget.Toast.makeText(getApplication(), R.string.toast_cannot_paste_here, android.widget.Toast.LENGTH_SHORT).show()
                 return
             }
@@ -2415,8 +2415,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 dev.narayan.rose.filejob.FileJobService.startCopy(getApplication(), sources, displayNames, targetDir)
             } else {
                 dev.narayan.rose.filejob.FileJobService.startMove(getApplication(), sources, displayNames, targetDir)
-                clipboardFiles.clear()
             }
+            clipboardFiles.clear()
             exitSelectionMode()
             invalidateDirectoryCache(targetDir)
             viewModelScope.launch {
@@ -2810,13 +2810,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         return result
     }
 
-    val currentView: String
-        get() = when {
-            categoryFilterType != null || categoryTitle != null -> "Category"
-            currentPath == "recent" -> "Recent"
-            currentZipFile != null -> "Archive"
-            else -> "Files"
-        }
+    // ----- Category browsing (Home screen) -----
 
     var categoryTitle by mutableStateOf<String?>(null)
         private set

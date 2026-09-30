@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Application Details -->
     <string name="app_name">ROSE</string>
     <string name="app_description">Reliable Open-Source Explorer</string>
@@ -409,6 +409,11 @@
     <string name="toast_shizuku_not_running">Shizuku not running. Please start it first.</string>
     <string name="toast_added_to_quick_access">Added to Quick access</string>
     <string name="toast_up_to_date">You\'re on the latest version</string>
+    <string name="toast_cannot_paste_here" tools:ignore="MissingTranslation">Cannot paste here</string>
+    <string name="toast_cannot_paste_in_archive" tools:ignore="MissingTranslation">Cannot paste inside an archive</string>
+    <string name="toast_source_dest_same" tools:ignore="MissingTranslation">Source and destination folders are the same</string>
+    <string name="toast_cannot_copy_into_subfolder" tools:ignore="MissingTranslation">Cannot copy a folder into itself or its subfolder</string>
+    <string name="toast_cannot_move_into_subfolder" tools:ignore="MissingTranslation">Cannot move a folder into itself or its subfolder</string>
     <string name="permission_placeholder_waiting">Waiting for storage permissions…</string>
 
     <!-- Document Viewer & Text Editor -->
@@ -453,9 +458,4 @@
     <string name="job_action_resume">Resume</string>
     <string name="job_action_pause">Pause</string>
     <string name="job_status_paused">Paused</string>
-    <string name="toast_source_dest_same">Source and destination folders are the same</string>
-    <string name="toast_cannot_move_into_subfolder">Cannot move a folder into itself or its subfolder</string>
-    <string name="toast_cannot_copy_into_subfolder">Cannot copy a folder into itself or its subfolder</string>
-    <string name="toast_cannot_paste_here">Cannot paste here</string>
-    <string name="toast_cannot_paste_in_archive">Cannot paste inside an archive</string>
 </resources>

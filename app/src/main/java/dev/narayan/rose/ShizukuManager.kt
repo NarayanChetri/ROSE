@@ -231,15 +231,21 @@ object ShizukuManager {
     fun getFileSize(path: String): Long {
         if (!isAvailable() || !hasPermission()) return 0L
         val clean = normalize(path)
-        val escaped = shellEscape(clean)
         return try {
-            val process = runShizukuCommand("stat -c '%s' $escaped 2>/dev/null")
+            val process = newProcess(arrayOf("stat", "-c", "%s", clean), null, null)
             val output = process.inputStream.bufferedReader().readText().trim()
             process.waitFor()
-            output.toLongOrNull() ?: 0L
+            output.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.toLongOrNull() ?: 0L
         } catch (e: Throwable) {
-            Log.e(TAG, "Error getting file size for $path", e)
-            0L
+            try {
+                val escaped = shellEscape(clean)
+                val process = runShizukuCommand("stat -c '%s' $escaped 2>/dev/null")
+                val output = process.inputStream.bufferedReader().readText().trim()
+                process.waitFor()
+                output.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.toLongOrNull() ?: 0L
+            } catch (e2: Throwable) {
+                0L
+            }
         }
     }
 
@@ -249,12 +255,17 @@ object ShizukuManager {
     fun exists(path: String): Boolean {
         if (!isAvailable() || !hasPermission()) return false
         val clean = normalize(path)
-        val escaped = shellEscape(clean)
         return try {
-            val process = runShizukuCommand("[ -e $escaped ]")
+            val process = newProcess(arrayOf("test", "-e", clean), null, null)
             process.waitFor() == 0
         } catch (e: Throwable) {
-            false
+            try {
+                val escaped = shellEscape(clean)
+                val process = runShizukuCommand("[ -e $escaped ]")
+                process.waitFor() == 0
+            } catch (e2: Throwable) {
+                false
+            }
         }
     }
 

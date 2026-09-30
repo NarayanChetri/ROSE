@@ -410,9 +410,4 @@
     <string name="doc_failed_to_load">दस्तावेज़ लोड करने में विफल: %1$s</string>
     <string name="doc_empty_file">खाली फ़ाइल</string>
     <string name="doc_open_external">अन्य ऐप से खोलें</string>
-    <string name="toast_source_dest_same">स्रोत और गंतव्य फ़ोल्डर समान हैं</string>
-    <string name="toast_cannot_move_into_subfolder">फ़ोल्डर को स्वयं या उसके सबफ़ोल्डर में नहीं ले जाया जा सकता</string>
-    <string name="toast_cannot_copy_into_subfolder">फ़ोल्डर को स्वयं या उसके सबफ़ोल्डर में कॉपी नहीं किया जा सकता</string>
-    <string name="toast_cannot_paste_here">यहाँ पेस्ट नहीं किया जा सकता</string>
-    <string name="toast_cannot_paste_in_archive">अभिलेखागार (ज़िप) के अंदर पेस्ट नहीं किया जा सकता</string>
 </resources>
