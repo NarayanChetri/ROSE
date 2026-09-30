@@ -14,6 +14,7 @@ class RoseApplication : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        ShizukuManager.init(this)
         // Automatically clean all leaked/bloated cache asynchronously on startup.
         // This ensures that when existing users update, all accumulated gigabytes of
         // stale cache are immediately purged!

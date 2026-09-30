@@ -11,3 +11,5 @@
 
 # Prevent the code shrinker from breaking Shizuku
 -keep class rikka.shizuku.** { *; }
+-keep class dev.narayan.rose.shizuku.** { *; }
+-keep class dev.narayan.rose.RestrictedFileProvider { *; }
