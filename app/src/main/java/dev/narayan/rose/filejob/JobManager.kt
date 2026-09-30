@@ -10,6 +10,12 @@ import kotlinx.coroutines.flow.update
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 
+data class FileOperationError(
+    val path: String,
+    val fileName: String,
+    val reason: String
+)
+
 /**
  * Result of a finished job, emitted once so screens (e.g. the offline-files
  * toggle in RoseViewModel) can react to success/failure without polling.
@@ -18,7 +24,9 @@ data class JobResult(
     val jobId: String,
     val job: FileJob,
     val success: Boolean,
-    val error: String? = null
+    val error: String? = null,
+    val failedItems: List<FileOperationError> = emptyList(),
+    val createdPaths: List<String> = emptyList()
 )
 
 object JobManager {
@@ -138,7 +146,9 @@ object JobManager {
     /** Marks a job finished, tells anyone listening the outcome, and cleans it up. */
     fun completeJob(job: FileJob, success: Boolean, error: String? = null) {
         completedJobs.add(job.id)
-        _jobEvents.tryEmit(JobResult(job.id, job.copy(), success, error))
+        val failed = synchronized(job.failedItems) { job.failedItems.toList() }
+        val created = synchronized(job.createdPaths) { job.createdPaths.toList() }
+        _jobEvents.tryEmit(JobResult(job.id, job.copy(), success, error, failed, created))
         removeJob(job.id)
     }
 }

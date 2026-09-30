@@ -839,6 +839,13 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
 
+                            viewModel.operationFailureReport?.let { report ->
+                                dev.narayan.rose.filejob.FileOperationFailureDialog(
+                                    report = report,
+                                    onDismissRequest = { viewModel.clearOperationFailureReport() }
+                                )
+                            }
+
                             // Fast jobs (Delete/Recycle/Restore): no dialog, no mini bar - just
                             // a small centered spinner that fades in/out, since they are fast
                             // enough that the full progress UI would only ever flash.

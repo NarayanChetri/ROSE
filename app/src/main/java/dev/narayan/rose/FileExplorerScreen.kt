@@ -728,21 +728,24 @@ fun FileExplorerScreen(
         }
     }
 
-    LaunchedEffect(viewModel.highlightedFile, displayedFiles) {
-        val highlighted = viewModel.highlightedFile
-        if (highlighted != null && displayedFiles.isNotEmpty()) {
-            val index = displayedFiles.indexOfFirst { it.file.absolutePath == highlighted.file.absolutePath }
+    LaunchedEffect(viewModel.highlightedFile, viewModel.highlightedPaths, effectiveDisplayedFiles) {
+        val hasHighlight = viewModel.highlightedFile != null || viewModel.highlightedPaths.isNotEmpty()
+        if (hasHighlight && effectiveDisplayedFiles.isNotEmpty()) {
+            val index = effectiveDisplayedFiles.indexOfFirst {
+                viewModel.isPathHighlighted(it.file.absolutePath)
+            }
             if (index != -1) {
                 // Slight delay to ensure list is settled for smoother animation
                 kotlinx.coroutines.delay(100)
+                val scrollIndex = if (!currentIsGridView) index + 1 else index
                 if (currentIsGridView) {
-                    gridState.animateScrollToItem(index)
+                    gridState.animateScrollToItem(scrollIndex)
                 } else {
-                    listState.animateScrollToItem(index)
+                    listState.animateScrollToItem(scrollIndex)
                 }
-                // Clear highlight after 2 seconds
-                kotlinx.coroutines.delay(2000)
-                viewModel.highlightedFile = null
+                // Clear highlight after 1.5 seconds pulse effect
+                kotlinx.coroutines.delay(1500)
+                viewModel.clearHighlight()
             }
         }
     }
@@ -1402,9 +1405,11 @@ fun FileExplorerScreen(
                                                     ) {
                                                         items(pageFiles, key = { it.file.absolutePath }, contentType = { "grid_item" }) { fileItem ->
                                                             val index = pageFiles.indexOf(fileItem)
+                                                            val isHighlighted = viewModel.isPathHighlighted(fileItem.file.absolutePath)
                                                             FileGridItem(
                                                                 fileItem = fileItem,
                                                                 isSelected = viewModel.selectedFiles.contains(fileItem),
+                                                                isHighlighted = isHighlighted,
                                                                 showDetails = viewModel.showDetails,
                                                                 showExtension = viewModel.showFileExtensions,
                                                                 iconSize = viewModel.gridItemSize.iconSize,
@@ -1443,7 +1448,7 @@ fun FileExplorerScreen(
                                                     ) {
                                                         itemsIndexed(pageFiles, key = { _, item -> item.file.absolutePath }, contentType = { _, _ -> "list_item" }) { index, fileItem ->
                                                             val isSelected = viewModel.selectedFiles.contains(fileItem)
-                                                            val isHighlighted = viewModel.highlightedFile?.file?.absolutePath == fileItem.file.absolutePath
+                                                            val isHighlighted = viewModel.isPathHighlighted(fileItem.file.absolutePath)
                                                             FileListItem(
                                                                 fileItem = fileItem,
                                                                 isSelected = isSelected,
@@ -1531,9 +1536,11 @@ fun FileExplorerScreen(
                                                             is ListItemType.File -> {
                                                                 val fileItem = item.fileItem
                                                                 val indexInFullList = displayedFilesFinal.indexOf(fileItem)
+                                                                val isHighlighted = viewModel.isPathHighlighted(fileItem.file.absolutePath)
                                                                 FileGridItem(
                                                                     fileItem = fileItem,
                                                                     isSelected = viewModel.selectedFiles.contains(fileItem),
+                                                                    isHighlighted = isHighlighted,
                                                                     showDetails = viewModel.showDetails,
                                                                     showExtension = viewModel.showFileExtensions,
                                                                     iconSize = viewModel.gridItemSize.iconSize,
@@ -1597,9 +1604,11 @@ fun FileExplorerScreen(
                                                 } else {
                                                     items(displayedFilesFinal, key = { it.file.absolutePath }, contentType = { "grid_item" }) { fileItem ->
                                                         val index = displayedFilesFinal.indexOf(fileItem)
+                                                        val isHighlighted = viewModel.isPathHighlighted(fileItem.file.absolutePath)
                                                         FileGridItem(
                                                             fileItem = fileItem,
                                                             isSelected = viewModel.selectedFiles.contains(fileItem),
+                                                            isHighlighted = isHighlighted,
                                                             showDetails = viewModel.showDetails,
                                                             showExtension = viewModel.showFileExtensions,
                                                             iconSize = viewModel.gridItemSize.iconSize,
@@ -1681,7 +1690,7 @@ fun FileExplorerScreen(
                                                             is ListItemType.File -> {
                                                                 val fileItem = item.fileItem
                                                                 val isSelected = viewModel.selectedFiles.contains(fileItem)
-                                                                val isHighlighted = viewModel.highlightedFile?.file?.absolutePath == fileItem.file.absolutePath
+                                                                val isHighlighted = viewModel.isPathHighlighted(fileItem.file.absolutePath)
                                                                 val indexInFullList = displayedFilesFinal.indexOf(fileItem)
                                                                 val isRoot = viewModel.currentPath == Environment.getExternalStorageDirectory().absolutePath
                                                                 FileListItem(
@@ -1810,7 +1819,7 @@ fun FileExplorerScreen(
                                                     item(key = "top_spacer") { Spacer(modifier = Modifier.height(8.dp)) }
                                                     itemsIndexed(displayedFilesFinal, key = { _, item -> item.file.absolutePath }, contentType = { _, _ -> "list_item" }) { index, fileItem ->
                                                         val isSelected = viewModel.selectedFiles.contains(fileItem)
-                                                        val isHighlighted = viewModel.highlightedFile?.file?.absolutePath == fileItem.file.absolutePath
+                                                        val isHighlighted = viewModel.isPathHighlighted(fileItem.file.absolutePath)
                                                         val isRoot = viewModel.currentPath == Environment.getExternalStorageDirectory().absolutePath
                                                         FileListItem(
                                                             fileItem = fileItem,
@@ -2826,7 +2835,8 @@ fun FileGridItem(
     index: Int = 0,
     scrollResetKey: Any = Unit,
     hasAnimatedBefore: Boolean = true,
-    onAnimationStart: () -> Unit = {}
+    onAnimationStart: () -> Unit = {},
+    isHighlighted: Boolean = false
 ) {
     // Material Files-style staggered entrance animation - plays once per item
     // per folder session, not on every re-entry into the viewport.
@@ -2848,9 +2858,44 @@ fun FileGridItem(
     }
 
     val selectionColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+
+    val pulseAlpha by if (isHighlighted) {
+        val infiniteTransition = rememberInfiniteTransition(label = "GridPulseAlphaTransition")
+        infiniteTransition.animateFloat(
+            initialValue = 0.15f,
+            targetValue = 0.45f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "GridPulseAlpha"
+        )
+    } else {
+        remember { mutableFloatStateOf(0f) }
+    }
+
+    val pulseScale by if (isHighlighted) {
+        val infiniteTransition = rememberInfiniteTransition(label = "GridPulseScaleTransition")
+        infiniteTransition.animateFloat(
+            initialValue = 1.0f,
+            targetValue = 1.03f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "GridPulseScale"
+        )
+    } else {
+        remember { mutableFloatStateOf(1.0f) }
+    }
+
     val backgroundColor by androidx.compose.animation.animateColorAsState(
-        targetValue = if (isSelected) selectionColor else Color.Transparent,
-        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        targetValue = when {
+            isSelected -> selectionColor
+            isHighlighted -> MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha)
+            else -> Color.Transparent
+        },
+        animationSpec = if (isHighlighted) snap() else tween(300, easing = FastOutSlowInEasing),
         label = "GridItemSelection"
     )
 
@@ -2859,6 +2904,8 @@ fun FileGridItem(
             .graphicsLayer {
                 alpha = animatedProgress.value
                 translationY = with(density) { (1f - animatedProgress.value) * 40.dp.toPx() } // Slide up from 40dp
+                scaleX = pulseScale
+                scaleY = pulseScale
             }
             .padding(8.dp)
             .clip(MaterialTheme.shapes.medium)
@@ -2961,13 +3008,42 @@ fun FileListItem(
 
     val context = LocalContext.current
 
-    val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
     val selectionColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+
+    val pulseAlpha by if (isHighlighted) {
+        val infiniteTransition = rememberInfiniteTransition(label = "ItemPulseAlphaTransition")
+        infiniteTransition.animateFloat(
+            initialValue = 0.15f,
+            targetValue = 0.45f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "ItemPulseAlpha"
+        )
+    } else {
+        remember { mutableFloatStateOf(0f) }
+    }
+
+    val pulseScale by if (isHighlighted) {
+        val infiniteTransition = rememberInfiniteTransition(label = "ItemPulseScaleTransition")
+        infiniteTransition.animateFloat(
+            initialValue = 1.0f,
+            targetValue = 1.03f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "ItemPulseScale"
+        )
+    } else {
+        remember { mutableFloatStateOf(1.0f) }
+    }
 
     val backgroundColor by androidx.compose.animation.animateColorAsState(
         targetValue = when {
             isSelected -> selectionColor
-            isHighlighted -> highlightColor
+            isHighlighted -> MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha)
             else -> Color.Transparent
         },
         animationSpec = if (isHighlighted) snap() else tween(300, easing = FastOutSlowInEasing),
@@ -2979,6 +3055,8 @@ fun FileListItem(
             .graphicsLayer {
                 alpha = animatedProgress.value
                 translationY = with(density) { (1f - animatedProgress.value) * 40.dp.toPx() }
+                scaleX = pulseScale
+                scaleY = pulseScale
             }
     ) {
         ListItem(
