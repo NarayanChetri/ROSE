@@ -1,8 +1,14 @@
 package dev.narayan.rose
 
+import android.content.ComponentName
 import android.content.Context
+import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.os.IBinder
+import android.os.ParcelFileDescriptor
 import android.util.Log
+import dev.narayan.rose.shizuku.IShizukuService
+import dev.narayan.rose.shizuku.ShizukuService
 import rikka.shizuku.Shizuku
 import java.io.BufferedReader
 import java.io.File
@@ -16,10 +22,132 @@ object ShizukuManager {
 
     private const val TAG = "ShizukuManager"
 
+    private var userService: IShizukuService? = null
+    private val userServiceLock = Any()
+    private var isBindingUserService = false
+    private var listenerRegistered = false
+
+    private val userServiceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            Log.d(TAG, "ShizukuService connected")
+            synchronized(userServiceLock) {
+                userService = IShizukuService.Stub.asInterface(service)
+                isBindingUserService = false
+                (userServiceLock as java.lang.Object).notifyAll()
+            }
+            try {
+                service?.linkToDeath({
+                    synchronized(userServiceLock) {
+                        userService = null
+                        isBindingUserService = false
+                    }
+                }, 0)
+            } catch (_: Throwable) {}
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            Log.d(TAG, "ShizukuService disconnected")
+            synchronized(userServiceLock) {
+                userService = null
+                isBindingUserService = false
+                (userServiceLock as java.lang.Object).notifyAll()
+            }
+        }
+    }
+
+    fun init(context: Context) {
+        requestBinder(context)
+        if (!listenerRegistered) {
+            try {
+                Shizuku.addBinderReceivedListenerSticky {
+                    if (hasPermission()) {
+                        bindUserService(context)
+                    }
+                }
+                Shizuku.addRequestPermissionResultListener { _, grantResult ->
+                    if (grantResult == PackageManager.PERMISSION_GRANTED) {
+                        bindUserService(context)
+                    }
+                }
+                listenerRegistered = true
+            } catch (e: Throwable) {
+                Log.w(TAG, "Failed to register Shizuku listeners", e)
+            }
+        }
+    }
+
+    fun bindUserService(context: Context): Boolean {
+        if (!isAvailable() || !hasPermission()) return false
+        synchronized(userServiceLock) {
+            if (userService != null && userService?.asBinder()?.isBinderAlive == true) {
+                return true
+            }
+            if (isBindingUserService) return true
+            isBindingUserService = true
+        }
+
+        return try {
+            val args = Shizuku.UserServiceArgs(
+                ComponentName(context.packageName, ShizukuService::class.java.name)
+            )
+                .daemon(false)
+                .processNameSuffix("shizuku_service")
+                .debuggable(BuildConfig.DEBUG)
+                .version(BuildConfig.VERSION_CODE)
+
+            Shizuku.bindUserService(args, userServiceConnection)
+            true
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to bind Shizuku UserService", e)
+            synchronized(userServiceLock) {
+                isBindingUserService = false
+                (userServiceLock as java.lang.Object).notifyAll()
+            }
+            false
+        }
+    }
+
+    fun openFileDescriptor(context: Context, path: String, mode: Int = ParcelFileDescriptor.MODE_READ_ONLY): ParcelFileDescriptor? {
+        if (!isAvailable() || !hasPermission()) return null
+
+        var service: IShizukuService? = null
+        synchronized(userServiceLock) {
+            if (userService != null && userService?.asBinder()?.isBinderAlive == true) {
+                service = userService
+            }
+        }
+
+        if (service == null) {
+            bindUserService(context)
+            synchronized(userServiceLock) {
+                val start = System.currentTimeMillis()
+                while (userService == null && isBindingUserService && (System.currentTimeMillis() - start) < 1500L) {
+                    try {
+                        (userServiceLock as java.lang.Object).wait(200)
+                    } catch (_: InterruptedException) {
+                        break
+                    }
+                }
+                service = userService
+            }
+        }
+
+        val clean = normalize(path)
+        return try {
+            service?.openFile(clean, mode)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error opening file descriptor via ShizukuService: $clean", e)
+            null
+        }
+    }
+
     fun requestBinder(context: Context) {
         try {
             if (!Shizuku.pingBinder()) {
                 rikka.shizuku.ShizukuProvider.requestBinderForNonProviderProcess(context)
+            }
+            if (isAvailable() && hasPermission()) {
+                bindUserService(context)
             }
         } catch (e: Throwable) {
             e.printStackTrace()
@@ -231,6 +359,12 @@ object ShizukuManager {
     fun getFileSize(path: String): Long {
         if (!isAvailable() || !hasPermission()) return 0L
         val clean = normalize(path)
+        try {
+            userService?.let {
+                val size = it.getFileSize(clean)
+                if (size > 0L) return size
+            }
+        } catch (_: Throwable) {}
         return try {
             val process = newProcess(arrayOf("stat", "-c", "%s", clean), null, null)
             val output = process.inputStream.bufferedReader().readText().trim()
@@ -255,6 +389,11 @@ object ShizukuManager {
     fun exists(path: String): Boolean {
         if (!isAvailable() || !hasPermission()) return false
         val clean = normalize(path)
+        try {
+            userService?.let {
+                return it.exists(clean)
+            }
+        } catch (_: Throwable) {}
         return try {
             val process = newProcess(arrayOf("test", "-e", clean), null, null)
             process.waitFor() == 0
