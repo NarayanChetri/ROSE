@@ -460,6 +460,12 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     var propertiesFile by mutableStateOf<FileItem?>(null)
     var highlightedFile by mutableStateOf<FileItem?>(null)
 
+    var operationFailureReport by mutableStateOf<dev.narayan.rose.filejob.OperationFailureReport?>(null)
+
+    fun clearOperationFailureReport() {
+        operationFailureReport = null
+    }
+
     var storageInfo by mutableStateOf<StorageInfo?>(null)
         private set
 
@@ -1043,7 +1049,20 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 // If a job just finished, refresh the file list to ensure disk state is synced.
                 // For deletions, we also explicitly remove from the current list immediately
                 // to prevent them from "reappearing" if the background scan is slow.
-                if (!result.success) {
+                if (result.failedItems.isNotEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        val opType = when (job.type) {
+                            is dev.narayan.rose.filejob.FileJobType.Copy -> "Copy"
+                            is dev.narayan.rose.filejob.FileJobType.Move -> "Move"
+                            is dev.narayan.rose.filejob.FileJobType.Delete -> "Delete"
+                            else -> "Operation"
+                        }
+                        operationFailureReport = dev.narayan.rose.filejob.OperationFailureReport(
+                            operationType = opType,
+                            failedItems = result.failedItems
+                        )
+                    }
+                } else if (!result.success) {
                     withContext(Dispatchers.Main) {
                         val err = result.error ?: ""
                         if (err.contains("Incorrect password", ignoreCase = true) ||
@@ -1153,7 +1172,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     invalidateDirectoryCache(targetPath)
                 }
 
-                val isCurrentFolderAffected = (targetPath != null && targetPath == currentPath) ||
+                val isCurrentFolderAffected = (targetPath != null && ShizukuManager.normalize(targetPath) == ShizukuManager.normalize(currentPath)) ||
                         affectedPaths.any { path ->
                             val normParent = ShizukuManager.normalize(File(path).parent ?: "")
                             val normCurrent = ShizukuManager.normalize(currentPath)
@@ -1163,6 +1182,15 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 if (isCurrentFolderAffected && currentPath.isNotEmpty()) {
                     invalidateDirectoryCache(currentPath)
                     loadFiles(currentPath, isManualRefresh = true, showLoading = false)
+                }
+
+                if (targetPath != null && ShizukuManager.normalize(targetPath) == ShizukuManager.normalize(currentPath)) {
+                    val firstCreated = result.createdPaths.firstOrNull()
+                    if (firstCreated != null) {
+                        withContext(Dispatchers.Main) {
+                            highlightedFile = FileItem(File(firstCreated))
+                        }
+                    }
                 }
 
                 // Handle offline download success/failure

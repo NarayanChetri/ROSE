@@ -32,6 +32,8 @@ data class FileJob(
     var processedItems: Int = 0,
     var currentFileName: String = "",
     val completedPaths: MutableSet<String> = mutableSetOf(),
+    val createdPaths: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf()),
+    val failedItems: MutableList<FileOperationError> = java.util.Collections.synchronizedList(mutableListOf()),
     var progress: Float = 0f, // 0.0 to 1.0
     var totalBytes: Long = 0L,
     var processedBytes: Long = 0L,
@@ -95,11 +97,14 @@ object FileOperationRunner {
                             JobManager.updateJob(job)
 
                             val target = getNonConflictingTarget(appContext, type.targetDir, source.displayName, sourcePath = source.path, isCopy = true)
+                            synchronized(job.createdPaths) {
+                                job.createdPaths.add(target.toString())
+                            }
                             val success = copyRecursive(appContext, source.path, target, job) {
                                 onProgress(it)
                                 JobManager.updateJob(it)
                             }
-                            if (!success) {
+                            if (!success && job.failedItems.isEmpty()) {
                                 if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
                                 throw Exception("Failed to copy ${source.displayName}. Check if storage is full or access is denied.")
                             }
@@ -140,11 +145,15 @@ object FileOperationRunner {
                                 return@forEach
                             }
 
+                            synchronized(job.createdPaths) {
+                                job.createdPaths.add(target.toString())
+                            }
+
                             val success = moveRecursive(appContext, source.path, target, job) {
                                 onProgress(it)
                                 JobManager.updateJob(it)
                             }
-                            if (!success) {
+                            if (!success && job.failedItems.isEmpty()) {
                                 if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
                                 throw Exception("Failed to move ${source.displayName}. Make sure Shizuku is authorized and target is writable.")
                             }
@@ -188,18 +197,29 @@ object FileOperationRunner {
                             }
 
                             if (failedTargets.isNotEmpty()) {
-                                // Surface the failure instead of silently reporting success -
-                                // caught below and turned into a proper Error state.
-                                throw Exception(
-                                    "Failed to delete ${failedTargets.size} item(s): " +
-                                            failedTargets.joinToString(", ") { java.io.File(it).name }
-                                )
+                                failedTargets.forEach { failedPath ->
+                                    val name = java.io.File(failedPath).name
+                                    synchronized(job.failedItems) {
+                                        job.failedItems.add(
+                                            FileOperationError(
+                                                path = failedPath,
+                                                fileName = name,
+                                                reason = detectFailureReason(appContext, name, null, null)
+                                            )
+                                        )
+                                    }
+                                }
                             }
 
                             job.progress = 1f
                             onProgress(job)
-                            JobManager.completeJob(job, success = true)
-                            onFinished(true)
+                            val hasFailures = job.failedItems.isNotEmpty()
+                            JobManager.completeJob(
+                                job,
+                                success = !hasFailures,
+                                error = if (hasFailures) "Failed to delete ${failedTargets.size} item(s)" else null
+                            )
+                            onFinished(!hasFailures)
                             return@Thread
                         }
 
@@ -359,8 +379,13 @@ object FileOperationRunner {
                         android.media.MediaScannerConnection.scanFile(appContext, touchedPaths.toTypedArray(), null, null)
                     } catch (e: Exception) { /* best-effort */ }
                 }
-                JobManager.completeJob(job, success = true)
-                onFinished(true)
+                val hasFailures = job.failedItems.isNotEmpty()
+                JobManager.completeJob(
+                    job,
+                    success = !hasFailures,
+                    error = if (hasFailures) "Some items could not be processed" else null
+                )
+                onFinished(!hasFailures)
             } catch (e: Exception) {
                 e.printStackTrace()
                 JobManager.completeJob(job, success = false, error = e.message ?: e.javaClass.simpleName)
@@ -370,6 +395,50 @@ object FileOperationRunner {
     }
 
     // -- Helpers ----------------------------------------------------------
+
+    private fun hasInvalidFatChars(name: String): Boolean {
+        // FAT/FUSE /storage/emulated/0 rejects colons (:) and * ? " < > | \
+        return name.any { it == ':' || it == '*' || it == '?' || it == '"' || it == '<' || it == '>' || it == '|' || it == '\\' }
+    }
+
+    private fun detectFailureReason(context: Context, fileName: String, errorMsg: String?, exception: Throwable?): String {
+        if (hasInvalidFatChars(fileName)) {
+            return context.getString(dev.narayan.rose.R.string.dialog_reason_invalid_characters)
+        }
+        val msg = (errorMsg ?: "") + " " + (exception?.message ?: "")
+        return when {
+            msg.contains("invalid", ignoreCase = true) || msg.contains("EINVAL", ignoreCase = true) ->
+                context.getString(dev.narayan.rose.R.string.dialog_reason_invalid_characters)
+            msg.contains("space", ignoreCase = true) || msg.contains("full", ignoreCase = true) || msg.contains("ENOSPC", ignoreCase = true) ->
+                context.getString(dev.narayan.rose.R.string.dialog_reason_storage_full)
+            msg.contains("permission", ignoreCase = true) || msg.contains("denied", ignoreCase = true) || msg.contains("EACCES", ignoreCase = true) ->
+                context.getString(dev.narayan.rose.R.string.dialog_reason_access_denied)
+            else -> context.getString(dev.narayan.rose.R.string.dialog_reason_io_error)
+        }
+    }
+
+    private fun recordFailure(
+        context: Context,
+        job: FileJob?,
+        sourcePath: String,
+        fileName: String,
+        reason: String,
+        fileSize: Long,
+        onProgress: ((FileJob) -> Unit)?
+    ) {
+        job?.let { j ->
+            synchronized(j.failedItems) {
+                j.failedItems.add(FileOperationError(path = sourcePath, fileName = fileName, reason = reason))
+            }
+            j.processedItems++
+            if (fileSize > 0L) j.processedBytes += fileSize
+            if (j.totalBytes > 0L) {
+                j.progress = (j.processedBytes.toFloat() / j.totalBytes).coerceIn(0f, 1f)
+            }
+            JobManager.updateJob(j)
+            onProgress?.invoke(j)
+        }
+    }
 
     private fun calculateDirectFilesTotalSize(context: Context, sources: List<SourcePath>): Long? {
         var sum = 0L
@@ -915,6 +984,17 @@ object FileOperationRunner {
             JobManager.updateJob(job)
         }
 
+        val targetFileName = target.fileName?.toString() ?: ""
+
+        // Check for characters that cannot be written to shared storage (/storage/emulated/0)
+        if (!sourceIsDir && hasInvalidFatChars(targetFileName)) {
+            val reason = detectFailureReason(context, targetFileName, "Invalid characters in filename", null)
+            recordFailure(context, job, sourcePath, targetFileName, reason, fileSize, onProgress)
+            return false
+        }
+
+        var lastException: Exception? = null
+
         // -- Fast path #1: Shizuku native cp (~300 MB/s, matches CX File Explorer) --------
         // Applied for individual FILES only, and ONLY when at least one end is a restricted
         // path (Android/data, Android/obb). For unrestricted paths (e.g. Camera -> Downloads)
@@ -1056,10 +1136,13 @@ object FileOperationRunner {
                     }
                     return true
                 } else {
-                    android.util.Log.e("FileJob", "cp failed with exit code $cpExitCode: ${errorMsgHolder.toString().trim()}")
+                    val err = errorMsgHolder.toString().trim()
+                    android.util.Log.e("FileJob", "cp failed with exit code $cpExitCode: $err")
+                    lastException = Exception("cp failed ($cpExitCode): $err")
                     cleanTarget()
                 }
             } catch (e: Exception) {
+                lastException = e
                 if (job != null && JobManager.isCancelled(job.id)) {
                     cleanTarget()
                     return false
@@ -1102,37 +1185,44 @@ object FileOperationRunner {
         }
 
         if (sourceIsDir) {
-            if (targetRestricted) {
-                if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(targetPath)) {
-                    val clean = dev.narayan.rose.ShizukuManager.normalize(targetPath)
-                    dev.narayan.rose.ShizukuManager.runCommandSync("mkdir -p ${dev.narayan.rose.ShizukuManager.shellEscape(clean)}")
-                } else {
-                    SafManager.createDirectory(context, targetPath)
-                }
-            } else if (!Files.exists(target)) {
-                Files.createDirectories(target)
+            val dirCreated = try {
+                if (targetRestricted) {
+                    if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(targetPath)) {
+                        val clean = dev.narayan.rose.ShizukuManager.normalize(targetPath)
+                        dev.narayan.rose.ShizukuManager.runCommandSync("mkdir -p ${dev.narayan.rose.ShizukuManager.shellEscape(clean)}") == 0
+                    } else {
+                        SafManager.createDirectory(context, targetPath)
+                    }
+                } else if (!Files.exists(target)) {
+                    Files.createDirectories(target)
+                    true
+                } else true
+            } catch (e: Exception) {
+                val reason = detectFailureReason(context, targetFileName, e.message, e)
+                recordFailure(context, job, sourcePath, targetFileName, reason, 0L, onProgress)
+                false
+            }
+
+            if (!dirCreated) {
+                return false
             }
 
             val children = listChildren(context, sourcePath)
-            var allChildrenSuccess = true
             children.forEach { child ->
                 if (job != null && JobManager.isCancelled(job.id)) return false
                 job?.currentFileName = child.name
                 val childTarget = target.resolve(child.name)
-                if (!copyRecursive(
-                        context = context,
-                        sourcePath = child.path,
-                        target = childTarget,
-                        job = job,
-                        knownIsDir = child.isDirectory,
-                        knownSize = child.size,
-                        onProgress = onProgress
-                    )
-                ) {
-                    allChildrenSuccess = false
-                }
+                copyRecursive(
+                    context = context,
+                    sourcePath = child.path,
+                    target = childTarget,
+                    job = job,
+                    knownIsDir = child.isDirectory,
+                    knownSize = child.size,
+                    onProgress = onProgress
+                )
             }
-            return allChildrenSuccess
+            return true
         } else {
             fun cleanTarget() {
                 if (targetRestricted) {
@@ -1189,6 +1279,7 @@ object FileOperationRunner {
                     return true
                 }
             } catch (e: Exception) {
+                lastException = e
                 cleanTarget()
                 if (JobManager.isCancelled(job?.id ?: "")) {
                     throw java.io.InterruptedIOException("Cancelled")
@@ -1202,21 +1293,32 @@ object FileOperationRunner {
             // -- SAF InputStream fallback (Shizuku unavailable or cross-provider SAF URIs) --
             // The old double-cat relay (cat src | Java | cat > dest) spawned two Shizuku
             // processes making all data cross the JVM 3 times. Direct SAF streams are simpler.
-            val input = if (sourceRestricted || SafManager.isSafUri(sourcePath)) {
-                SafManager.openInputStream(context, sourcePath)
-            } else {
-                Files.newInputStream(Paths.get(sourcePath))
+            val input = try {
+                if (sourceRestricted || SafManager.isSafUri(sourcePath)) {
+                    SafManager.openInputStream(context, sourcePath)
+                } else {
+                    Files.newInputStream(Paths.get(sourcePath))
+                }
+            } catch (e: Exception) {
+                lastException = e
+                null
             }
 
-            val output = if (targetRestricted) {
-                SafManager.openOutputStreamForNewFile(context, targetPath)
-            } else {
-                target.parent?.let { if (!Files.exists(it)) Files.createDirectories(it) }
-                Files.newOutputStream(target)
+            val output = try {
+                if (targetRestricted) {
+                    SafManager.openOutputStreamForNewFile(context, targetPath)
+                } else {
+                    target.parent?.let { if (!Files.exists(it)) Files.createDirectories(it) }
+                    Files.newOutputStream(target)
+                }
+            } catch (e: Exception) {
+                lastException = e
+                null
             }
 
+            var streamCopied = false
             if (input != null && output != null) {
-                return try {
+                streamCopied = try {
                     copyFileWithProgress(
                         input,
                         output,
@@ -1228,11 +1330,20 @@ object FileOperationRunner {
                     job?.let { it.processedItems++ }
                     true
                 } catch (e: Exception) {
+                    lastException = e
                     cleanTarget()
                     false
                 }
+            } else {
+                cleanTarget()
             }
-            return false
+
+            if (!streamCopied) {
+                val reason = detectFailureReason(context, targetFileName, lastException?.message, lastException)
+                recordFailure(context, job, sourcePath, targetFileName, reason, fileSize, onProgress)
+                return false
+            }
+            return true
         }
     }
 
@@ -1288,7 +1399,11 @@ object FileOperationRunner {
             } catch (e: Exception) {
                 // If atomic move fails (e.g. cross filesystem boundary), fall through to copy + delete
                 if (copyRecursive(context, sourcePath, target, job, onProgress = onProgress)) {
-                    deleteRecursive(context, Paths.get(sourcePath), null, null)
+                    if (job?.failedItems?.isEmpty() != false) {
+                        deleteRecursive(context, Paths.get(sourcePath), null, null)
+                    } else {
+                        deleteSucceededSourceItems(context, sourcePath, job)
+                    }
                     true
                 } else false
             }
@@ -1369,7 +1484,11 @@ object FileOperationRunner {
         // Shizuku native copy first with real-time 300 MB/s speed, smooth progress animation,
         // and full cancellation protection, then delete source without double-counting bytes.
         if (copyRecursive(context, sourcePath, target, job, onProgress = onProgress)) {
-            deleteRecursive(context, Paths.get(sourcePath), null, null)
+            if (job?.failedItems?.isEmpty() != false) {
+                deleteRecursive(context, Paths.get(sourcePath), null, null)
+            } else {
+                deleteSucceededSourceItems(context, sourcePath, job)
+            }
             return true
         }
         return false
@@ -1452,6 +1571,42 @@ object FileOperationRunner {
                 JobManager.updateJob(job)
             }
         }
+    }
+
+    private fun deleteSucceededSourceItems(context: Context, sourcePath: String, job: FileJob?) {
+        if (job == null) return
+        val failedPaths = synchronized(job.failedItems) {
+            job.failedItems.map { it.path }.toSet()
+        }
+        if (failedPaths.isEmpty()) {
+            deleteRecursive(context, Paths.get(sourcePath), null, null)
+            return
+        }
+
+        fun isOrContainsFailed(path: String): Boolean {
+            val normPath = dev.narayan.rose.ShizukuManager.normalize(path)
+            return failedPaths.any { failed ->
+                val normFailed = dev.narayan.rose.ShizukuManager.normalize(failed)
+                normFailed == normPath || normFailed.startsWith(if (normPath.endsWith("/")) normPath else "$normPath/")
+            }
+        }
+
+        fun cleanSource(currentSource: String) {
+            if (!isOrContainsFailed(currentSource)) {
+                deleteRecursive(context, Paths.get(currentSource), null, null)
+            } else if (isDirectory(context, currentSource)) {
+                val children = listChildren(context, currentSource)
+                children.forEach { child ->
+                    cleanSource(child.path)
+                }
+                val remaining = listChildren(context, currentSource)
+                if (remaining.isEmpty()) {
+                    deleteRecursive(context, Paths.get(currentSource), null, null)
+                }
+            }
+        }
+
+        cleanSource(sourcePath)
     }
 
     private fun extractRecursive(sourceZip: Path, targetDir: Path, job: FileJob, onProgress: (FileJob) -> Unit): Boolean {
