@@ -120,6 +120,9 @@ class MainActivity : ComponentActivity() {
         if (requestCode == SHIZUKU_PERMISSION_REQUEST_CODE) {
             val path = viewModel.pendingShizukuPath ?: viewModel.currentPath
             val granted = grantResult == PackageManager.PERMISSION_GRANTED
+            if (granted) {
+                ShizukuManager.bindUserService(this@MainActivity)
+            }
             viewModel.onShizukuResult(granted, path)
             if (!granted && !viewModel.isShizukuRestrictedPath(path)) {
                 // If Shizuku denied, fallback to SAF only for non-Android/data paths
@@ -129,6 +132,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private val shizukuBinderListener = Shizuku.OnBinderReceivedListener {
+        if (ShizukuManager.hasPermission()) {
+            ShizukuManager.bindUserService(this@MainActivity)
+        }
         val currentPath = viewModel.currentPath
         if (SafManager.isRestrictedPath(currentPath)) {
             viewModel.loadFiles(currentPath, showLoading = false)
@@ -145,6 +151,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        ShizukuManager.init(this)
         Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
         Shizuku.addBinderReceivedListener(shizukuBinderListener)
         checkPermissions()
@@ -1103,30 +1110,21 @@ class MainActivity : ComponentActivity() {
                     val path = item.file.absolutePath
                     if (SafManager.isRestrictedPath(path)) {
                         // Files here don't exist from java.io.File's point of view
-                        val safUri = if (SafManager.hasPermission(this@MainActivity, path)) SafManager.getContentUri(this@MainActivity, path) else null
-                        if (safUri != null) {
-                            uris.add(safUri)
-                        } else if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
-                            val targetDir = externalCacheDir ?: cacheDir
-                            val cacheFile = File(targetDir, "shared_restricted_${System.currentTimeMillis()}_${item.name}")
-                            var copySuccess = false
-                            try {
-                                copySuccess = ShizukuManager.copyToFile(path, cacheFile)
-                                if (copySuccess && cacheFile.exists() && cacheFile.length() > 0) {
-                                    newlyCreatedTempFiles.add(cacheFile)
-                                    uris.add(FileProvider.getUriForFile(
-                                        this@MainActivity,
-                                        "${applicationContext.packageName}.provider",
-                                        cacheFile
-                                    ))
-                                } else {
-                                    runCatching { cacheFile.delete() }
-                                }
-                            } catch (e: Exception) {
-                                runCatching { cacheFile.delete() }
-                            }
+                        if (item.file.exists() && item.file.canRead()) {
+                            uris.add(FileProvider.getUriForFile(
+                                this@MainActivity,
+                                "${applicationContext.packageName}.provider",
+                                item.file
+                            ))
                         } else {
-                            folderFound = true
+                            val safUri = if (SafManager.hasPermission(this@MainActivity, path)) SafManager.getContentUri(this@MainActivity, path) else null
+                            if (safUri != null) {
+                                uris.add(safUri)
+                            } else if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
+                                uris.add(RestrictedFileProvider.getUriForFile(this@MainActivity, item.file))
+                            } else {
+                                folderFound = true
+                            }
                         }
                     } else if (item.file.isFile) {
                         uris.add(FileProvider.getUriForFile(
@@ -1169,7 +1167,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private var lastFileOpenTimestamp = 0L
+
     private fun openFileWith(fileItem: FileItem) {
+        val now = System.currentTimeMillis()
+        if (now - lastFileOpenTimestamp < 500L) return
+        lastFileOpenTimestamp = now
+
         val intent = createViewIntent(fileItem) ?: return
         try {
             val chooser = Intent.createChooser(intent, getString(R.string.action_open_with))
@@ -1242,37 +1246,22 @@ class MainActivity : ComponentActivity() {
                     return null
                 }
             } else if (restricted) {
-                val safUri = if (SafManager.hasPermission(this, path)) SafManager.getContentUri(this, path) else null
-                if (safUri != null) {
-                    safUri
-                } else if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
-                    val targetDir = externalCacheDir ?: cacheDir
-                    // Clean up previous open_restricted_ files to prevent cache bloat
-                    targetDir.listFiles()?.filter { it.name.startsWith("open_restricted_") }?.forEach {
-                        runCatching { it.deleteRecursively() }
-                    }
-                    val cacheFile = File(targetDir, "open_restricted_${fileItem.name}")
-                    tempOpenedFiles.add(cacheFile)
-                    if (cacheFile.exists()) {
-                        cacheFile.delete()
-                    }
-                    if (ShizukuManager.copyToFile(path, cacheFile)) {
-                        FileProvider.getUriForFile(
-                            this,
-                            "${applicationContext.packageName}.provider",
-                            cacheFile
-                        )
+                if (file.exists() && file.canRead()) {
+                    FileProvider.getUriForFile(
+                        this,
+                        "${applicationContext.packageName}.provider",
+                        file
+                    )
+                } else {
+                    val safUri = if (SafManager.hasPermission(this, path)) SafManager.getContentUri(this, path) else null
+                    if (safUri != null) {
+                        safUri
+                    } else if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
+                        RestrictedFileProvider.getUriForFile(this, file)
                     } else {
-                        runCatching {
-                            cacheFile.delete()
-                            tempOpenedFiles.remove(cacheFile)
-                        }
                         Toast.makeText(this, getString(R.string.toast_couldnt_access_file), Toast.LENGTH_SHORT).show()
                         return null
                     }
-                } else {
-                    Toast.makeText(this, getString(R.string.toast_couldnt_access_file), Toast.LENGTH_SHORT).show()
-                    return null
                 }
             } else {
                 FileProvider.getUriForFile(
@@ -1343,6 +1332,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openFile(fileItem: FileItem, passphrase: String? = null) {
+        val now = System.currentTimeMillis()
+        if (now - lastFileOpenTimestamp < 500L) return
+        lastFileOpenTimestamp = now
+
         val ext = fileItem.extension.lowercase()
         val isMd = ext in markdownExtensions
         val isTxt = ext in textExtensions
@@ -1365,6 +1358,10 @@ class MainActivity : ComponentActivity() {
                 val safUri = if (SafManager.hasPermission(this, path)) SafManager.getContentUri(this, path) else null
                 if (safUri != null) {
                     pendingDocument = DocumentSource.UriSource(safUri, fileItem.name, isReadOnly = false) to isMd
+                    return
+                } else if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
+                    val restrictedUri = RestrictedFileProvider.getUriForFile(this, fileItem.file)
+                    pendingDocument = DocumentSource.UriSource(restrictedUri, fileItem.name, isReadOnly = false) to isMd
                     return
                 }
             }

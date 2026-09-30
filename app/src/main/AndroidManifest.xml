@@ -201,6 +201,12 @@
         </provider>
 
         <provider
+            android:name=".RestrictedFileProvider"
+            android:authorities="${applicationId}.restricted_provider"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
+        <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"
             android:exported="true"

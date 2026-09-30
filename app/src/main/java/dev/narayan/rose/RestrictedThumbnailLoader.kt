@@ -75,8 +75,20 @@ object RestrictedThumbnailLoader {
             }
         }
 
-        // Priority 2: Shizuku cat stream
+        // Priority 2: Shizuku direct FileDescriptor or stream
         if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
+            val pfd = ShizukuManager.openFileDescriptor(context, path, android.os.ParcelFileDescriptor.MODE_READ_ONLY)
+            if (pfd != null) {
+                try {
+                    pfd.use {
+                        val sampled = decodeSampledBitmapFromFd(it.fileDescriptor, TARGET_SIZE, TARGET_SIZE)
+                        if (sampled != null) return sampled
+                    }
+                } catch (e: Throwable) {
+                    Log.w(TAG, "Shizuku direct image thumbnail failed for $path", e)
+                }
+            }
+
             try {
                 val clean = ShizukuManager.normalize(path)
                 val escaped = ShizukuManager.shellEscape(clean)
@@ -116,8 +128,25 @@ object RestrictedThumbnailLoader {
                 }
             }
 
-            // Priority 2: Shizuku stream header (up to 8MB) to a temporary file
+            // Priority 2: Shizuku direct FileDescriptor (zero-copy, instant!)
             if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
+                val pfd = ShizukuManager.openFileDescriptor(context, path, android.os.ParcelFileDescriptor.MODE_READ_ONLY)
+                if (pfd != null) {
+                    try {
+                        pfd.use {
+                            retriever.setDataSource(it.fileDescriptor)
+                            val frame = retriever.getFrameAtTime(1000000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                                ?: retriever.frameAtTime
+                            if (frame != null) {
+                                return scaleBitmap(frame, TARGET_SIZE, TARGET_SIZE)
+                            }
+                        }
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "Shizuku direct video thumbnail failed for $path", e)
+                    }
+                }
+
+                // Fallback: stream header (up to 8MB) to a temporary file
                 val clean = ShizukuManager.normalize(path)
                 val escaped = ShizukuManager.shellEscape(clean)
                 tempFile = File.createTempFile("thumb_vid_", ".tmp", context.cacheDir)
@@ -145,6 +174,24 @@ object RestrictedThumbnailLoader {
             }
         }
         return null
+    }
+
+    private fun decodeSampledBitmapFromFd(fd: java.io.FileDescriptor, reqWidth: Int, reqHeight: Int): Bitmap? {
+        return try {
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeFileDescriptor(fd, null, options)
+
+            options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
+            options.inJustDecodeBounds = false
+            options.inPreferredConfig = Bitmap.Config.RGB_565
+
+            val decoded = BitmapFactory.decodeFileDescriptor(fd, null, options) ?: return null
+            scaleBitmap(decoded, reqWidth, reqHeight)
+        } catch (e: Throwable) {
+            null
+        }
     }
 
     private fun decodeSampledBitmapFromByteArray(bytes: ByteArray, reqWidth: Int, reqHeight: Int): Bitmap? {
