@@ -1418,6 +1418,7 @@ fun FileExplorerScreen(
                                                                 scrollResetKey = scrollResetKey,
                                                                 hasAnimatedBefore = skipEntranceAnimation || animatedItemKeys.contains(fileItem.file.absolutePath),
                                                                 onAnimationStart = { animatedItemKeys.add(fileItem.file.absolutePath) },
+                                                                viewModel = viewModel,
                                                                 modifier = if (skipEntranceAnimation || isNavigatingOrResetting) {
                                                                     Modifier
                                                                 } else {
@@ -1549,6 +1550,7 @@ fun FileExplorerScreen(
                                                                     scrollResetKey = scrollResetKey,
                                                                     hasAnimatedBefore = skipEntranceAnimation || animatedItemKeys.contains(fileItem.file.absolutePath),
                                                                     onAnimationStart = { animatedItemKeys.add(fileItem.file.absolutePath) },
+                                                                    viewModel = viewModel,
                                                                     modifier = if (skipEntranceAnimation || isNavigatingOrResetting) {
                                                                         Modifier
                                                                     } else {
@@ -1617,6 +1619,7 @@ fun FileExplorerScreen(
                                                             scrollResetKey = scrollResetKey, // Pass key to restart animation on path change
                                                             hasAnimatedBefore = skipEntranceAnimation || animatedItemKeys.contains(fileItem.file.absolutePath),
                                                             onAnimationStart = { animatedItemKeys.add(fileItem.file.absolutePath) },
+                                                            viewModel = viewModel,
                                                             modifier = if (skipEntranceAnimation || isNavigatingOrResetting) {
                                                                 Modifier
                                                             } else {
@@ -2645,16 +2648,30 @@ fun SelectionBottomBar(
                             )
                         }
                         if (fileItem.isDirectory && viewModel.currentZipFile == null) {
+                            val isAlreadyInQuickAccess = viewModel.isFolderInQuickAccess(fileItem.file.absolutePath)
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                             DropdownMenuItem(
-                                text = { Text(stringResource(R.string.action_add_to_quick_access)) },
+                                text = {
+                                    Text(
+                                        if (isAlreadyInQuickAccess) stringResource(R.string.action_already_in_quick_access)
+                                        else stringResource(R.string.action_add_to_quick_access)
+                                    )
+                                },
+                                enabled = !isAlreadyInQuickAccess,
                                 onClick = {
-                                    viewModel.addQuickAccessFolder(fileItem.file.absolutePath)
-                                    Toast.makeText(context, context.getString(R.string.toast_added_to_quick_access), Toast.LENGTH_SHORT).show()
+                                    if (!isAlreadyInQuickAccess) {
+                                        viewModel.addQuickAccessFolder(fileItem.file.absolutePath)
+                                        Toast.makeText(context, context.getString(R.string.toast_added_to_quick_access), Toast.LENGTH_SHORT).show()
+                                    }
                                     viewModel.exitSelectionMode()
                                     showMoreMenu = false
                                 },
-                                leadingIcon = { Icon(Icons.Default.Add, null) }
+                                leadingIcon = {
+                                    Icon(
+                                        if (isAlreadyInQuickAccess) Icons.Default.Check else Icons.Default.Add,
+                                        null
+                                    )
+                                }
                             )
                         }
                         if (fileItem.fileType == FileType.ZIP && viewModel.currentZipFile == null) {
@@ -2836,7 +2853,8 @@ fun FileGridItem(
     scrollResetKey: Any = Unit,
     hasAnimatedBefore: Boolean = true,
     onAnimationStart: () -> Unit = {},
-    isHighlighted: Boolean = false
+    isHighlighted: Boolean = false,
+    viewModel: RoseViewModel? = null
 ) {
     // Material Files-style staggered entrance animation - plays once per item
     // per folder session, not on every re-entry into the viewport.
@@ -2914,8 +2932,9 @@ fun FileGridItem(
             .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        val vm = viewModel ?: (LocalContext.current as? androidx.activity.ComponentActivity)?.let { (it as? MainActivity)?.viewModel }
         Box(contentAlignment = Alignment.Center) {
-            FileIcon(fileItem, iconSize = iconSize, isVirtual = isVirtual, viewModel = (LocalContext.current as? androidx.activity.ComponentActivity)?.let { (it as? MainActivity)?.viewModel })
+            FileIcon(fileItem, iconSize = iconSize, isVirtual = isVirtual, viewModel = vm)
             if (isSelected) {
                 Box(
                     modifier = Modifier.size(iconSize * 0.5f).clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),

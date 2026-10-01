@@ -469,4 +469,10 @@
     <string name="dialog_reason_access_denied">Access denied</string>
     <string name="dialog_reason_storage_full">Storage is full</string>
     <string name="dialog_reason_io_error">I/O error</string>
-</resources>
+
+    <!-- Quick Access Add / Prevent Duplicate -->
+    <string name="tag_added">Added</string>
+    <string name="folder_already_added">Already added</string>
+    <string name="action_already_in_quick_access">Already in Quick access</string>
+    <string name="toast_already_in_quick_access">Folder is already in Quick access</string>
+</resources>
