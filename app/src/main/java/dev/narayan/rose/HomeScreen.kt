@@ -1405,11 +1405,7 @@ private fun StorageSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                if (devices.any { it is StorageDevice.Root }) {
-                    stringResource(R.string.home_section_storage_devices)
-                } else {
-                    stringResource(R.string.storage_external)
-                },
+                stringResource(R.string.storage_external),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
