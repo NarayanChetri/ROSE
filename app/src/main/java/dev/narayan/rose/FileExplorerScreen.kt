@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.util.LruCache
+import android.text.format.Formatter
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -49,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -924,7 +926,7 @@ fun FileExplorerScreen(
                                                 },
                                                 onNewFolderClick = { showCreateFolderDialog = true },
                                                 onSettingsClick = { activeScreen = "Settings" },
-                                                onNavigate = { viewModel.navigateTo(it) },
+                                                onNavigate = { viewModel.navigateTo(it, isActuallyDirectory = true) },
                                                 onBack = { handleBack() }
                                             )
                                             if (isDocumentCategory) {
@@ -2454,29 +2456,54 @@ fun MainTopBar(
         )
         if (path != null) {
             val breadcrumbPath = if (archiveName != null) "$path > [$archiveName]" else path
-            Breadcrumbs(breadcrumbPath, onNavigate)
+            Breadcrumbs(
+                path = breadcrumbPath,
+                storageDevices = viewModel.storageDevices,
+                onNavigate = onNavigate
+            )
         }
     }
 }
 
 
 @Composable
-fun Breadcrumbs(path: String, onNavigate: (File) -> Unit) {
-    val rootPath = Environment.getExternalStorageDirectory().absolutePath
+fun Breadcrumbs(
+    path: String,
+    storageDevices: List<StorageDevice> = emptyList(),
+    onNavigate: (File) -> Unit
+) {
+    val context = LocalContext.current
+    val internalRootPath = Environment.getExternalStorageDirectory().absolutePath
     val internalStorageLabel = stringResource(R.string.breadcrumbs_internal_storage)
     val rootLabel = stringResource(R.string.breadcrumbs_root)
-    val isRootBrowsing = !path.startsWith(rootPath) && (path == "/" || dev.narayan.rose.RootManager.isRootPath(path))
+    val isInternal = path.startsWith(internalRootPath)
+    val isRootBrowsing = !isInternal && (path == "/" || dev.narayan.rose.RootManager.isRootPath(path))
 
-    val relativePath = if (path.startsWith(rootPath)) {
-        internalStorageLabel + path.removePrefix(rootPath)
-    } else if (isRootBrowsing) {
-        if (path == "/") rootLabel else "$rootLabel$path"
-    } else {
-        path
+    val physicalDevice = if (!isInternal && !isRootBrowsing) {
+        storageDevices.filterIsInstance<StorageDevice.Physical>().firstOrNull { dev ->
+            path == dev.path || path.startsWith(dev.path + "/")
+        }
+    } else null
+
+    val (activeStorageRootPath, activeStorageLabel) = when {
+        isInternal -> internalRootPath to internalStorageLabel
+        isRootBrowsing -> "/" to rootLabel
+        physicalDevice != null -> physicalDevice.path to physicalDevice.name
+        else -> "" to ""
+    }
+
+    val relativePath = when {
+        isInternal -> internalStorageLabel + path.removePrefix(internalRootPath)
+        isRootBrowsing -> if (path == "/") rootLabel else "$rootLabel$path"
+        physicalDevice != null -> activeStorageLabel + path.removePrefix(physicalDevice.path)
+        else -> path
     }
 
     val parts = relativePath.split("/").filter { it.isNotEmpty() }
     val scrollState = rememberScrollState()
+    var showStorageDropdown by remember { mutableStateOf(false) }
+
+    val hasMultipleStorages = storageDevices.size > 1
 
     Row(
         modifier = Modifier
@@ -2486,31 +2513,165 @@ fun Breadcrumbs(path: String, onNavigate: (File) -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         parts.forEachIndexed { index, part ->
-            Text(
-                text = part,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (index == parts.lastIndex) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
-                modifier = Modifier.clickable {
-                    val targetPath = if (relativePath.startsWith(internalStorageLabel)) {
-                        val subParts = parts.subList(1, index + 1)
-                        if (subParts.isEmpty()) {
-                            File(Environment.getExternalStorageDirectory().absolutePath)
-                        } else {
-                            File(Environment.getExternalStorageDirectory(), subParts.joinToString("/"))
-                        }
-                    } else if (isRootBrowsing) {
-                        val subParts = parts.subList(1, index + 1)
-                        if (subParts.isEmpty()) {
-                            File("/")
-                        } else {
-                            File("/" + subParts.joinToString("/"))
-                        }
-                    } else {
-                        File("/" + parts.subList(0, index + 1).joinToString("/"))
+            if (index == 0 && hasMultipleStorages) {
+                // Interactive Storage Switcher Dropdown Trigger
+                Box {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { showStorageDropdown = true }
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = part,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (parts.size == 1) FontWeight.SemiBold else FontWeight.Medium,
+                            color = if (parts.size == 1) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Icon(
+                            Icons.Default.ArrowDropDown,
+                            contentDescription = "Switch storage",
+                            modifier = Modifier
+                                .size(18.dp)
+                                .rotate(if (showStorageDropdown) 180f else 0f),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     }
-                    onNavigate(targetPath)
+
+                    DropdownMenu(
+                        expanded = showStorageDropdown,
+                        onDismissRequest = { showStorageDropdown = false },
+                        shape = RoundedCornerShape(16.dp),
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 6.dp,
+                        modifier = Modifier.widthIn(min = 240.dp, max = 320.dp)
+                    ) {
+                        storageDevices.forEach { dev ->
+                            val isCurrent = when (dev) {
+                                is StorageDevice.Root -> isRootBrowsing
+                                is StorageDevice.Physical -> {
+                                    if (dev.isSdCard) path == dev.path || path.startsWith(dev.path + "/")
+                                    else isInternal
+                                }
+                            }
+                            val isRootDev = dev is StorageDevice.Root
+                            val isSd = dev is StorageDevice.Physical && dev.isSdCard
+                            val devIcon = when {
+                                isRootDev -> Icons.Default.Tag
+                                isSd -> Icons.Default.SdCard
+                                else -> Icons.Default.PhoneAndroid
+                            }
+                            val devColor = if (isRootDev) Color(0xFFF59E0B) else MaterialTheme.colorScheme.primary
+                            val devDisplayName = when {
+                                isRootDev -> stringResource(R.string.storage_root)
+                                isSd -> dev.name
+                                else -> stringResource(R.string.breadcrumbs_internal_storage)
+                            }
+
+                            DropdownMenuItem(
+                                leadingIcon = {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .background(devColor.copy(alpha = 0.12f), RoundedCornerShape(10.dp)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(devIcon, contentDescription = null, tint = devColor, modifier = Modifier.size(18.dp))
+                                    }
+                                },
+                                text = {
+                                    Column(modifier = Modifier.padding(vertical = 2.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = devDisplayName,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                                                color = if (isCurrent) devColor else MaterialTheme.colorScheme.onSurface
+                                            )
+                                            if (isRootDev) {
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Surface(
+                                                    color = Color(0xFFF59E0B).copy(alpha = 0.15f),
+                                                    contentColor = Color(0xFFF59E0B),
+                                                    shape = RoundedCornerShape(4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "SU",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        val subtitle = when {
+                                            isRootDev -> stringResource(R.string.storage_root_desc)
+                                            dev.totalBytes > 0L -> {
+                                                val freeStr = Formatter.formatFileSize(context, dev.availableBytes)
+                                                val totalStr = Formatter.formatFileSize(context, dev.totalBytes)
+                                                stringResource(R.string.storage_free_of_total, freeStr, totalStr)
+                                            }
+                                            else -> dev.path
+                                        }
+                                        Text(
+                                            text = subtitle,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                },
+                                trailingIcon = if (isCurrent) {
+                                    {
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = "Selected",
+                                            tint = devColor,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                } else null,
+                                onClick = {
+                                    showStorageDropdown = false
+                                    if (!isCurrent) {
+                                        onNavigate(File(dev.path))
+                                    }
+                                },
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
                 }
-            )
+            } else {
+                Text(
+                    text = part,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (index == parts.lastIndex) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable {
+                        val targetPath = when {
+                            index == 0 -> File(activeStorageRootPath)
+                            isInternal -> {
+                                val subParts = parts.subList(1, index + 1)
+                                if (subParts.isEmpty()) File(internalRootPath)
+                                else File(internalRootPath, subParts.joinToString("/"))
+                            }
+                            isRootBrowsing -> {
+                                val subParts = parts.subList(1, index + 1)
+                                if (subParts.isEmpty()) File("/")
+                                else File("/" + subParts.joinToString("/"))
+                            }
+                            physicalDevice != null -> {
+                                val subParts = parts.subList(1, index + 1)
+                                if (subParts.isEmpty()) File(physicalDevice.path)
+                                else File(physicalDevice.path, subParts.joinToString("/"))
+                            }
+                            else -> File("/" + parts.subList(0, index + 1).joinToString("/"))
+                        }
+                        onNavigate(targetPath)
+                    }
+                )
+            }
             if (index < parts.lastIndex) {
                 Icon(
                     Icons.Default.ChevronRight,

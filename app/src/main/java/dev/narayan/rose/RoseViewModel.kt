@@ -2302,8 +2302,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         val normalizedPath = ShizukuManager.normalize(directory.absolutePath)
         val isRootPath = normalizedPath == "/" || (useRoot && RootManager.isRootPath(normalizedPath))
         // If isActuallyDirectory is true, we trust the caller (e.g. from FileItem)
-        // Otherwise we check normally, but also check restricted paths.
-        val shouldNavigate = isActuallyDirectory || isRootPath || File(normalizedPath).isDirectory ||
+        val isKnownStorage = storageDevices.any { it.path == normalizedPath }
+        val shouldNavigate = isActuallyDirectory || isKnownStorage || isRootPath || File(normalizedPath).isDirectory ||
                 (SafManager.isRestrictedPath(normalizedPath) &&
                         (SafManager.hasPermission(getApplication(), normalizedPath) ||
                                 (ShizukuManager.isAvailable() && ShizukuManager.hasPermission())))
