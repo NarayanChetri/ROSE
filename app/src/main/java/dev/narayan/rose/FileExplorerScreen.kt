@@ -2464,8 +2464,13 @@ fun MainTopBar(
 fun Breadcrumbs(path: String, onNavigate: (File) -> Unit) {
     val rootPath = Environment.getExternalStorageDirectory().absolutePath
     val internalStorageLabel = stringResource(R.string.breadcrumbs_internal_storage)
+    val rootLabel = stringResource(R.string.breadcrumbs_root)
+    val isRootBrowsing = !path.startsWith(rootPath) && (path == "/" || dev.narayan.rose.RootManager.isRootPath(path))
+
     val relativePath = if (path.startsWith(rootPath)) {
         internalStorageLabel + path.removePrefix(rootPath)
+    } else if (isRootBrowsing) {
+        if (path == "/") rootLabel else "$rootLabel$path"
     } else {
         path
     }
@@ -2492,6 +2497,13 @@ fun Breadcrumbs(path: String, onNavigate: (File) -> Unit) {
                             File(Environment.getExternalStorageDirectory().absolutePath)
                         } else {
                             File(Environment.getExternalStorageDirectory(), subParts.joinToString("/"))
+                        }
+                    } else if (isRootBrowsing) {
+                        val subParts = parts.subList(1, index + 1)
+                        if (subParts.isEmpty()) {
+                            File("/")
+                        } else {
+                            File("/" + subParts.joinToString("/"))
                         }
                     } else {
                         File("/" + parts.subList(0, index + 1).joinToString("/"))

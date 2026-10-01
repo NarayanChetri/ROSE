@@ -103,6 +103,7 @@ dependencies {
     implementation(libs.libarchive)
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)
+    implementation("com.github.topjohnwu.libsu:core:5.2.2")
     coreLibraryDesugaring(libs.desugar.jdk.libs)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)

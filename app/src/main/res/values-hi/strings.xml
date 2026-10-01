@@ -410,4 +410,15 @@
     <string name="doc_failed_to_load">दस्तावेज़ लोड करने में विफल: %1$s</string>
     <string name="doc_empty_file">खाली फ़ाइल</string>
     <string name="doc_open_external">अन्य ऐप से खोलें</string>
+
+    <!-- Root Access -->
+    <string name="storage_root">रूट</string>
+    <string name="storage_root_desc">रूट निर्देशिका (/)</string>
+    <string name="breadcrumbs_root">रूट</string>
+    <string name="settings_section_root">रूट एक्सेस</string>
+    <string name="settings_enable_root">रूट एक्सेस सक्षम करें</string>
+    <string name="settings_enable_root_subtitle">सुपरयूज़र अनुमतियों के साथ रूट सिस्टम पार्टीशन ब्राउज़ और प्रबंधित करें</string>
+    <string name="toast_root_enabled">रूट एक्सेस सक्षम किया गया</string>
+    <string name="toast_root_disabled">रूट एक्सेस अक्षम किया गया</string>
+    <string name="toast_root_not_available">रूट एक्सेस उपलब्ध नहीं है। कृपया सुपरयूज़र अनुमति दें।</string>
 </resources>

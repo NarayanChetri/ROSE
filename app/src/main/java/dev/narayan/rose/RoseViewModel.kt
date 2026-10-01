@@ -278,6 +278,15 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     private val _useRecycleBin = mutableStateOf(settings.useRecycleBin)
     val useRecycleBin: Boolean by _useRecycleBin
 
+    private val _useRoot = mutableStateOf<Boolean>(settings.useRoot)
+    val useRoot: Boolean by _useRoot
+
+    fun setUseRoot(enabled: Boolean) {
+        _useRoot.value = enabled
+        settings.useRoot = enabled
+        loadStorageDevices()
+    }
+
     private val _recentFilesLimit = mutableStateOf(settings.recentFilesLimit)
     val recentFilesLimit: Int by _recentFilesLimit
 
@@ -1698,10 +1707,20 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         sortFileList(sizedFileList)
                     } else {
                         // Normal folder where File.listFiles() failed (e.g. root or OS protected folder)
-                        withContext(Dispatchers.Main) {
-                            accessDenied = true
+                        if (useRoot && RootManager.isRootAvailable()) {
+                            val rootFiles = RootManager.listFiles(normalizedPath, showHiddenFiles)
+                            val sizedFileList = if (sortBy == SortBy.SIZE) {
+                                withFolderSizes(rootFiles)
+                            } else {
+                                rootFiles
+                            }
+                            sortFileList(sizedFileList)
+                        } else {
+                            withContext(Dispatchers.Main) {
+                                accessDenied = true
+                            }
+                            emptyList()
                         }
-                        emptyList()
                     }
 
                 }
@@ -2281,9 +2300,10 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     fun navigateTo(directory: File, isActuallyDirectory: Boolean = false) {
         if (currentZipFile != null) return
         val normalizedPath = ShizukuManager.normalize(directory.absolutePath)
+        val isRootPath = normalizedPath == "/" || (useRoot && RootManager.isRootPath(normalizedPath))
         // If isActuallyDirectory is true, we trust the caller (e.g. from FileItem)
         // Otherwise we check normally, but also check restricted paths.
-        val shouldNavigate = isActuallyDirectory || File(normalizedPath).isDirectory ||
+        val shouldNavigate = isActuallyDirectory || isRootPath || File(normalizedPath).isDirectory ||
                 (SafManager.isRestrictedPath(normalizedPath) &&
                         (SafManager.hasPermission(getApplication(), normalizedPath) ||
                                 (ShizukuManager.isAvailable() && ShizukuManager.hasPermission())))
@@ -2308,13 +2328,17 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             // (or we could try to parse the URI and find parent document)
             return false
         }
+        if (currentPath == "/") {
+            return false
+        }
         val currentFile = File(currentPath)
         val parent = currentFile.parentFile
 
-        // Relaxed permission check: if the folder exists or is a known restricted path,
+        // Relaxed permission check: if the folder exists or is a known restricted path or root path,
         // we attempt to navigate to it. loadFiles() handles the actual permission
         // check (SAF/Shizuku/Normal) once we get there.
-        if (parent != null && (parent.exists() || SafManager.isRestrictedPath(parent.absolutePath)) &&
+        val isRootParent = parent != null && (parent.absolutePath == "/" || (useRoot && RootManager.isRootPath(parent.absolutePath)))
+        if (parent != null && (parent.exists() || isRootParent || SafManager.isRestrictedPath(parent.absolutePath)) &&
             currentPath != Environment.getExternalStorageDirectory().absolutePath &&
             currentPath != ShizukuManager.normalize(Environment.getExternalStorageDirectory().absolutePath)
         ) {
@@ -2590,17 +2614,11 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         val sources = itemsToDelete.map { it.file.absolutePath }
         val names = itemsToDelete.map { it.name }
 
-        // No optimistic instant removal here anymore: the file list is left
-        // as-is, and each item disappears (with its normal remove animation)
-        // one by one, in real time, as FileOperationRunner reports it in
-        // job.completedPaths - see the `activeJobs` collector in init{} and
-        // `displayedFilesFinal` in FileExplorerScreen. Stripping everything
-        // out up-front made every selected file vanish at once while the
-        // If any selected file is in a restricted path, check if Shizuku can recycle it;
-        // otherwise route directly to permanent delete.
+        // If any selected file is in a root path, route directly to permanent delete
+        val hasRoot = sources.any { it == "/" || RootManager.isRootPath(it) }
         val hasRestricted = sources.any { SafManager.isRestrictedPath(it) }
         val canRecycleRestricted = ShizukuManager.isAvailable() && ShizukuManager.hasPermission()
-        if (useRecycleBin && !permanently && (!hasRestricted || canRecycleRestricted)) {
+        if (!hasRoot && useRecycleBin && !permanently && (!hasRestricted || canRecycleRestricted)) {
             dev.narayan.rose.filejob.FileJobService.startRecycle(getApplication(), sources, names)
         } else {
             dev.narayan.rose.filejob.FileJobService.startDelete(getApplication(), sources, names)
@@ -2610,6 +2628,12 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteFile(fileItem: FileItem, permanently: Boolean = false) {
         val path = fileItem.file.absolutePath
+
+        val isRoot = path == "/" || RootManager.isRootPath(path)
+        if (isRoot) {
+            dev.narayan.rose.filejob.FileJobService.startDelete(getApplication(), listOf(path), listOf(fileItem.name))
+            return
+        }
 
         if (SafManager.isRestrictedPath(path)) {
             val canRecycle = useRecycleBin && !permanently && ShizukuManager.isAvailable() && ShizukuManager.hasPermission()
@@ -2696,6 +2720,23 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     fun renameFile(fileItem: FileItem, newName: String) {
         val path = fileItem.file.absolutePath
 
+        if (useRoot && (path == "/" || RootManager.isRootPath(path))) {
+            viewModelScope.launch(Dispatchers.IO) {
+                val parent = fileItem.file.parent ?: ""
+                val target = if (parent == "/") "/$newName" else "$parent/$newName"
+                val success = RootManager.rename(path, target)
+                withContext(Dispatchers.Main) {
+                    if (success) {
+                        invalidateDirectoryCache(currentPath)
+                        loadFiles(currentPath, isManualRefresh = true)
+                    } else {
+                        errorMessage = "Couldn't rename. Root permission required or path in use."
+                    }
+                }
+            }
+            return
+        }
+
         if (SafManager.isRestrictedPath(path)) {
             viewModelScope.launch(Dispatchers.IO) {
                 val success = if (SafManager.hasPermission(getApplication(), path)) {
@@ -2754,6 +2795,28 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     fun createFolder(name: String) {
         val trimmedName = name.trim()
         if (trimmedName.isEmpty()) return
+
+        if (useRoot && (currentPath == "/" || RootManager.isRootPath(currentPath))) {
+            viewModelScope.launch(Dispatchers.IO) {
+                val path = if (currentPath == "/") "/$trimmedName" else "$currentPath/$trimmedName"
+                val success = RootManager.createFolder(path)
+                withContext(Dispatchers.Main) {
+                    if (success) {
+                        invalidateDirectoryCache(currentPath)
+                        val folderFile = File(path)
+                        if (clipboardFiles.isNotEmpty()) {
+                            navigateTo(folderFile, isActuallyDirectory = true)
+                        } else {
+                            highlightedFile = FileItem(folderFile)
+                            loadFiles(currentPath, isManualRefresh = true)
+                        }
+                    } else {
+                        errorMessage = "Couldn't create folder in root partition."
+                    }
+                }
+            }
+            return
+        }
 
         if (SafManager.isRestrictedPath(currentPath)) {
             viewModelScope.launch(Dispatchers.IO) {
@@ -3367,6 +3430,18 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     }
                 }
+            }
+
+            if (useRoot) {
+                val stats = try { StatFs("/") } catch (e: Exception) { null }
+                devices.add(
+                    StorageDevice.Root(
+                        name = "Root",
+                        path = "/",
+                        totalBytes = stats?.totalBytes ?: 0L,
+                        availableBytes = stats?.availableBytes ?: 0L
+                    )
+                )
             }
 
             withContext(Dispatchers.Main) {
