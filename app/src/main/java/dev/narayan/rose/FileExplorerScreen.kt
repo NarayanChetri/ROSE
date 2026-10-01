@@ -2953,21 +2953,6 @@ fun FileGridItem(
             fontWeight = if (fileItem.isDirectory) FontWeight.Bold else FontWeight.Normal,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
-        if (fileItem.isDirectory && vm?.isFolderInQuickAccess(fileItem.file.absolutePath) == true) {
-            Spacer(modifier = Modifier.height(4.dp))
-            Surface(
-                shape = RoundedCornerShape(4.dp),
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-            ) {
-                Text(
-                    text = stringResource(R.string.tag_added),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                )
-            }
-        }
         if (showDetails) {
             if (fileItem.isDirectory) {
                 Text(
@@ -3104,21 +3089,6 @@ fun FileListItem(
                         style = if (fileItem.isDirectory) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.weight(1f, fill = false)
                     )
-                    if (fileItem.isDirectory && viewModel.isFolderInQuickAccess(fileItem.file.absolutePath)) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        ) {
-                            Text(
-                                text = stringResource(R.string.tag_added),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
                 }
             },
             supportingContent = {
