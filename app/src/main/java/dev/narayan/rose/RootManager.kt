@@ -87,17 +87,16 @@ object RootManager {
     fun listFilesSync(path: String, showHiddenFiles: Boolean = true): List<FileItem> {
         val results = mutableListOf<FileItem>()
         val cleanPath = normalize(path)
-        val searchPrefix = if (cleanPath == "/") "" else cleanPath
 
         try {
-            val escapedPrefix = shellEscape(searchPrefix)
+            val escapedPath = shellEscape(cleanPath)
 
-            // Step 1: Pre-calculate immediate child counts for subdirectories in a single fast find
+            // Step 1: Pre-calculate immediate child counts for subdirectories if possible
             val childCounts = mutableMapOf<String, Int>()
             try {
-                val countCmd = "find $escapedPrefix -mindepth 2 -maxdepth 2 2>/dev/null"
+                val countCmd = "find $escapedPath -mindepth 2 -maxdepth 2 2>/dev/null"
                 val countResult = Shell.cmd(countCmd).exec()
-                if (countResult.isSuccess) {
+                if (countResult.out.isNotEmpty()) {
                     countResult.out.forEach { line ->
                         val trimmed = line.trim()
                         if (trimmed.isNotEmpty()) {
@@ -112,44 +111,48 @@ object RootManager {
                     }
                 }
             } catch (e: Throwable) {
-                Log.w(TAG, "Error counting subfolder items for $searchPrefix", e)
+                Log.w(TAG, "Error counting subfolder items for $cleanPath", e)
             }
 
-            // Step 2: High-performance batch stat
-            val cmd = "stat -c '%F|%s|%Y|%n' $escapedPrefix/* $escapedPrefix/.[!.]* $escapedPrefix/..?* 2>/dev/null"
-            val statResult = Shell.cmd(cmd).exec()
+            // Step 2: High-performance directory listing using toybox cd and stat
+            // Navigates directly into the folder and iterates * and .*, cleanly skipping . and ..
+            // Using [ -d "${'$'}f" ] to detect directories (which automatically resolves directory symlinks)
+            val listCmd = """
+                cd $escapedPath 2>/dev/null || exit 1
+                for f in * .[!.]* ..?*; do
+                    [ -e "${'$'}f" ] || [ -L "${'$'}f" ] || continue
+                    d=0
+                    [ -d "${'$'}f" ] && d=1
+                    stat -c "%F|%s|%Y|${'$'}d|%n" "${'$'}f" 2>/dev/null
+                done
+            """.trimIndent()
 
-            fun parseLines(lines: List<String>) {
-                lines.forEach { line ->
+            val statResult = Shell.cmd(listCmd).exec()
+            Log.d(TAG, "listFilesSync($cleanPath) statResult code: ${statResult.code}, lines: ${statResult.out.size}")
+
+            if (statResult.out.isNotEmpty()) {
+                statResult.out.forEach { line ->
                     val trimmed = line.trim()
                     if (trimmed.isEmpty()) return@forEach
-                    val parts = trimmed.split('|', limit = 4)
-                    if (parts.size < 4) return@forEach
+                    val parts = trimmed.split('|', limit = 5)
+                    if (parts.size < 5) return@forEach
 
                     val typeStr = parts[0]
                     val sizeStr = parts[1]
                     val timeStr = parts[2]
-                    val fullPath = parts[3]
-
-                    val file = File(fullPath)
-                    val name = file.name
+                    val isDirFlag = parts[3] == "1"
+                    val name = parts[4]
 
                     if (name == "." || name == ".." || name.isEmpty()) return@forEach
                     if (!showHiddenFiles && name.startsWith(".")) return@forEach
 
-                    val isSymlink = typeStr.contains("symbolic link", ignoreCase = true)
-                    var isDir = typeStr.contains("directory", ignoreCase = true)
-
-                    // If it's a symlink, verify if its destination target is a directory
-                    if (isSymlink) {
-                        val testDir = Shell.cmd("[ -d ${shellEscape(fullPath)} ]").exec().isSuccess
-                        if (testDir) isDir = true
-                    }
-
+                    val fullPath = if (cleanPath == "/") "/$name" else "$cleanPath/$name"
+                    val file = File(fullPath)
+                    val isDir = isDirFlag || typeStr.contains("directory", ignoreCase = true)
                     val size = if (isDir) 0L else (sizeStr.toLongOrNull() ?: 0L)
                     val seconds = timeStr.toLongOrNull() ?: 0L
                     val timestamp = seconds * 1000
-                    val itemCount = if (isDir) (childCounts[file.absolutePath] ?: 0) else null
+                    val itemCount = if (isDir) childCounts[fullPath] else null
 
                     results.add(
                         FileItem(
@@ -165,20 +168,37 @@ object RootManager {
                 }
             }
 
-            if (statResult.isSuccess && statResult.out.isNotEmpty()) {
-                parseLines(statResult.out)
-            }
-
-            // Fallback: If wildcard batch produced no items, try iterating directory directly
+            // Fallback: If results are still empty, try ls -1A
             if (results.isEmpty()) {
-                val fallbackCmd = "for f in $escapedPrefix/* $escapedPrefix/.[!.]* $escapedPrefix/..?*; do [ -e \"\$f\" ] || [ -L \"\$f\" ] && stat -c '%F|%s|%Y|%n' \"\$f\" 2>/dev/null; done"
-                val fallbackResult = Shell.cmd(fallbackCmd).exec()
-                if (fallbackResult.isSuccess) {
-                    parseLines(fallbackResult.out)
+                val lsCmd = "ls -1A $escapedPath 2>/dev/null"
+                val lsResult = Shell.cmd(lsCmd).exec()
+                Log.d(TAG, "listFilesSync($cleanPath) fallback lsResult lines: ${lsResult.out.size}")
+                if (lsResult.out.isNotEmpty()) {
+                    lsResult.out.forEach { nameLine ->
+                        val name = nameLine.trim()
+                        if (name.isNotEmpty() && name != "." && name != "..") {
+                            if (showHiddenFiles || !name.startsWith(".")) {
+                                val fullPath = if (cleanPath == "/") "/$name" else "$cleanPath/$name"
+                                val isDir = isDirectory(fullPath)
+                                val size = if (isDir) 0L else getFileSize(fullPath)
+                                results.add(
+                                    FileItem(
+                                        file = File(fullPath),
+                                        isDirectory = isDir,
+                                        name = name,
+                                        size = size,
+                                        lastModified = System.currentTimeMillis(),
+                                        extension = if (isDir) "" else name.substringAfterLast('.', "").lowercase(),
+                                        itemCount = if (isDir) childCounts[fullPath] else null
+                                    )
+                                )
+                            }
+                        }
+                    }
                 }
             }
         } catch (e: Throwable) {
-            Log.e(TAG, "Error listing root files for $searchPrefix", e)
+            Log.e(TAG, "Error listing root files for $cleanPath", e)
         }
 
         return results.distinctBy { it.file.absolutePath }
