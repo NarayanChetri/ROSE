@@ -2659,7 +2659,7 @@ fun Breadcrumbs(
                                 HorizontalDivider(
                                     modifier = Modifier.padding(start = 58.dp, end = 14.dp),
                                     thickness = 0.6.dp,
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                                 )
                             }
                         }

@@ -506,8 +506,8 @@ fun HomeScreen(
                         if (viewModel.showListDividers && index != currentSearchResults.lastIndex) {
                             HorizontalDivider(
                                 modifier = Modifier.padding(start = 72.dp, end = 12.dp),
-                                thickness = 0.5.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                                thickness = 0.6.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                             )
                         }
                     }
@@ -1179,7 +1179,11 @@ private fun RecentFilesSection(
                             }
                         }
                         if (showDividers && index != recents.lastIndex) {
-                            HorizontalDivider(modifier = Modifier.padding(start = 66.dp, end = 16.dp))
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 66.dp, end = 16.dp),
+                                thickness = 0.6.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
                         }
                     }
                 }
@@ -1307,7 +1311,11 @@ private fun QuickAccessSection(viewModel: RoseViewModel, onOpenPath: (String) ->
                             Text(item.labelRes?.let { stringResource(it) } ?: item.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                         }
                         if (viewModel.showListDividers) {
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                thickness = 0.6.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
                         }
                     }
 
@@ -1445,7 +1453,11 @@ private fun StorageSection(
                         )
 
                         if (viewModel.showListDividers && index != devices.lastIndex) {
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                thickness = 0.6.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
                         }
                     }
                 }
@@ -1676,7 +1688,7 @@ private fun FolderPickerDialog(
                             isAdded = isAdded,
                             onClick = { currentDir = item.file }
                         )
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 8.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 8.dp), thickness = 0.6.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     }
                 }
             }
