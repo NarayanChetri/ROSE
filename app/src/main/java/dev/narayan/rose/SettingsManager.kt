@@ -95,6 +95,10 @@ class SettingsManager(context: Context) {
         get() = prefs.getBoolean(KEY_USE_SHIZUKU, false)
         set(value) = prefs.edit { putBoolean(KEY_USE_SHIZUKU, value) }
 
+    var useRoot: Boolean
+        get() = prefs.getBoolean(KEY_USE_ROOT, false)
+        set(value) = prefs.edit { putBoolean(KEY_USE_ROOT, value) }
+
     // ----- Quick access (Home screen) -----
     // Default quick-access folders (Downloads/Camera/Documents) that the user
     // has long-press-removed. Stored by a stable id, not path, since the
@@ -220,6 +224,7 @@ class SettingsManager(context: Context) {
         private const val KEY_SORT_ORDER = "sort_order"
         private const val KEY_START_PAGE = "start_page"
         private const val KEY_USE_SHIZUKU = "use_shizuku"
+        private const val KEY_USE_ROOT = "use_root"
         private const val KEY_QUICK_ACCESS_REMOVED = "quick_access_removed"
         private const val KEY_QUICK_ACCESS_CUSTOM = "quick_access_custom"
         private const val KEY_CACHED_CATEGORY_COUNTS = "cached_category_counts"

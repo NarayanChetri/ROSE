@@ -162,6 +162,54 @@ object FileOperationRunner {
                         }
                     }
                     is FileJobType.Delete -> {
+                        // Priority 0: Root manager delete (Super fast, superuser privileges)
+                        val isAnyRoot = type.targets.any { it.toString() == "/" || dev.narayan.rose.RootManager.isRootPath(it.toString()) }
+                        if (isAnyRoot && dev.narayan.rose.RootManager.isRootAvailable()) {
+                            val failedTargets = mutableListOf<String>()
+                            type.targets.forEach { target ->
+                                if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
+                                job.currentFileName = target.fileName?.toString() ?: target.toString()
+                                val clean = target.toString()
+                                val success = dev.narayan.rose.RootManager.delete(clean)
+                                if (success) {
+                                    job.completedPaths.add(target.toString())
+                                    touchedPaths.add(target.toString())
+                                } else {
+                                    failedTargets.add(target.toString())
+                                }
+                                job.processedItems++
+                                job.progress = if (job.totalItems > 0) {
+                                    (job.processedItems.toFloat() / job.totalItems).coerceIn(0f, 1f)
+                                } else 1f
+                                onProgress(job)
+                                JobManager.updateJob(job)
+                            }
+                            if (failedTargets.isNotEmpty()) {
+                                failedTargets.forEach { failedPath ->
+                                    val name = java.io.File(failedPath).name
+                                    synchronized(job.failedItems) {
+                                        job.failedItems.add(
+                                            FileOperationError(
+                                                path = failedPath,
+                                                fileName = name,
+                                                reason = detectFailureReason(appContext, name, null, null)
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                            job.progress = 1f
+                            onProgress(job)
+                            val hasFailures = job.failedItems.isNotEmpty()
+                            JobManager.completeJob(
+                                job,
+                                success = !hasFailures,
+                                error = if (hasFailures) "Failed to delete ${failedTargets.size} item(s) with root" else null
+                            )
+                            onFinished(!hasFailures)
+                            return@Thread
+                        }
+
                         // Priority 1: Shizuku bulk delete (Super fast, bypasses recursive walk)
                         if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission()) {
                             // Track failures instead of assuming every `rm -rf` succeeded -
@@ -551,6 +599,9 @@ object FileOperationRunner {
     }
 
     private fun isDirectory(context: Context, path: String): Boolean {
+        if ((path == "/" || dev.narayan.rose.RootManager.isRootPath(path)) && dev.narayan.rose.RootManager.isRootAvailable()) {
+            return dev.narayan.rose.RootManager.isDirectory(path)
+        }
         val restricted = SafManager.isRestrictedPath(path)
         return if (restricted || SafManager.isSafUri(path)) {
             if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(path)) {
@@ -575,6 +626,9 @@ object FileOperationRunner {
     }
 
     private fun checkExists(context: Context, path: String): Boolean {
+        if ((path == "/" || dev.narayan.rose.RootManager.isRootPath(path)) && dev.narayan.rose.RootManager.isRootAvailable()) {
+            return dev.narayan.rose.RootManager.exists(path)
+        }
         return if (SafManager.isRestrictedPath(path)) {
             if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(path)) {
                 dev.narayan.rose.ShizukuManager.exists(path)
@@ -634,6 +688,17 @@ object FileOperationRunner {
     )
 
     private fun listChildren(context: Context, path: String): List<ChildItem> {
+        if ((path == "/" || dev.narayan.rose.RootManager.isRootPath(path)) && dev.narayan.rose.RootManager.isRootAvailable()) {
+            val rootFiles = dev.narayan.rose.RootManager.listFilesSync(path, showHiddenFiles = true)
+            return rootFiles.map {
+                ChildItem(
+                    path = it.file.absolutePath,
+                    name = it.name,
+                    isDirectory = it.isDirectory,
+                    size = if (it.isDirectory) 0L else it.size
+                )
+            }
+        }
         val restricted = SafManager.isRestrictedPath(path) || SafManager.isSafUri(path)
         if (!restricted) {
             val f = java.io.File(path)
@@ -1290,11 +1355,11 @@ object FileOperationRunner {
                 try { destCloseable?.close() } catch (ignored: Exception) {}
             }
 
-            // -- SAF InputStream fallback (Shizuku unavailable or cross-provider SAF URIs) --
-            // The old double-cat relay (cat src | Java | cat > dest) spawned two Shizuku
-            // processes making all data cross the JVM 3 times. Direct SAF streams are simpler.
+            // -- SAF / Root InputStream fallback --
             val input = try {
-                if (sourceRestricted || SafManager.isSafUri(sourcePath)) {
+                if ((sourcePath == "/" || dev.narayan.rose.RootManager.isRootPath(sourcePath)) && dev.narayan.rose.RootManager.isRootAvailable()) {
+                    dev.narayan.rose.RootManager.openInputStream(sourcePath)
+                } else if (sourceRestricted || SafManager.isSafUri(sourcePath)) {
                     SafManager.openInputStream(context, sourcePath)
                 } else {
                     Files.newInputStream(Paths.get(sourcePath))
@@ -1305,7 +1370,9 @@ object FileOperationRunner {
             }
 
             val output = try {
-                if (targetRestricted) {
+                if ((targetPath == "/" || dev.narayan.rose.RootManager.isRootPath(targetPath)) && dev.narayan.rose.RootManager.isRootAvailable()) {
+                    dev.narayan.rose.RootManager.openOutputStream(targetPath)
+                } else if (targetRestricted) {
                     SafManager.openOutputStreamForNewFile(context, targetPath)
                 } else {
                     target.parent?.let { if (!Files.exists(it)) Files.createDirectories(it) }
@@ -1509,6 +1576,17 @@ object FileOperationRunner {
         val pathStr = path.toString()
         val file = path.toFile()
         val size = if (file.isFile) file.length() else 0L
+
+        if ((pathStr == "/" || dev.narayan.rose.RootManager.isRootPath(pathStr)) && dev.narayan.rose.RootManager.isRootAvailable()) {
+            dev.narayan.rose.RootManager.delete(pathStr)
+            if (job != null && onProgress != null) {
+                job.processedBytes += size
+                job.processedItems++
+                onProgress(job)
+                JobManager.updateJob(job)
+            }
+            return
+        }
 
         if (SafManager.isRestrictedPath(pathStr)) {
             if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(pathStr)) {

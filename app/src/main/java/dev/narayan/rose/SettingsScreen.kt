@@ -229,6 +229,36 @@ fun SettingsScreen(
                 }
             }
 
+            // ---------- Root Access ----------
+            SettingsSection(title = stringResource(R.string.settings_section_root), icon = Icons.Default.AdminPanelSettings) {
+                SettingsGroup {
+                    SettingsSwitchRow(
+                        icon = Icons.Default.Terminal,
+                        title = stringResource(R.string.settings_enable_root),
+                        subtitle = stringResource(R.string.settings_enable_root_subtitle),
+                        checked = viewModel.useRoot,
+                        onCheckedChange = { enable ->
+                            if (enable) {
+                                scope.launch {
+                                    val available = withContext(Dispatchers.IO) {
+                                        RootManager.isRootAvailable()
+                                    }
+                                    if (available) {
+                                        viewModel.setUseRoot(true)
+                                        Toast.makeText(context, context.getString(R.string.toast_root_enabled), Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, context.getString(R.string.toast_root_not_available), Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            } else {
+                                viewModel.setUseRoot(false)
+                                Toast.makeText(context, context.getString(R.string.toast_root_disabled), Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    )
+                }
+            }
+
             // ---------- Updates ----------
             SettingsSection(title = stringResource(R.string.settings_section_updates), icon = Icons.Default.SystemUpdate) {
                 SettingsGroup {
@@ -692,7 +722,7 @@ private fun FolderPickerDialog(
                             viewModel = vm,
                             onClick = { currentDir = item.file }
                         )
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 8.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 8.dp), thickness = 0.6.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     }
                 }
             }

@@ -506,8 +506,8 @@ fun HomeScreen(
                         if (viewModel.showListDividers && index != currentSearchResults.lastIndex) {
                             HorizontalDivider(
                                 modifier = Modifier.padding(start = 72.dp, end = 12.dp),
-                                thickness = 0.5.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                                thickness = 0.6.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                             )
                         }
                     }
@@ -1179,7 +1179,11 @@ private fun RecentFilesSection(
                             }
                         }
                         if (showDividers && index != recents.lastIndex) {
-                            HorizontalDivider(modifier = Modifier.padding(start = 66.dp, end = 16.dp))
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 66.dp, end = 16.dp),
+                                thickness = 0.6.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
                         }
                     }
                 }
@@ -1307,7 +1311,11 @@ private fun QuickAccessSection(viewModel: RoseViewModel, onOpenPath: (String) ->
                             Text(item.labelRes?.let { stringResource(it) } ?: item.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                         }
                         if (viewModel.showListDividers) {
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                thickness = 0.6.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
                         }
                     }
 
@@ -1391,8 +1399,10 @@ private fun StorageSection(
     onOpenPath: (String) -> Unit
 ) {
     val allDevices = viewModel.storageDevices
-    // Filter to only show physical SD cards (removable volumes)
-    val devices = allDevices.filterIsInstance<StorageDevice.Physical>().filter { it.isSdCard }
+    // Show physical SD cards (removable volumes) and root storage if enabled
+    val devices = allDevices.filter {
+        (it is StorageDevice.Physical && it.isSdCard) || (it is StorageDevice.Root)
+    }
 
     if (devices.isEmpty()) return
 
@@ -1443,7 +1453,11 @@ private fun StorageSection(
                         )
 
                         if (viewModel.showListDividers && index != devices.lastIndex) {
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                thickness = 0.6.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
                         }
                     }
                 }
@@ -1454,7 +1468,7 @@ private fun StorageSection(
 
 @Composable
 private fun StorageDeviceItem(
-    device: StorageDevice.Physical,
+    device: StorageDevice,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
@@ -1465,8 +1479,13 @@ private fun StorageDeviceItem(
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val icon = if (device.isSdCard) Icons.Default.SdCard else Icons.Default.SdStorage
-        val iconColor = MaterialTheme.colorScheme.primary
+        val isRoot = device is StorageDevice.Root
+        val icon = when {
+            isRoot -> Icons.Default.Tag
+            device is StorageDevice.Physical && device.isSdCard -> Icons.Default.SdCard
+            else -> Icons.Default.SdStorage
+        }
+        val iconColor = if (isRoot) Color(0xFFF59E0B) else MaterialTheme.colorScheme.primary
 
         Box(
             modifier = Modifier
@@ -1480,19 +1499,44 @@ private fun StorageDeviceItem(
         Spacer(modifier = Modifier.width(16.dp))
 
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                device.name,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            val used = device.totalBytes - device.availableBytes
-            Text(
-                stringResource(R.string.storage_amount_used_of_total, formatFileSize(used), formatFileSize(device.totalBytes)),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (isRoot) stringResource(R.string.storage_root) else device.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (isRoot) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Surface(
+                        color = Color(0xFFF59E0B).copy(alpha = 0.15f),
+                        contentColor = Color(0xFFF59E0B),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text(
+                            text = "SU",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+            if (isRoot) {
+                Text(
+                    stringResource(R.string.storage_root_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                val used = device.totalBytes - device.availableBytes
+                Text(
+                    stringResource(R.string.storage_amount_used_of_total, formatFileSize(used), formatFileSize(device.totalBytes)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         Icon(
@@ -1644,7 +1688,7 @@ private fun FolderPickerDialog(
                             isAdded = isAdded,
                             onClick = { currentDir = item.file }
                         )
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 8.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 8.dp), thickness = 0.6.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     }
                 }
             }
