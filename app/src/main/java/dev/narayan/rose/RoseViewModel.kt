@@ -2278,6 +2278,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadRecentFiles() {
         stopWatchingDirectory()
+        accessDenied = false
         // Material Files style: don't clear the list before loading. Keeps the UI stable
         // and preserves scroll position while the background query is running.
         if (recentFiles.isEmpty()) isRecentLoading = true
@@ -2300,6 +2301,9 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     fun navigateTo(directory: File, isActuallyDirectory: Boolean = false) {
         if (currentZipFile != null) return
         val normalizedPath = ShizukuManager.normalize(directory.absolutePath)
+        // Never allow navigating directly to raw "/storage" directory on non-rooted devices
+        if (!useRoot && normalizedPath == "/storage") return
+
         val isRootPath = normalizedPath == "/" || (useRoot && RootManager.isRootPath(normalizedPath))
         // If isActuallyDirectory is true, we trust the caller (e.g. from FileItem)
         val isKnownStorage = storageDevices.any { it.path == normalizedPath }
@@ -2338,6 +2342,10 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         // we attempt to navigate to it. loadFiles() handles the actual permission
         // check (SAF/Shizuku/Normal) once we get there.
         val isRootParent = parent != null && (parent.absolutePath == "/" || (useRoot && RootManager.isRootPath(parent.absolutePath)))
+        // Do not allow navigating up into raw "/storage" on non-rooted devices
+        if (!useRoot && parent?.absolutePath == "/storage") {
+            return false
+        }
         if (parent != null && (parent.exists() || isRootParent || SafManager.isRestrictedPath(parent.absolutePath)) &&
             currentPath != Environment.getExternalStorageDirectory().absolutePath &&
             currentPath != ShizukuManager.normalize(Environment.getExternalStorageDirectory().absolutePath)
@@ -3176,6 +3184,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         stopWatchingDirectory()
+        accessDenied = false
         currentZipFile = null
         currentZipEntryPath = ""
         categoryTitle = title

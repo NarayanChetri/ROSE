@@ -76,8 +76,9 @@ object RootManager {
         val norm = ShizukuManager.normalize(path)
         val primary = Environment.getExternalStorageDirectory().absolutePath
         if (norm == primary || norm.startsWith("$primary/")) return false
-        if (norm.startsWith("/storage/")) return false
-        if (norm.startsWith("/sdcard")) return false
+        if (norm == "/storage" || norm.startsWith("/storage/")) return false
+        if (norm == "/sdcard" || norm.startsWith("/sdcard/")) return false
+        if (norm == "/mnt" || norm.startsWith("/mnt/")) return false
         return norm.startsWith("/")
     }
 

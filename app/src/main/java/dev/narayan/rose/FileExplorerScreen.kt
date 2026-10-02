@@ -1214,8 +1214,8 @@ fun FileExplorerScreen(
                             val hasShizuku = ShizukuManager.isAvailable() && ShizukuManager.hasPermission()
                             val hasSaf = SafManager.hasPermission(LocalContext.current, viewModel.currentPath)
 
-                            // Show the card if access was explicitly denied by the load process
-                            val accessDenied = viewModel.accessDenied
+                            // Show the card if access was explicitly denied by the load process for a filesystem folder
+                            val accessDenied = viewModel.accessDenied && currentView == "Files" && viewModel.categoryFilterType == null
 
                             if (accessDenied && !viewModel.isLoading) {
                                 val isSystemRestricted = isRestricted
@@ -2476,26 +2476,37 @@ fun Breadcrumbs(
     val internalRootPath = Environment.getExternalStorageDirectory().absolutePath
     val internalStorageLabel = stringResource(R.string.breadcrumbs_internal_storage)
     val rootLabel = stringResource(R.string.breadcrumbs_root)
-    val isInternal = path.startsWith(internalRootPath)
+    val isInternal = path == internalRootPath || path.startsWith("$internalRootPath/")
     val isRootBrowsing = !isInternal && (path == "/" || dev.narayan.rose.RootManager.isRootPath(path))
 
-    val physicalDevice = if (!isInternal && !isRootBrowsing) {
+    // Match physical device from storageDevices list (e.g. SD Card, USB OTG drive)
+    val knownPhysicalDevice = if (!isInternal && !isRootBrowsing) {
         storageDevices.filterIsInstance<StorageDevice.Physical>().firstOrNull { dev ->
-            path == dev.path || path.startsWith(dev.path + "/")
+            dev.isSdCard && (path == dev.path || path.startsWith("${dev.path}/"))
         }
+    } else null
+
+    // Fallback: If storageDevices hasn't loaded yet or volume wasn't enumerated, detect /storage/<volume-id>
+    val storageVolumeRoot = if (!isInternal && !isRootBrowsing && knownPhysicalDevice == null && path.startsWith("/storage/")) {
+        val segment = path.removePrefix("/storage/").substringBefore('/')
+        if (segment.isNotEmpty() && segment != "emulated" && segment != "self") {
+            "/storage/$segment"
+        } else null
     } else null
 
     val (activeStorageRootPath, activeStorageLabel) = when {
         isInternal -> internalRootPath to internalStorageLabel
         isRootBrowsing -> "/" to rootLabel
-        physicalDevice != null -> physicalDevice.path to physicalDevice.name
+        knownPhysicalDevice != null -> knownPhysicalDevice.path to knownPhysicalDevice.name
+        storageVolumeRoot != null -> storageVolumeRoot to File(storageVolumeRoot).name
         else -> "" to ""
     }
 
     val relativePath = when {
         isInternal -> internalStorageLabel + path.removePrefix(internalRootPath)
         isRootBrowsing -> if (path == "/") rootLabel else "$rootLabel$path"
-        physicalDevice != null -> activeStorageLabel + path.removePrefix(physicalDevice.path)
+        knownPhysicalDevice != null -> activeStorageLabel + path.removePrefix(knownPhysicalDevice.path)
+        storageVolumeRoot != null -> activeStorageLabel + path.removePrefix(storageVolumeRoot)
         else -> path
     }
 
@@ -2552,8 +2563,12 @@ fun Breadcrumbs(
                             val isCurrent = when (dev) {
                                 is StorageDevice.Root -> isRootBrowsing
                                 is StorageDevice.Physical -> {
-                                    if (dev.isSdCard) path == dev.path || path.startsWith(dev.path + "/")
-                                    else isInternal
+                                    if (dev.isSdCard) {
+                                        path == dev.path || path.startsWith("${dev.path}/") ||
+                                                (storageVolumeRoot != null && dev.path == storageVolumeRoot)
+                                    } else {
+                                        isInternal
+                                    }
                                 }
                             }
                             val isRootDev = dev is StorageDevice.Root
@@ -2650,7 +2665,7 @@ fun Breadcrumbs(
                     color = if (index == parts.lastIndex) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
                     modifier = Modifier.clickable {
                         val targetPath = when {
-                            index == 0 -> File(activeStorageRootPath)
+                            index == 0 && activeStorageRootPath.isNotEmpty() -> File(activeStorageRootPath)
                             isInternal -> {
                                 val subParts = parts.subList(1, index + 1)
                                 if (subParts.isEmpty()) File(internalRootPath)
@@ -2661,10 +2676,15 @@ fun Breadcrumbs(
                                 if (subParts.isEmpty()) File("/")
                                 else File("/" + subParts.joinToString("/"))
                             }
-                            physicalDevice != null -> {
+                            knownPhysicalDevice != null -> {
                                 val subParts = parts.subList(1, index + 1)
-                                if (subParts.isEmpty()) File(physicalDevice.path)
-                                else File(physicalDevice.path, subParts.joinToString("/"))
+                                if (subParts.isEmpty()) File(knownPhysicalDevice.path)
+                                else File(knownPhysicalDevice.path, subParts.joinToString("/"))
+                            }
+                            storageVolumeRoot != null -> {
+                                val subParts = parts.subList(1, index + 1)
+                                if (subParts.isEmpty()) File(storageVolumeRoot)
+                                else File(storageVolumeRoot, subParts.joinToString("/"))
                             }
                             else -> File("/" + parts.subList(0, index + 1).joinToString("/"))
                         }
