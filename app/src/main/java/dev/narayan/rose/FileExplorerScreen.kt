@@ -3080,10 +3080,10 @@ fun FileGridItem(
     val pulseAlpha by if (isHighlighted) {
         val infiniteTransition = rememberInfiniteTransition(label = "GridPulseAlphaTransition")
         infiniteTransition.animateFloat(
-            initialValue = 0.15f,
-            targetValue = 0.45f,
+            initialValue = 0.08f,
+            targetValue = 0.18f,
             animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+                animation = tween(durationMillis = 800, easing = FastOutSlowInEasing),
                 repeatMode = RepeatMode.Reverse
             ),
             label = "GridPulseAlpha"
@@ -3092,28 +3092,13 @@ fun FileGridItem(
         remember { mutableFloatStateOf(0f) }
     }
 
-    val pulseScale by if (isHighlighted) {
-        val infiniteTransition = rememberInfiniteTransition(label = "GridPulseScaleTransition")
-        infiniteTransition.animateFloat(
-            initialValue = 1.0f,
-            targetValue = 1.03f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 500, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "GridPulseScale"
-        )
-    } else {
-        remember { mutableFloatStateOf(1.0f) }
-    }
-
     val backgroundColor by androidx.compose.animation.animateColorAsState(
         targetValue = when {
             isSelected -> selectionColor
             isHighlighted -> MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha)
             else -> Color.Transparent
         },
-        animationSpec = if (isHighlighted) snap() else tween(300, easing = FastOutSlowInEasing),
+        animationSpec = if (isHighlighted) snap() else tween(600, easing = FastOutSlowInEasing),
         label = "GridItemSelection"
     )
 
@@ -3122,8 +3107,6 @@ fun FileGridItem(
             .graphicsLayer {
                 alpha = animatedProgress.value
                 translationY = with(density) { (1f - animatedProgress.value) * 40.dp.toPx() } // Slide up from 40dp
-                scaleX = pulseScale
-                scaleY = pulseScale
             }
             .padding(8.dp)
             .clip(MaterialTheme.shapes.medium)
@@ -3232,10 +3215,10 @@ fun FileListItem(
     val pulseAlpha by if (isHighlighted) {
         val infiniteTransition = rememberInfiniteTransition(label = "ItemPulseAlphaTransition")
         infiniteTransition.animateFloat(
-            initialValue = 0.15f,
-            targetValue = 0.45f,
+            initialValue = 0.08f,
+            targetValue = 0.18f,
             animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+                animation = tween(durationMillis = 800, easing = FastOutSlowInEasing),
                 repeatMode = RepeatMode.Reverse
             ),
             label = "ItemPulseAlpha"
@@ -3244,28 +3227,13 @@ fun FileListItem(
         remember { mutableFloatStateOf(0f) }
     }
 
-    val pulseScale by if (isHighlighted) {
-        val infiniteTransition = rememberInfiniteTransition(label = "ItemPulseScaleTransition")
-        infiniteTransition.animateFloat(
-            initialValue = 1.0f,
-            targetValue = 1.03f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 500, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "ItemPulseScale"
-        )
-    } else {
-        remember { mutableFloatStateOf(1.0f) }
-    }
-
     val backgroundColor by androidx.compose.animation.animateColorAsState(
         targetValue = when {
             isSelected -> selectionColor
             isHighlighted -> MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha)
             else -> Color.Transparent
         },
-        animationSpec = if (isHighlighted) snap() else tween(300, easing = FastOutSlowInEasing),
+        animationSpec = if (isHighlighted) snap() else tween(600, easing = FastOutSlowInEasing),
         label = "ItemHighlight"
     )
 
@@ -3274,8 +3242,6 @@ fun FileListItem(
             .graphicsLayer {
                 alpha = animatedProgress.value
                 translationY = with(density) { (1f - animatedProgress.value) * 40.dp.toPx() }
-                scaleX = pulseScale
-                scaleY = pulseScale
             }
     ) {
         ListItem(

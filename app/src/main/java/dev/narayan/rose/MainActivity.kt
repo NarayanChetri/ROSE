@@ -672,7 +672,10 @@ class MainActivity : ComponentActivity() {
                                                         },
                                                         onOpenRecent = {
                                                             coroutineScope.launch {
-                                                                homePagerState.animateScrollToPage(0)
+                                                                homePagerState.animateScrollToPage(
+                                                                    page = 0,
+                                                                    animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing)
+                                                                )
                                                             }
                                                         },
                                                         onFileClick = { fileItem ->

@@ -421,4 +421,6 @@
     <string name="toast_root_enabled">रूट एक्सेस सक्षम किया गया</string>
     <string name="toast_root_disabled">रूट एक्सेस अक्षम किया गया</string>
     <string name="toast_root_not_available">रूट एक्सेस उपलब्ध नहीं है। कृपया सुपरयूज़र अनुमति दें।</string>
+    <string name="tag_added">जोड़ा गया</string>
+    <string name="folder_already_added">पहले से जोड़ा गया</string>
 </resources>

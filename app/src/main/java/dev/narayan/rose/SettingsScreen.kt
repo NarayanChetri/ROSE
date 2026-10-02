@@ -68,9 +68,12 @@ fun SettingsScreen(
 
     if (showFolderPicker) {
         FolderPickerDialog(
+            excludedFolders = viewModel.excludedFolders,
             onDismiss = { showFolderPicker = false },
             onFolderSelected = { folder ->
-                viewModel.setExcludedFolders(viewModel.excludedFolders + folder.absolutePath)
+                if (!viewModel.excludedFolders.any { ShizukuManager.normalize(it) == ShizukuManager.normalize(folder.absolutePath) }) {
+                    viewModel.setExcludedFolders(viewModel.excludedFolders + folder.absolutePath)
+                }
                 showFolderPicker = false
             }
         )
@@ -609,6 +612,7 @@ private fun ExcludedFoldersDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FolderPickerDialog(
+    excludedFolders: Set<String>,
     onDismiss: () -> Unit,
     onFolderSelected: (File) -> Unit
 ) {
@@ -616,6 +620,14 @@ private fun FolderPickerDialog(
     var currentDir by remember { mutableStateOf(rootDir) }
     
     val vm = (LocalContext.current as? androidx.activity.ComponentActivity)?.let { (it as? MainActivity)?.viewModel }
+
+    val normalizedExcluded = remember(excludedFolders) {
+        excludedFolders.map { ShizukuManager.normalize(it) }.toSet()
+    }
+    fun isFolderExcluded(path: String): Boolean {
+        return normalizedExcluded.contains(ShizukuManager.normalize(path))
+    }
+    val isCurrentDirAdded = isFolderExcluded(currentDir.absolutePath)
 
     // Use FileItems to match the main listing and provide item counts
     val subDirs = remember(currentDir) {
@@ -649,11 +661,28 @@ private fun FolderPickerDialog(
             topBar = {
                 TopAppBar(
                     title = {
-                        Text(
-                            if (currentDir == rootDir) stringResource(R.string.storage_internal) else currentDir.name,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                if (currentDir == rootDir) stringResource(R.string.storage_internal) else currentDir.name,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (isCurrentDirAdded) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.tag_added),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
                     },
                     navigationIcon = {
                         IconButton(onClick = {
@@ -685,14 +714,22 @@ private fun FolderPickerDialog(
                 ) {
                     Box(modifier = Modifier.fillMaxWidth().padding(16.dp).navigationBarsPadding()) {
                         Button(
-                            onClick = { onFolderSelected(currentDir) },
-                            enabled = currentDir != rootDir,
+                            onClick = {
+                                if (!isCurrentDirAdded) {
+                                    onFolderSelected(currentDir)
+                                }
+                            },
+                            enabled = currentDir != rootDir && !isCurrentDirAdded,
                             modifier = Modifier.fillMaxWidth().height(56.dp),
                             shape = RoundedCornerShape(16.dp)
                         ) {
                             Icon(Icons.Default.Check, null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(stringResource(R.string.action_exclude_current_folder), style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                if (isCurrentDirAdded) stringResource(R.string.folder_already_added)
+                                else stringResource(R.string.action_exclude_current_folder),
+                                style = MaterialTheme.typography.titleMedium
+                            )
                         }
                     }
                 }
@@ -713,6 +750,7 @@ private fun FolderPickerDialog(
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
                     itemsIndexed(subDirs, key = { _, item -> item.file.absolutePath }) { index, item ->
+                        val isAdded = isFolderExcluded(item.file.absolutePath)
                         FolderPickerRow(
                             item = item,
                             index = index,
@@ -720,6 +758,7 @@ private fun FolderPickerDialog(
                             hasAnimatedBefore = animatedItemKeys.contains(item.file.absolutePath),
                             onAnimationStart = { animatedItemKeys.add(item.file.absolutePath) },
                             viewModel = vm,
+                            isAdded = isAdded,
                             onClick = { currentDir = item.file }
                         )
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 8.dp), thickness = 0.6.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -738,6 +777,7 @@ private fun FolderPickerRow(
     hasAnimatedBefore: Boolean,
     onAnimationStart: () -> Unit,
     viewModel: RoseViewModel?,
+    isAdded: Boolean = false,
     onClick: () -> Unit
 ) {
     val animatedProgress = remember(scrollResetKey, item.file.absolutePath) {
@@ -754,13 +794,34 @@ private fun FolderPickerRow(
     
     ListItem(
         headlineContent = {
-            Text(
-                item.name,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                fontWeight = FontWeight.SemiBold,
-                style = MaterialTheme.typography.bodyLarge
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    item.name,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (isAdded) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    ) {
+                        Text(
+                            text = stringResource(R.string.tag_added),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
         },
         supportingContent = {
             val count = item.itemCount ?: 0
