@@ -2657,9 +2657,9 @@ fun Breadcrumbs(
                             )
                             if (devIndex < storageDevices.lastIndex) {
                                 HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 12.dp),
-                                    thickness = 0.5.dp,
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                    modifier = Modifier.padding(start = 58.dp, end = 14.dp),
+                                    thickness = 0.6.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
                                 )
                             }
                         }
@@ -3445,8 +3445,8 @@ fun FileListItem(
         if (isDividerVisible) {
             HorizontalDivider(
                 modifier = Modifier.padding(start = 68.dp, end = 12.dp),
-                thickness = 0.8.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+                thickness = 0.6.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
             )
         }
     }
