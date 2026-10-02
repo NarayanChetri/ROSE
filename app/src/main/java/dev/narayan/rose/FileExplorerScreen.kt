@@ -2559,7 +2559,7 @@ fun Breadcrumbs(
                         tonalElevation = 6.dp,
                         modifier = Modifier.widthIn(min = 240.dp, max = 320.dp)
                     ) {
-                        storageDevices.forEach { dev ->
+                        storageDevices.forEachIndexed { devIndex, dev ->
                             val isCurrent = when (dev) {
                                 is StorageDevice.Root -> isRootBrowsing
                                 is StorageDevice.Physical -> {
@@ -2655,6 +2655,13 @@ fun Breadcrumbs(
                                 },
                                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                             )
+                            if (devIndex < storageDevices.lastIndex) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 12.dp),
+                                    thickness = 0.5.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                )
+                            }
                         }
                     }
                 }
@@ -3438,8 +3445,8 @@ fun FileListItem(
         if (isDividerVisible) {
             HorizontalDivider(
                 modifier = Modifier.padding(start = 68.dp, end = 12.dp),
-                thickness = 0.5.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                thickness = 0.8.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
             )
         }
     }
