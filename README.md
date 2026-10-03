@@ -30,6 +30,15 @@ A fast, modern, beautiful, and privacy-first Android file manager built with **K
 
 </div>
 
+
+## 📸 Screenshots
+
+<p align="center">
+<img width="1448" height="1086" alt="ROSE Screenshot" src="https://github.com/user-attachments/assets/da89f0d8-dc08-432a-99bf-c0f69f81340e" />
+</p>
+
+---
+
 ---
 
 ## ✨ Features
@@ -49,15 +58,6 @@ A fast, modern, beautiful, and privacy-first Android file manager built with **K
 * 🚫 **Folder Exclusion** — Exclude selected folders from media scanning.
 
 ---
-
-## 📸 Screenshots
-
-<p align="center">
-<img width="1448" height="1086" alt="ROSE Screenshot" src="https://github.com/user-attachments/assets/da89f0d8-dc08-432a-99bf-c0f69f81340e" />
-</p>
-
----
-
 ## 📋 Requirements & Permissions
 
 ### Minimum Requirements
