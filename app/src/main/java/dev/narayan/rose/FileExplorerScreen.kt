@@ -290,6 +290,7 @@ fun FileExplorerScreen(
     fromHome: Boolean = false,
     highlightFile: FileItem? = null, // New parameter
     isFromAllFiles: Boolean = false, // New parameter for seamless transition
+    resumePath: String? = null,
     sharedTransitionScope: SharedTransitionScope? = null, // New parameter
     animatedVisibilityScope: AnimatedVisibilityScope? = null, // New parameter
     onExitToHome: (() -> Unit)? = null,
@@ -304,6 +305,7 @@ fun FileExplorerScreen(
 ) {
     val context = LocalContext.current
 
+    var showCreateFileDialog by remember { mutableStateOf(false) }
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var showCompressDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf<FileItem?>(null) }
@@ -378,9 +380,17 @@ fun FileExplorerScreen(
         }
     }
 
-    LaunchedEffect(startPath, startCategory, startRecent) {
+    LaunchedEffect(startPath, startCategory, startRecent, resumePath) {
         if (highlightFile != null) {
             viewModel.highlightedFile = highlightFile
+        }
+        if (resumePath != null) {
+            if (viewModel.currentPath != resumePath || viewModel.files.isEmpty()) {
+                viewModel.loadFiles(resumePath)
+            } else {
+                viewModel.loadFiles(resumePath, isManualRefresh = true, showLoading = false)
+            }
+            return@LaunchedEffect
         }
         when {
             startCategory != null -> {
@@ -403,9 +413,11 @@ fun FileExplorerScreen(
                     val isArchive = file.extension.lowercase() in archiveExtensions ||
                             file.name.lowercase().let { name -> archiveExtensions.any { name.endsWith(".$it") } }
 
+                    val isDirectory = file.isDirectory || SafManager.isRestrictedPath(startPath) || (viewModel.useRoot && RootManager.isRootPath(startPath))
+
                     if (file.isFile && isArchive) {
                         viewModel.openArchive(file)
-                    } else if (file.isDirectory || startPath != viewModel.currentPath || viewModel.files.isEmpty()) {
+                    } else if (isDirectory || startPath != viewModel.currentPath || viewModel.files.isEmpty()) {
                         viewModel.loadFiles(startPath)
                     }
                 }
@@ -924,6 +936,7 @@ fun FileExplorerScreen(
                                                         else -> viewModel.loadFiles(viewModel.currentPath)
                                                     }
                                                 },
+                                                onNewFileClick = { showCreateFileDialog = true },
                                                 onNewFolderClick = { showCreateFolderDialog = true },
                                                 onSettingsClick = { activeScreen = "Settings" },
                                                 onNavigate = { viewModel.navigateTo(it, isActuallyDirectory = true) },
@@ -1986,6 +1999,16 @@ fun FileExplorerScreen(
         }
     }
 
+    if (showCreateFileDialog) {
+        CreateFileDialog(
+            onDismiss = { showCreateFileDialog = false },
+            onCreate = { name ->
+                viewModel.createFile(name)
+                showCreateFileDialog = false
+            }
+        )
+    }
+
     if (showCreateFolderDialog) {
         CreateFolderDialog(
             onDismiss = { showCreateFolderDialog = false },
@@ -2355,6 +2378,7 @@ fun MainTopBar(
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     onSearchClick: () -> Unit,
     onRefreshClick: () -> Unit,
+    onNewFileClick: () -> Unit,
     onNewFolderClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onNavigate: (File) -> Unit,
@@ -2420,6 +2444,12 @@ fun MainTopBar(
                             offset = androidx.compose.ui.unit.DpOffset(x = (-8).dp, y = 0.dp)
                         ) {
                             if (currentView != "Category" && viewModel.currentZipFile == null) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.action_new_file), modifier = Modifier.padding(vertical = 4.dp)) },
+                                    onClick = { onNewFileClick(); showMoreMenu = false },
+                                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.NoteAdd, null) },
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                                )
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.action_new_folder), modifier = Modifier.padding(vertical = 4.dp)) },
                                     onClick = { onNewFolderClick(); showMoreMenu = false },
@@ -4172,6 +4202,60 @@ fun CreateFolderDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
         confirmButton = {
             Button(
                 onClick = { if (folderName.isNotBlank()) onCreate(folderName.trim()) },
+                shape = RoundedCornerShape(12.dp)
+            ) { Text(stringResource(R.string.action_create)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        },
+        shape = RoundedCornerShape(28.dp)
+    )
+}
+
+@Composable
+fun CreateFileDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
+    var fileName by remember { mutableStateOf("New text file.txt") }
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(100)
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.AutoMirrored.Filled.NoteAdd, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(stringResource(R.string.create_file_dialog_title))
+            }
+        },
+        text = {
+            TextField(
+                value = fileName,
+                onValueChange = { fileName = it },
+                label = { Text(stringResource(R.string.create_file_name_label)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    imeAction = ImeAction.Done,
+                    capitalization = KeyboardCapitalization.Sentences
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        if (fileName.isNotBlank()) onCreate(fileName.trim())
+                    }
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester)
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (fileName.isNotBlank()) onCreate(fileName.trim()) },
                 shape = RoundedCornerShape(12.dp)
             ) { Text(stringResource(R.string.action_create)) }
         },

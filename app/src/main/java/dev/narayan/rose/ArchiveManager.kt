@@ -30,6 +30,15 @@ data class RoseArchiveEntry(
     val isEncrypted: Boolean = false
 )
 
+data class CompressSource(
+    val entryName: String,
+    val isDirectory: Boolean,
+    val size: Long,
+    val lastModified: Long = System.currentTimeMillis(),
+    val openStream: (() -> InputStream?)? = null,
+    val children: (() -> List<CompressSource>)? = null
+)
+
 object ArchiveManager {
 
     private const val BUFFER_SIZE = 128 * 1024 // 128KB
@@ -276,6 +285,109 @@ object ArchiveManager {
             if (!success && targetFile.exists()) {
                 try { targetFile.delete() } catch (e: Exception) {}
             }
+        }
+    }
+
+    fun compressSources(
+        sources: List<CompressSource>,
+        targetFile: File,
+        passphrase: String? = null,
+        onProgress: (name: String, processed: Long) -> Unit
+    ) {
+        val archive = Archive.writeNew()
+        if (archive == 0L) throw Exception("Failed to initialize archive engine")
+        var success = false
+        try {
+            val lowerName = targetFile.name.lowercase()
+            when {
+                lowerName.endsWith(".7z") -> {
+                    Archive.writeSetFormat7zip(archive)
+                }
+                lowerName.endsWith(".tar.gz") || lowerName.endsWith(".tgz") -> {
+                    Archive.writeSetFormatGnutar(archive)
+                    Archive.writeAddFilterGzip(archive)
+                }
+                else -> {
+                    Archive.writeSetFormatZip(archive)
+
+                    try {
+                        Archive.writeSetOptions(archive, "zip:compression-level=4".toByteArray())
+                    } catch (e: Throwable) {}
+
+                    if (!passphrase.isNullOrEmpty()) {
+                        try {
+                            try {
+                                Archive.writeSetOptions(archive, "zip:encryption=aes256".toByteArray())
+                            } catch (e: Throwable) {
+                                try {
+                                    Archive.writeSetOptions(archive, "zip:encryption=zipcrypt".toByteArray())
+                                } catch (e2: Throwable) {}
+                            }
+                            Archive.writeSetPassphrase(archive, passphrase.toByteArray())
+                        } catch (e: Throwable) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
+            }
+
+            Archive.writeOpenFileName(archive, targetFile.absolutePath.toByteArray())
+
+            val buffer = ByteBuffer.allocateDirect(BUFFER_SIZE)
+            sources.forEach { source ->
+                addCompressSourceToArchive(archive, source, buffer, onProgress)
+            }
+
+            Archive.writeClose(archive)
+            success = true
+        } finally {
+            Archive.writeFree(archive)
+            if (!success && targetFile.exists()) {
+                try { targetFile.delete() } catch (e: Exception) {}
+            }
+        }
+    }
+
+    private fun addCompressSourceToArchive(
+        archive: Long,
+        source: CompressSource,
+        buffer: ByteBuffer,
+        onProgress: (String, Long) -> Unit
+    ) {
+        val entry = ArchiveEntry.new1()
+        if (entry == 0L) return
+        try {
+            val name = if (source.isDirectory && !source.entryName.endsWith("/")) "${source.entryName}/" else source.entryName
+            ArchiveEntry.setPathnameUtf8(entry, name)
+            ArchiveEntry.setSize(entry, if (source.isDirectory) 0L else source.size)
+            ArchiveEntry.setFiletype(entry, if (source.isDirectory) ArchiveEntry.AE_IFDIR else ArchiveEntry.AE_IFREG)
+            ArchiveEntry.setMtime(entry, source.lastModified / 1000, 0)
+            ArchiveEntry.setPerm(entry, if (source.isDirectory) 493 else 420)
+
+            Archive.writeHeader(archive, entry)
+
+            if (!source.isDirectory) {
+                val stream = source.openStream?.invoke()
+                stream?.use { input ->
+                    val tempArray = ByteArray(BUFFER_SIZE)
+                    while (true) {
+                        val read = input.read(tempArray)
+                        if (read <= 0) break
+                        buffer.clear()
+                        buffer.put(tempArray, 0, read)
+                        buffer.flip()
+                        Archive.writeData(archive, buffer)
+                        onProgress(source.entryName, read.toLong())
+                    }
+                }
+            } else {
+                val childSources = source.children?.invoke()
+                childSources?.forEach { child ->
+                    addCompressSourceToArchive(archive, child, buffer, onProgress)
+                }
+            }
+        } finally {
+            ArchiveEntry.free(entry)
         }
     }
 
@@ -774,13 +886,15 @@ object ArchiveManager {
             }
         }
         Archive.readSetCallbackData(archive, null)
-        val buffer = ByteBuffer.allocate(BUFFER_SIZE)
+        val buffer = ByteBuffer.allocateDirect(BUFFER_SIZE)
+        val tempArray = ByteArray(BUFFER_SIZE)
         Archive.readSetReadCallback<Any?>(archive) { _, _ ->
             buffer.clear()
             try {
-                val bytesRead = inputStream.read(buffer.array())
+                val bytesRead = inputStream.read(tempArray)
                 if (bytesRead > 0) {
-                    buffer.limit(bytesRead)
+                    buffer.put(tempArray, 0, bytesRead)
+                    buffer.flip()
                     buffer
                 } else null
             } catch (e: Exception) { null }

@@ -49,6 +49,7 @@
     <string name="action_install">Install</string>
     <string name="action_later">Later</string>
     <string name="action_new_folder">New Folder</string>
+    <string name="action_new_file">New File</string>
     <string name="action_hide_hidden_files">Hide Hidden Files</string>
     <string name="action_show_hidden_files">Show Hidden Files</string>
     <string name="action_hide">Hide</string>
@@ -213,6 +214,8 @@
     <!-- Dialogs: Create Folder, Password, Rename -->
     <string name="create_folder_dialog_title">Create Folder</string>
     <string name="create_folder_name_label">Folder Name</string>
+    <string name="create_file_dialog_title">Create File</string>
+    <string name="create_file_name_label">File Name (.txt by default)</string>
     <string name="password_dialog_title">Password Required</string>
     <string name="password_label">Password</string>
     <string name="wrong_password">Incorrect password. Please try again.</string>

@@ -706,20 +706,37 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             }
             return 0L
         }
-        return try {
+        var totalSize = 0L
+        try {
             val p = java.nio.file.Paths.get(path)
-            var totalSize = 0L
-            java.nio.file.Files.walk(p).use { stream ->
-                stream.forEach { f ->
-                    if (java.nio.file.Files.isRegularFile(f)) {
-                        totalSize += java.nio.file.Files.size(f)
+            java.nio.file.Files.walkFileTree(p, object : java.nio.file.SimpleFileVisitor<java.nio.file.Path>() {
+                override fun visitFile(file: java.nio.file.Path, attrs: java.nio.file.attribute.BasicFileAttributes): java.nio.file.FileVisitResult {
+                    if (attrs.isRegularFile) {
+                        totalSize += attrs.size()
                     }
+                    return java.nio.file.FileVisitResult.CONTINUE
+                }
+
+                override fun visitFileFailed(file: java.nio.file.Path, exc: java.io.IOException?): java.nio.file.FileVisitResult {
+                    return java.nio.file.FileVisitResult.CONTINUE
+                }
+            })
+            return totalSize
+        } catch (_: Exception) {}
+
+        // Fallback: scan via File.listFiles if NIO walk fails
+        fun scanDir(f: File) {
+            val children = f.listFiles() ?: return
+            for (child in children) {
+                if (child.isFile) {
+                    totalSize += child.length()
+                } else if (child.isDirectory) {
+                    scanDir(child)
                 }
             }
-            totalSize
-        } catch (e: Exception) {
-            0L
         }
+        scanDir(directory)
+        return totalSize
     }
 
     var currentZipFile by mutableStateOf<File?>(null)
@@ -1268,6 +1285,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     is dev.narayan.rose.filejob.FileJobType.Copy -> type.targetDir.toString()
                     is dev.narayan.rose.filejob.FileJobType.Move -> type.targetDir.toString()
                     is dev.narayan.rose.filejob.FileJobType.Extract -> type.targetDir.toString()
+                    is dev.narayan.rose.filejob.FileJobType.Compress -> type.targetFile.parent?.toString()
                     else -> null
                 }
 
@@ -2467,7 +2485,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         val baseDir = currentPath.ifEmpty {
             File(Environment.getExternalStorageDirectory(), "Download").absolutePath
         }
-        val cleanName = archiveName.trim()
+        val cleanName = archiveName.trim().replace('/', '_').replace('\\', '_')
         val ext = format.extension
         val fileName = if (cleanName.lowercase().endsWith(ext)) cleanName else "$cleanName$ext"
         val destFile = File(baseDir, fileName)
@@ -2765,7 +2783,16 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        val newFile = File(fileItem.file.parent, newName)
+        val parent = fileItem.file.parentFile ?: if (currentPath.isNotEmpty()) File(currentPath) else null
+        if (parent == null) {
+            errorMessage = "Cannot rename root directory."
+            return
+        }
+        val newFile = File(parent, newName)
+        if (newFile.exists()) {
+            errorMessage = "A file or folder with that name already exists."
+            return
+        }
         if (fileItem.file.renameTo(newFile)) {
             invalidateDirectoryCache(currentPath)
             val updatedItem = FileItem(newFile)
@@ -2867,6 +2894,69 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             }
         } else {
             errorMessage = "Couldn't create folder. Name may already exist."
+        }
+    }
+
+    fun createFile(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        val finalName = if (!trimmed.contains('.')) "$trimmed.txt" else trimmed
+
+        if (useRoot && (currentPath == "/" || RootManager.isRootPath(currentPath))) {
+            viewModelScope.launch(Dispatchers.IO) {
+                val path = if (currentPath == "/") "/$finalName" else "$currentPath/$finalName"
+                val success = RootManager.createFile(path)
+                withContext(Dispatchers.Main) {
+                    if (success) {
+                        invalidateDirectoryCache(currentPath)
+                        val createdFile = File(path)
+                        highlightedFile = FileItem(createdFile)
+                        loadFiles(currentPath, isManualRefresh = true)
+                    } else {
+                        errorMessage = "Couldn't create file in root partition."
+                    }
+                }
+            }
+            return
+        }
+
+        if (SafManager.isRestrictedPath(currentPath)) {
+            viewModelScope.launch(Dispatchers.IO) {
+                val path = "${currentPath.trimEnd('/')}/$finalName"
+                val success = if (SafManager.hasPermission(getApplication(), currentPath)) {
+                    val doc = SafManager.createFileDocument(getApplication(), path)
+                    if (doc == null && ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
+                        ShizukuManager.createFile(currentPath, finalName)
+                    } else doc != null
+                } else if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
+                    ShizukuManager.createFile(currentPath, finalName)
+                } else false
+
+                withContext(Dispatchers.Main) {
+                    if (success) {
+                        invalidateDirectoryCache(currentPath)
+                        val createdFile = File(path)
+                        highlightedFile = FileItem(createdFile)
+                        loadFiles(currentPath, isManualRefresh = true)
+                    } else {
+                        errorMessage = "Couldn't create file. Access restricted."
+                    }
+                }
+            }
+            return
+        }
+
+        val newFile = File(currentPath, finalName)
+        try {
+            if (newFile.createNewFile()) {
+                invalidateDirectoryCache(currentPath)
+                highlightedFile = FileItem(newFile)
+                loadFiles(currentPath, isManualRefresh = true)
+            } else {
+                errorMessage = "Couldn't create file. Name may already exist."
+            }
+        } catch (e: Exception) {
+            errorMessage = "Couldn't create file: ${e.message}"
         }
     }
 

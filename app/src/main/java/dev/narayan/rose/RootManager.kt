@@ -270,6 +270,16 @@ object RootManager {
     }
 
     /**
+     * Creates an empty file with root permissions.
+     */
+    fun createFile(path: String): Boolean {
+        val clean = normalize(path)
+        val cmd = "touch ${shellEscape(clean)}"
+        val res = Shell.cmd(cmd).exec()
+        return res.isSuccess
+    }
+
+    /**
      * Deletes a file or directory recursively with root permissions.
      */
     fun delete(path: String): Boolean {
