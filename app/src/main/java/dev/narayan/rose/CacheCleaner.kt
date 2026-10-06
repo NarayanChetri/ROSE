@@ -106,6 +106,24 @@ object CacheCleaner {
         }
     }
 
+    fun cleanStaleTemporaryOpenFiles(context: Context, maxAgeMs: Long = 15 * 60 * 1000L) {
+        runCatching {
+            val cutoff = System.currentTimeMillis() - maxAgeMs
+            for (dir in getCacheDirs(context)) {
+                dir.listFiles()?.forEach { file ->
+                    val name = file.name
+                    if (name.startsWith("open_restricted_") || name.startsWith("temp_open_")) {
+                        if (file.lastModified() < cutoff) {
+                            runCatching {
+                                if (file.isDirectory) file.deleteRecursively() else file.delete()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fun cleanViewArchives(context: Context, excludePath: String? = null) {
         runCatching {
             val root = File(context.cacheDir, "view_archives")

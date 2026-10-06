@@ -2,7 +2,10 @@ package dev.narayan.rose.filejob
 
 import android.content.Context
 import android.net.Uri
+import dev.narayan.rose.CompressSource
 import dev.narayan.rose.SafManager
+import java.io.InputStream
+import java.io.OutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -302,9 +305,11 @@ object FileOperationRunner {
 
                         type.targets.forEach { target ->
                             if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
-                            deleteRecursive(appContext, target, job, onProgress)
-                            job.completedPaths.add(target.toString())
-                            touchedPaths.add(target.toString())
+                            val success = deleteRecursive(appContext, target, job, onProgress)
+                            if (success) {
+                                job.completedPaths.add(target.toString())
+                                touchedPaths.add(target.toString())
+                            }
                         }
                         job.progress = 1f
                         onProgress(job)
@@ -417,6 +422,9 @@ object FileOperationRunner {
                         if (!success) {
                             if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
                             throw Exception("Failed to create archive.")
+                        }
+                        synchronized(job.createdPaths) {
+                            job.createdPaths.add(type.targetFile.toString())
                         }
                         touchedPaths.add(type.targetFile.toString())
                         job.processedItems++
@@ -1563,13 +1571,13 @@ object FileOperationRunner {
 
     // -- Delete -----------------------------------------------------------
 
-    private fun deleteRecursive(context: Context, path: Path, job: FileJob? = null, onProgress: ((FileJob) -> Unit)? = null) {
+    private fun deleteRecursive(context: Context, path: Path, job: FileJob? = null, onProgress: ((FileJob) -> Unit)? = null): Boolean {
         if (job != null) {
-            if (JobManager.isCancelled(job.id)) return
+            if (JobManager.isCancelled(job.id)) return false
             try {
                 JobManager.checkWaitIfPaused(job.id)
             } catch (e: Exception) {
-                return
+                return false
             }
         }
 
@@ -1578,51 +1586,78 @@ object FileOperationRunner {
         val size = if (file.isFile) file.length() else 0L
 
         if ((pathStr == "/" || dev.narayan.rose.RootManager.isRootPath(pathStr)) && dev.narayan.rose.RootManager.isRootAvailable()) {
-            dev.narayan.rose.RootManager.delete(pathStr)
-            if (job != null && onProgress != null) {
-                job.processedBytes += size
-                job.processedItems++
-                onProgress(job)
-                JobManager.updateJob(job)
+            val success = dev.narayan.rose.RootManager.delete(pathStr)
+            if (success) {
+                if (job != null && onProgress != null) {
+                    job.processedBytes += size
+                    job.processedItems++
+                    onProgress(job)
+                    JobManager.updateJob(job)
+                }
+                return true
+            } else {
+                if (job != null) {
+                    recordFailure(context, job, pathStr, file.name, detectFailureReason(context, file.name, "Failed to delete with root", null), size, onProgress)
+                }
+                return false
             }
-            return
         }
 
         if (SafManager.isRestrictedPath(pathStr)) {
-            if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(pathStr)) {
+            val success = if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(pathStr)) {
                 val clean = dev.narayan.rose.ShizukuManager.normalize(pathStr)
                 dev.narayan.rose.ShizukuManager.runCommandSync(
                     "rm -rf ${dev.narayan.rose.ShizukuManager.shellEscape(clean)}"
-                )
+                ) == 0
             } else if (SafManager.hasPermission(context, pathStr)) {
                 SafManager.delete(context, pathStr)
+            } else {
+                false
             }
-            if (job != null && onProgress != null) {
-                job.processedBytes += size
-                job.processedItems++
-                if (!job.isIndeterminate) {
-                    if (job.totalBytes > 0) {
-                        job.progress = (job.processedBytes.toFloat() / job.totalBytes).coerceIn(0f, 1f)
-                    } else if (job.totalItems > 0) {
-                        job.progress = (job.processedItems.toFloat() / job.totalItems).coerceIn(0f, 1f)
+            if (success) {
+                if (job != null && onProgress != null) {
+                    job.processedBytes += size
+                    job.processedItems++
+                    if (!job.isIndeterminate) {
+                        if (job.totalBytes > 0) {
+                            job.progress = (job.processedBytes.toFloat() / job.totalBytes).coerceIn(0f, 1f)
+                        } else if (job.totalItems > 0) {
+                            job.progress = (job.processedItems.toFloat() / job.totalItems).coerceIn(0f, 1f)
+                        }
                     }
+                    onProgress(job)
+                    JobManager.updateJob(job)
                 }
-                onProgress(job)
-                JobManager.updateJob(job)
+                return true
+            } else {
+                if (job != null) {
+                    recordFailure(context, job, pathStr, file.name, detectFailureReason(context, file.name, "Failed to delete restricted path", null), size, onProgress)
+                }
+                return false
             }
-            return
         }
 
+        var allChildrenDeleted = true
         if (file.isDirectory) {
             file.listFiles()?.forEach {
-                deleteRecursive(context, it.toPath(), job, onProgress)
+                val childSuccess = deleteRecursive(context, it.toPath(), job, onProgress)
+                if (!childSuccess) allChildrenDeleted = false
             }
         }
 
+        var deleted = false
         try {
             Files.delete(path)
+            deleted = true
         } catch (e: Exception) {
-            file.delete()
+            deleted = file.delete()
+        }
+
+        if (!deleted && (file.exists() || (SafManager.isRestrictedPath(pathStr) && SafManager.exists(context, pathStr)))) {
+            if (job != null) {
+                recordFailure(context, job, pathStr, file.name, detectFailureReason(context, file.name, null, null), size, onProgress)
+            }
+            return false
         }
 
         if (job != null && onProgress != null) {
@@ -1649,6 +1684,7 @@ object FileOperationRunner {
                 JobManager.updateJob(job)
             }
         }
+        return true
     }
 
     private fun deleteSucceededSourceItems(context: Context, sourcePath: String, job: FileJob?) {
@@ -1754,7 +1790,149 @@ object FileOperationRunner {
         }
     }
 
+    private fun openSourceInputStream(context: Context, path: String): InputStream? {
+        if ((path == "/" || dev.narayan.rose.RootManager.isRootPath(path)) && dev.narayan.rose.RootManager.isRootAvailable()) {
+            return try {
+                dev.narayan.rose.RootManager.openInputStream(path)
+            } catch (e: Exception) {
+                null
+            }
+        }
+        val restricted = SafManager.isRestrictedPath(path) || SafManager.isSafUri(path)
+        if (restricted) {
+            if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(path)) {
+                val pfd = dev.narayan.rose.ShizukuManager.openFileDescriptor(context, path, android.os.ParcelFileDescriptor.MODE_READ_ONLY)
+                if (pfd != null) {
+                    return android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd)
+                }
+            }
+            return SafManager.openInputStream(context, path)
+        }
+        return try {
+            Files.newInputStream(Paths.get(path))
+        } catch (e: Exception) {
+            try {
+                java.io.FileInputStream(path)
+            } catch (e2: Exception) {
+                null
+            }
+        }
+    }
+
+    private fun buildCompressSource(
+        context: Context,
+        path: String,
+        entryName: String,
+        knownIsDir: Boolean? = null,
+        knownSize: Long? = null
+    ): CompressSource {
+        val isDir = knownIsDir ?: isDirectory(context, path)
+        val size = if (isDir) 0L else {
+            knownSize ?: if ((path == "/" || dev.narayan.rose.RootManager.isRootPath(path)) && dev.narayan.rose.RootManager.isRootAvailable()) {
+                dev.narayan.rose.RootManager.getFileSize(path)
+            } else if (SafManager.isRestrictedPath(path) || SafManager.isSafUri(path)) {
+                if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(path)) {
+                    dev.narayan.rose.ShizukuManager.getFileSize(path)
+                } else {
+                    SafManager.getReliableSize(context, path)
+                }
+            } else {
+                try {
+                    Files.size(Paths.get(path))
+                } catch (e: Exception) {
+                    java.io.File(path).length()
+                }
+            }
+        }
+        val lastModified = try {
+            java.io.File(path).lastModified().takeIf { it > 0L } ?: System.currentTimeMillis()
+        } catch (e: Exception) {
+            System.currentTimeMillis()
+        }
+
+        return CompressSource(
+            entryName = entryName,
+            isDirectory = isDir,
+            size = size,
+            lastModified = lastModified,
+            openStream = if (!isDir) {
+                { openSourceInputStream(context, path) }
+            } else null,
+            children = if (isDir) {
+                {
+                    val children = listChildren(context, path)
+                    children.map { child ->
+                        val childEntryName = if (entryName.isEmpty()) child.name else "$entryName/${child.name}"
+                        buildCompressSource(context, child.path, childEntryName, child.isDirectory, child.size)
+                    }
+                }
+            } else null
+        )
+    }
+
+    private fun transferArchiveToTarget(context: Context, tempFile: java.io.File, targetPath: String): Boolean {
+        var out: OutputStream? = null
+        try {
+            if ((targetPath == "/" || dev.narayan.rose.RootManager.isRootPath(targetPath)) && dev.narayan.rose.RootManager.isRootAvailable()) {
+                out = dev.narayan.rose.RootManager.openOutputStream(targetPath)
+            } else if (SafManager.isRestrictedPath(targetPath) || SafManager.isSafUri(targetPath)) {
+                if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(targetPath)) {
+                    val clean = dev.narayan.rose.ShizukuManager.normalize(targetPath)
+                    val parent = java.io.File(clean).parent
+                    if (parent != null) {
+                        val cleanParent = dev.narayan.rose.ShizukuManager.normalize(parent)
+                        dev.narayan.rose.ShizukuManager.runCommandSync("mkdir -p ${dev.narayan.rose.ShizukuManager.shellEscape(cleanParent)}")
+                    }
+                    val pfd = dev.narayan.rose.ShizukuManager.openFileDescriptor(
+                        context,
+                        clean,
+                        android.os.ParcelFileDescriptor.MODE_CREATE or
+                                android.os.ParcelFileDescriptor.MODE_WRITE_ONLY or
+                                android.os.ParcelFileDescriptor.MODE_TRUNCATE
+                    )
+                    if (pfd != null) {
+                        out = android.os.ParcelFileDescriptor.AutoCloseOutputStream(pfd)
+                    }
+                }
+                if (out == null) {
+                    out = SafManager.openOutputStreamForNewFile(context, targetPath)
+                }
+            } else {
+                val file = java.io.File(targetPath)
+                file.parentFile?.let { if (!it.exists()) it.mkdirs() }
+                out = java.io.FileOutputStream(file)
+            }
+
+            if (out == null) return false
+
+            tempFile.inputStream().use { input ->
+                out.use { output ->
+                    input.copyTo(output, bufferSize = 128 * 1024)
+                }
+            }
+            return true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return false
+        } finally {
+            try { out?.close() } catch (ignored: Exception) {}
+        }
+    }
+
     private fun compressRecursive(context: android.content.Context, sources: List<SourcePath>, targetFile: Path, job: FileJob, onProgress: (FileJob) -> Unit): Boolean {
+        val targetPath = targetFile.toString()
+        val isRestrictedTarget = SafManager.isRestrictedPath(targetPath) ||
+                SafManager.isSafUri(targetPath) ||
+                ((targetPath == "/" || dev.narayan.rose.RootManager.isRootPath(targetPath)) && dev.narayan.rose.RootManager.isRootAvailable())
+
+        val tempArchiveFile = if (isRestrictedTarget) {
+            val fileName = targetFile.fileName?.toString() ?: "archive.zip"
+            java.io.File(context.cacheDir, "temp_compress_${System.currentTimeMillis()}_$fileName")
+        } else {
+            null
+        }
+        val actualOutputFile = tempArchiveFile ?: targetFile.toFile()
+
         try {
             val stats = calculateBatchStats(context, sources.map { it.path })
             job.totalBytes = stats?.first ?: 0L
@@ -1764,9 +1942,13 @@ object FileOperationRunner {
             val compressType = job.type as? FileJobType.Compress
             val passphrase = compressType?.passphrase
 
-            dev.narayan.rose.ArchiveManager.compress(
-                sources = sources.map { java.io.File(it.path) },
-                targetFile = targetFile.toFile(),
+            val compressSources = sources.map { source ->
+                buildCompressSource(context, source.path, source.displayName)
+            }
+
+            dev.narayan.rose.ArchiveManager.compressSources(
+                sources = compressSources,
+                targetFile = actualOutputFile,
                 passphrase = passphrase
             ) { name, processed ->
                 if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
@@ -1777,10 +1959,23 @@ object FileOperationRunner {
                     onProgress(job)
                 }
             }
+
+            if (tempArchiveFile != null) {
+                if (JobManager.isCancelled(job.id)) throw java.io.InterruptedIOException("Cancelled")
+                val transferred = transferArchiveToTarget(context, tempArchiveFile, targetPath)
+                if (!transferred) {
+                    return false
+                }
+            }
+
             return true
         } catch (e: Exception) {
             e.printStackTrace()
             return false
+        } finally {
+            if (tempArchiveFile != null) {
+                try { tempArchiveFile.delete() } catch (ignored: Exception) {}
+            }
         }
     }
 }

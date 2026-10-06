@@ -364,6 +364,23 @@ object RecycleBinManager {
         return allItems.sortedByDescending { it.deletionTime }
     }
 
+    private fun getNonConflictingTarget(file: File): File {
+        if (!existsInternal(file)) return file
+        val parent = file.parentFile ?: return file
+        val name = file.name
+        val dotIndex = name.lastIndexOf('.')
+        val base = if (dotIndex > 0) name.substring(0, dotIndex) else name
+        val ext = if (dotIndex > 0) name.substring(dotIndex) else ""
+        var counter = 1
+        while (true) {
+            val candidate = File(parent, "$base ($counter)$ext")
+            if (!existsInternal(candidate)) {
+                return candidate
+            }
+            counter++
+        }
+    }
+
     fun restore(context: Context, item: RecycledItem, onProgress: ((Long, Long) -> Unit)? = null): Boolean {
         val binDir = if (item.binPath != null) File(item.binPath) else {
             // Fallback: search all bins if binPath is missing
@@ -381,19 +398,20 @@ object RecycleBinManager {
         }
 
         val originalFile = File(item.originalPath)
-        originalFile.parentFile?.let { mkdirsInternal(it) }
+        val targetFile = getNonConflictingTarget(originalFile)
+        targetFile.parentFile?.let { mkdirsInternal(it) }
 
         return try {
             // Priority 1: Shizuku move (Instant and reliable)
             val moved = if (ShizukuManager.isAvailable() && ShizukuManager.hasPermission()) {
                 val cleanSrc = ShizukuManager.normalize(recycledFile.absolutePath)
-                val cleanDest = ShizukuManager.normalize(originalFile.absolutePath)
+                val cleanDest = ShizukuManager.normalize(targetFile.absolutePath)
                 ShizukuManager.runCommandSync("mv ${shellEscape(cleanSrc)} ${shellEscape(cleanDest)}") == 0
             } else {
                 false
             }
 
-            if (moved || recycledFile.renameTo(originalFile)) {
+            if (moved || recycledFile.renameTo(targetFile)) {
                 var success = false
                 synchronized(lock) {
                     val metadata = loadMetadata(context, binDir)
@@ -413,12 +431,12 @@ object RecycleBinManager {
 
                 var bytesCopied = 0L
                 var success = if (recycledFile.isDirectory) {
-                    copyRecursivelyWithProgress(recycledFile, originalFile) { copied ->
+                    copyRecursivelyWithProgress(recycledFile, targetFile) { copied ->
                         bytesCopied += copied
                         onProgress?.invoke(bytesCopied, totalSize)
                     } && deleteInternal(recycledFile)
                 } else {
-                    val result = copyWithProgress(recycledFile, originalFile, onProgress)
+                    val result = copyWithProgress(recycledFile, targetFile, onProgress)
                     if (result) deleteInternal(recycledFile) else false
                 }
 

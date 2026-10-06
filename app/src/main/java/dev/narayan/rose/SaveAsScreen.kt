@@ -115,10 +115,11 @@ fun SaveAsScreen(
     }
 
     BackHandler {
+        val isDeviceRoot = viewModel.storageDevices.any { it.path == currentDir.absolutePath } || currentDir == rootDir
         if (showOptions) {
             onDismiss()
-        } else if (currentDir != rootDir) {
-            currentDir = currentDir.parentFile ?: rootDir
+        } else if (!isDeviceRoot && currentDir.parentFile != null && currentDir.parentFile?.absolutePath != "/storage") {
+            currentDir = currentDir.parentFile!!
         } else if (isZip && uris.size == 1) {
             showOptions = true
         } else {
@@ -151,7 +152,11 @@ fun SaveAsScreen(
                             }
                         }
                     )
-                    Breadcrumbs(path = currentDir.absolutePath, onNavigate = { currentDir = it })
+                    Breadcrumbs(
+                        path = currentDir.absolutePath,
+                        storageDevices = viewModel.storageDevices,
+                        onNavigate = { currentDir = it }
+                    )
                 }
             }
         },

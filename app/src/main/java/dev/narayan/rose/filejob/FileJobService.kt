@@ -139,6 +139,7 @@ class FileJobService : Service() {
     // job.id -> stable small int, so each concurrent job keeps its own notification slot.
     private val notificationIds = mutableMapOf<String, Int>()
     private var nextSlot = 0
+    private val inFlightJobCount = java.util.concurrent.atomic.AtomicInteger(0)
 
     private fun notificationIdFor(jobId: String): Int =
         notificationIds.getOrPut(jobId) { NOTIFICATION_ID_BASE + (nextSlot++) }
@@ -200,6 +201,10 @@ class FileJobService : Service() {
             type = jobType,
             totalItems = sourcePaths.size
         )
+        // Register job synchronously before launching thread to avoid premature stopSelf race condition
+        JobManager.updateJob(job)
+        inFlightJobCount.incrementAndGet()
+
         val notificationId = notificationIdFor(job.id)
 
         // Only show status bar notifications for downloads (Save offline)
@@ -227,9 +232,10 @@ class FileJobService : Service() {
 
             // Only drop foreground state / stop the service once nothing else
             // is running - a second job may have started while this one finished.
-            if (JobManager.activeJobs.value.isEmpty()) {
+            val remaining = inFlightJobCount.decrementAndGet()
+            if (remaining <= 0 && JobManager.activeJobs.value.isEmpty()) {
                 stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+                stopSelfResult(startId)
             } else {
                 stopForeground(STOP_FOREGROUND_DETACH)
                 // Cancel finished job's notification if not showing completion

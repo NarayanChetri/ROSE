@@ -461,11 +461,15 @@ class MainActivity : ComponentActivity() {
                         // Handle viewed/edited document (.md or .txt)
                         LaunchedEffect(pendingDocument) {
                             pendingDocument?.let { (source, isMarkdown) ->
+                                val backScreen = when (val s = screen) {
+                                    is AppScreen.Files -> s.copy(resumePath = viewModel.currentPath)
+                                    else -> s
+                                }
                                 screen = AppScreen.Document(
                                     source = source,
                                     isMarkdown = isMarkdown,
                                     initialMode = DocumentMode.VIEW,
-                                    previousScreen = screen
+                                    previousScreen = backScreen
                                 )
                                 pendingDocument = null
                             }
@@ -708,6 +712,7 @@ class MainActivity : ComponentActivity() {
                                             fromHome = currentScreen.fromHome,
                                             highlightFile = currentScreen.highlightFile,
                                             isFromAllFiles = currentScreen.isFromAllFiles,
+                                            resumePath = currentScreen.resumePath,
                                             sharedTransitionScope = this@SharedTransitionLayout,
                                             animatedVisibilityScope = this@AnimatedContent,
                                             onExitToHome = {
@@ -1060,8 +1065,8 @@ class MainActivity : ComponentActivity() {
         if (fileItems.isEmpty()) return
 
         lifecycleScope.launch(Dispatchers.IO) {
-            // Clean up old temporary share files before starting new share
-            CacheCleaner.cleanAllShareFiles(this@MainActivity)
+            // Clean up stale temporary share files older than 15 minutes before starting new share
+            CacheCleaner.cleanStaleShareFiles(this@MainActivity, maxAgeMs = 15 * 60 * 1000L)
             val newlyCreatedTempFiles = mutableListOf<File>()
             val uris = ArrayList<Uri>()
             var folderFound = false
@@ -1147,8 +1152,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-
-            tempOpenedFiles.addAll(newlyCreatedTempFiles)
 
             withContext(Dispatchers.Main) {
                 if (uris.isEmpty()) {
@@ -1512,7 +1515,8 @@ class MainActivity : ComponentActivity() {
         }
         cleanupOldViewArchives()
         lifecycleScope.launch(Dispatchers.IO) {
-            CacheCleaner.cleanStaleShareFiles(this@MainActivity, maxAgeMs = 60_000L)
+            CacheCleaner.cleanStaleShareFiles(this@MainActivity, maxAgeMs = 15 * 60 * 1000L)
+            CacheCleaner.cleanStaleTemporaryOpenFiles(this@MainActivity, maxAgeMs = 15 * 60 * 1000L)
         }
     }
 
@@ -1523,10 +1527,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        tempOpenedFiles.forEach { runCatching { it.deleteRecursively() } }
-        tempOpenedFiles.clear()
-        CacheCleaner.cleanTemporaryOpenFiles(this)
-        CacheCleaner.cleanAllShareFiles(this)
+        CacheCleaner.cleanStaleTemporaryOpenFiles(this, maxAgeMs = 15 * 60 * 1000L)
+        CacheCleaner.cleanStaleShareFiles(this, maxAgeMs = 15 * 60 * 1000L)
         CacheCleaner.cleanViewArchives(this)
         Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
         Shizuku.removeBinderReceivedListener(shizukuBinderListener)
@@ -1591,7 +1593,8 @@ private sealed class AppScreen {
         val recent: Boolean = false,
         val fromHome: Boolean = false,
         val highlightFile: FileItem? = null,
-        val isFromAllFiles: Boolean = false
+        val isFromAllFiles: Boolean = false,
+        val resumePath: String? = null
     ) : AppScreen()
     data class SaveAs(
         val uris: List<Uri>,
