@@ -831,7 +831,17 @@ fun FileExplorerScreen(
                             ) { target ->
                                 when (target) {
                                     "Selection" -> {
-                                        SelectionTopBar(viewModel)
+                                        SelectionTopBar(
+                                            viewModel = viewModel,
+                                            isAllSelected = viewModel.selectedFiles.size == effectiveDisplayedFiles.size && effectiveDisplayedFiles.isNotEmpty(),
+                                            onSelectAllClick = {
+                                                if (viewModel.selectedFiles.size == effectiveDisplayedFiles.size) {
+                                                    viewModel.exitSelectionMode()
+                                                } else {
+                                                    viewModel.selectAll(effectiveDisplayedFiles)
+                                                }
+                                            }
+                                        )
                                     }
                                     "Search" -> {
                                         Column {
@@ -2836,7 +2846,11 @@ fun Breadcrumbs(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SelectionTopBar(viewModel: RoseViewModel) {
+fun SelectionTopBar(
+    viewModel: RoseViewModel,
+    isAllSelected: Boolean,
+    onSelectAllClick: () -> Unit
+) {
     TopAppBar(
         title = {
             Text(
@@ -2853,26 +2867,11 @@ fun SelectionTopBar(viewModel: RoseViewModel) {
             }
         },
         actions = {
-            val fileOnlySelected = viewModel.selectedFiles.filter { !it.isDirectory }
-            if (fileOnlySelected.isNotEmpty() && viewModel.currentZipFile == null) {
-                val allFav = fileOnlySelected.all { viewModel.isFileInFavourites(it.file.absolutePath) }
-                val context = LocalContext.current
-                IconButton(onClick = {
-                    if (allFav) {
-                        viewModel.removeFavourites(fileOnlySelected)
-                        Toast.makeText(context, context.getString(R.string.toast_removed_from_favourites), Toast.LENGTH_SHORT).show()
-                    } else {
-                        viewModel.addFavourites(fileOnlySelected)
-                        Toast.makeText(context, context.getString(R.string.toast_added_to_favourites), Toast.LENGTH_SHORT).show()
-                    }
-                    viewModel.exitSelectionMode()
-                }) {
-                    Icon(
-                        imageVector = if (allFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        contentDescription = if (allFav) stringResource(R.string.action_remove_from_favourites) else stringResource(R.string.action_add_to_favourites),
-                        tint = Color(0xFFE11D48)
-                    )
-                }
+            IconButton(onClick = onSelectAllClick) {
+                Icon(
+                    imageVector = if (isAllSelected) Icons.Default.Deselect else Icons.Default.Checklist,
+                    contentDescription = if (isAllSelected) stringResource(R.string.action_unselect_all) else stringResource(R.string.action_select_all)
+                )
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
@@ -2904,179 +2903,215 @@ fun SelectionBottomBar(
         tonalElevation = 3.dp,
         shadowElevation = 16.dp
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .navigationBarsPadding()
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
         ) {
-            SelectionBottomBarItem(
-                icon = Icons.Outlined.Share,
-                label = stringResource(R.string.action_share),
-                onClick = onShare,
-                modifier = Modifier.weight(1f)
+            HorizontalDivider(
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
             )
-            SelectionBottomBarItem(
-                icon = Icons.Outlined.ContentCopy,
-                label = stringResource(R.string.action_copy),
-                onClick = {
-                    val isVirtual = currentView == "Category" || currentView == "Recent" || currentView == "Favourites"
-                    viewModel.copySelected()
-                    if (isVirtual) {
-                        onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
-                    }
-                },
-                modifier = Modifier.weight(1f)
-            )
-            SelectionBottomBarItem(
-                icon = Icons.AutoMirrored.Outlined.DriveFileMove,
-                label = stringResource(R.string.action_move),
-                onClick = {
-                    val isVirtual = currentView == "Category" || currentView == "Recent" || currentView == "Favourites"
-                    viewModel.moveSelected()
-                    if (isVirtual) {
-                        onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
-                    }
-                },
-                modifier = Modifier.weight(1f),
-                enabled = viewModel.currentZipFile == null
-            )
-            SelectionBottomBarItem(
-                icon = Icons.Outlined.Delete,
-                label = stringResource(R.string.action_delete),
-                onClick = onDeleteClick,
-                modifier = Modifier.weight(1f),
-                enabled = viewModel.currentZipFile == null
-            )
-
-            var showMoreMenu by remember { mutableStateOf(false) }
-            Box(modifier = Modifier.weight(1f)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 SelectionBottomBarItem(
-                    icon = Icons.Default.MoreVert,
-                    label = stringResource(R.string.action_more),
-                    onClick = { showMoreMenu = true },
-                    modifier = Modifier.fillMaxWidth()
+                    icon = Icons.Outlined.Share,
+                    label = stringResource(R.string.action_share),
+                    onClick = onShare,
+                    modifier = Modifier.weight(1f)
                 )
-                DropdownMenu(
-                    expanded = showMoreMenu,
-                    onDismissRequest = { showMoreMenu = false },
-                    shape = RoundedCornerShape(16.dp),
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    offset = androidx.compose.ui.unit.DpOffset(x = (-8).dp, y = 0.dp)
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(if (isAllSelected) stringResource(R.string.action_unselect_all) else stringResource(R.string.action_select_all)) },
-                        onClick = {
-                            onSelectAllClick()
-                            showMoreMenu = false
-                        },
-                        leadingIcon = { Icon(if (isAllSelected) Icons.Default.Deselect else Icons.Default.SelectAll, null) }
+                SelectionBottomBarItem(
+                    icon = Icons.AutoMirrored.Outlined.DriveFileMove,
+                    label = stringResource(R.string.action_move),
+                    onClick = {
+                        val isVirtual = currentView == "Category" || currentView == "Recent" || currentView == "Favourites"
+                        viewModel.moveSelected()
+                        if (isVirtual) {
+                            onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    enabled = viewModel.currentZipFile == null
+                )
+                SelectionBottomBarItem(
+                    icon = Icons.Outlined.Delete,
+                    label = stringResource(R.string.action_delete),
+                    onClick = onDeleteClick,
+                    modifier = Modifier.weight(1f),
+                    enabled = viewModel.currentZipFile == null
+                )
+                SelectionBottomBarItem(
+                    icon = Icons.Outlined.ContentCopy,
+                    label = stringResource(R.string.action_copy),
+                    onClick = {
+                        val isVirtual = currentView == "Category" || currentView == "Recent" || currentView == "Favourites"
+                        viewModel.copySelected()
+                        if (isVirtual) {
+                            onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+
+                var showMoreMenu by remember { mutableStateOf(false) }
+                Box(modifier = Modifier.weight(1f)) {
+                    SelectionBottomBarItem(
+                        icon = Icons.Default.MoreVert,
+                        label = stringResource(R.string.action_more),
+                        onClick = { showMoreMenu = true },
+                        modifier = Modifier.fillMaxWidth()
                     )
-                    if (currentView != "Recent" && viewModel.currentZipFile == null) {
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.action_compress)) },
-                            onClick = {
-                                onCompressClick()
-                                showMoreMenu = false
-                            },
-                            leadingIcon = { Icon(Icons.Default.Archive, null) }
-                        )
-                    }
-                    val fileOnlySelected = viewModel.selectedFiles.filter { !it.isDirectory }
-                    if (fileOnlySelected.isNotEmpty() && viewModel.currentZipFile == null) {
-                        val allFav = fileOnlySelected.all { viewModel.isFileInFavourites(it.file.absolutePath) }
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    if (allFav) stringResource(R.string.action_remove_from_favourites)
-                                    else stringResource(R.string.action_add_to_favourites)
-                                )
-                            },
-                            onClick = {
-                                if (allFav) {
-                                    viewModel.removeFavourites(fileOnlySelected)
-                                    Toast.makeText(context, context.getString(R.string.toast_removed_from_favourites), Toast.LENGTH_SHORT).show()
-                                } else {
-                                    viewModel.addFavourites(fileOnlySelected)
-                                    Toast.makeText(context, context.getString(R.string.toast_added_to_favourites), Toast.LENGTH_SHORT).show()
+                    if (showMoreMenu) {
+                        val density = LocalDensity.current
+                        val gapPx = with(density) { 8.dp.roundToPx() }
+                        val endMarginPx = with(density) { 8.dp.roundToPx() }
+                        val popupPositionProvider = remember(gapPx, endMarginPx) {
+                            object : androidx.compose.ui.window.PopupPositionProvider {
+                                override fun calculatePosition(
+                                    anchorBounds: androidx.compose.ui.unit.IntRect,
+                                    windowSize: androidx.compose.ui.unit.IntSize,
+                                    layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+                                    popupContentSize: androidx.compose.ui.unit.IntSize
+                                ): androidx.compose.ui.unit.IntOffset {
+                                    val x = (windowSize.width - popupContentSize.width - endMarginPx).coerceAtLeast(0)
+                                    val y = (anchorBounds.top - popupContentSize.height - gapPx).coerceAtLeast(0)
+                                    return androidx.compose.ui.unit.IntOffset(x, y)
                                 }
-                                viewModel.exitSelectionMode()
-                                showMoreMenu = false
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    if (allFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                    null,
-                                    tint = Color(0xFFE11D48)
-                                )
                             }
-                        )
-                    }
-                    if (viewModel.selectedFiles.size == 1) {
-                        val fileItem = viewModel.selectedFiles.first()
-                        if (viewModel.currentZipFile == null) {
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.action_rename)) },
-                                onClick = {
-                                    onRenameClick()
-                                    showMoreMenu = false
-                                },
-                                leadingIcon = { Icon(Icons.Default.Edit, null) }
-                            )
                         }
-                        if (fileItem.isDirectory && viewModel.currentZipFile == null) {
-                            val isAlreadyInQuickAccess = viewModel.isFolderInQuickAccess(fileItem.file.absolutePath)
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        if (isAlreadyInQuickAccess) stringResource(R.string.action_already_in_quick_access)
-                                        else stringResource(R.string.action_add_to_quick_access)
-                                    )
-                                },
-                                enabled = !isAlreadyInQuickAccess,
-                                onClick = {
-                                    if (!isAlreadyInQuickAccess) {
-                                        viewModel.addQuickAccessFolder(fileItem.file.absolutePath)
-                                        Toast.makeText(context, context.getString(R.string.toast_added_to_quick_access), Toast.LENGTH_SHORT).show()
+                        androidx.compose.ui.window.Popup(
+                            popupPositionProvider = popupPositionProvider,
+                            onDismissRequest = { showMoreMenu = false },
+                            properties = androidx.compose.ui.window.PopupProperties(focusable = true)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                tonalElevation = 3.dp,
+                                shadowElevation = 8.dp,
+                                modifier = Modifier.width(IntrinsicSize.Max)
+                            ) {
+                                Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                                    if (currentView != "Recent" && viewModel.currentZipFile == null) {
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.action_compress)) },
+                                            onClick = {
+                                                onCompressClick()
+                                                showMoreMenu = false
+                                            },
+                                            leadingIcon = { Icon(Icons.Default.Archive, null) }
+                                        )
+                                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                     }
-                                    viewModel.exitSelectionMode()
-                                    showMoreMenu = false
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        if (isAlreadyInQuickAccess) Icons.Default.Check else Icons.Default.Add,
-                                        null
+                                    DropdownMenuItem(
+                                        text = { Text(if (isAllSelected) stringResource(R.string.action_unselect_all) else stringResource(R.string.action_select_all)) },
+                                        onClick = {
+                                            onSelectAllClick()
+                                            showMoreMenu = false
+                                        },
+                                        leadingIcon = { Icon(if (isAllSelected) Icons.Default.Deselect else Icons.Default.Checklist, null) }
                                     )
+                                    if (viewModel.selectedFiles.size == 1 && viewModel.currentZipFile == null) {
+                                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.action_rename)) },
+                                            onClick = {
+                                                onRenameClick()
+                                                showMoreMenu = false
+                                            },
+                                            leadingIcon = { Icon(Icons.Default.Edit, null) }
+                                        )
+                                    }
+                                    val fileOnlySelected = viewModel.selectedFiles.filter { !it.isDirectory }
+                                    if (fileOnlySelected.isNotEmpty() && viewModel.currentZipFile == null) {
+                                        val allFav = fileOnlySelected.all { viewModel.isFileInFavourites(it.file.absolutePath) }
+                                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    if (allFav) stringResource(R.string.action_remove_from_favourites)
+                                                    else stringResource(R.string.action_add_to_favourites)
+                                                )
+                                            },
+                                            onClick = {
+                                                if (allFav) {
+                                                    viewModel.removeFavourites(fileOnlySelected)
+                                                    Toast.makeText(context, context.getString(R.string.toast_removed_from_favourites), Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    viewModel.addFavourites(fileOnlySelected)
+                                                    Toast.makeText(context, context.getString(R.string.toast_added_to_favourites), Toast.LENGTH_SHORT).show()
+                                                }
+                                                viewModel.exitSelectionMode()
+                                                showMoreMenu = false
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    if (allFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                                    null,
+                                                    tint = Color(0xFFE11D48)
+                                                )
+                                            }
+                                        )
+                                    }
+                                    if (viewModel.selectedFiles.size == 1) {
+                                        val fileItem = viewModel.selectedFiles.first()
+                                        if (fileItem.isDirectory && viewModel.currentZipFile == null) {
+                                            val isAlreadyInQuickAccess = viewModel.isFolderInQuickAccess(fileItem.file.absolutePath)
+                                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        if (isAlreadyInQuickAccess) stringResource(R.string.action_already_in_quick_access)
+                                                        else stringResource(R.string.action_add_to_quick_access)
+                                                    )
+                                                },
+                                                enabled = !isAlreadyInQuickAccess,
+                                                onClick = {
+                                                    if (!isAlreadyInQuickAccess) {
+                                                        viewModel.addQuickAccessFolder(fileItem.file.absolutePath)
+                                                        Toast.makeText(context, context.getString(R.string.toast_added_to_quick_access), Toast.LENGTH_SHORT).show()
+                                                    }
+                                                    viewModel.exitSelectionMode()
+                                                    showMoreMenu = false
+                                                },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        if (isAlreadyInQuickAccess) Icons.Default.Check else Icons.Default.Add,
+                                                        null
+                                                    )
+                                                }
+                                            )
+                                        }
+                                        if (fileItem.fileType == FileType.ZIP && viewModel.currentZipFile == null) {
+                                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.action_extract)) },
+                                                onClick = {
+                                                    onExtractClick()
+                                                    showMoreMenu = false
+                                                },
+                                                leadingIcon = { Icon(Icons.Outlined.Unarchive, null) }
+                                            )
+                                        }
+                                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.action_properties)) },
+                                            onClick = {
+                                                viewModel.showProperties(fileItem)
+                                                viewModel.exitSelectionMode()
+                                                showMoreMenu = false
+                                            },
+                                            leadingIcon = { Icon(Icons.Default.Info, null) }
+                                        )
+                                    }
                                 }
-                            )
+                            }
                         }
-                        if (fileItem.fileType == FileType.ZIP && viewModel.currentZipFile == null) {
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.action_extract)) },
-                                onClick = {
-                                    onExtractClick()
-                                    showMoreMenu = false
-                                },
-                                leadingIcon = { Icon(Icons.Outlined.Unarchive, null) }
-                            )
-                        }
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.action_properties)) },
-                            onClick = {
-                                viewModel.showProperties(fileItem)
-                                viewModel.exitSelectionMode()
-                                showMoreMenu = false
-                            },
-                            leadingIcon = { Icon(Icons.Default.Info, null) }
-                        )
                     }
                 }
             }
@@ -3097,17 +3132,17 @@ fun SelectionBottomBarItem(
     val finalTint = if (enabled) tint else tint.copy(alpha = 0.38f)
     Column(
         modifier = modifier
+            .fillMaxHeight()
             .clip(RoundedCornerShape(12.dp))
-            .clickable(enabled = enabled) { onClick() }
-            .padding(vertical = 10.dp),
+            .clickable(enabled = enabled) { onClick() },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(icon, contentDescription = null, tint = finalTint, modifier = Modifier.size(24.dp))
-        Spacer(modifier = Modifier.height(6.dp))
+        Icon(icon, contentDescription = null, tint = finalTint, modifier = Modifier.size(22.dp))
+        Spacer(modifier = Modifier.height(3.dp))
         Text(
             label,
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Medium),
+            style = MaterialTheme.typography.labelSmall,
             color = finalTint
         )
     }
@@ -3571,27 +3606,6 @@ fun FileListItem(
                                     leadingIcon = { Icon(Icons.Default.Edit, null) }
                                 )
                             }
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.action_copy)) },
-                                onClick = { showMenu = false; onCopy() },
-                                leadingIcon = { Icon(Icons.Default.ContentCopy, null) }
-                            )
-                            if (!isVirtual) {
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.action_move)) },
-                                    onClick = { showMenu = false; onCut() },
-                                    leadingIcon = { Icon(Icons.Default.ContentCut, null) }
-                                )
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.action_delete)) },
-                                    onClick = { showMenu = false; onDelete() },
-                                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-                                    colors = MenuDefaults.itemColors(textColor = MaterialTheme.colorScheme.error)
-                                )
-                            }
                             if ((fileItem.fileType == FileType.ZIP || isVirtual) && !isVirtual) {
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                 DropdownMenuItem(
@@ -3600,12 +3614,6 @@ fun FileListItem(
                                     leadingIcon = { Icon(Icons.Outlined.Unarchive, null) }
                                 )
                             }
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.action_properties)) },
-                                onClick = { showMenu = false; onProperties() },
-                                leadingIcon = { Icon(Icons.Default.Info, null) }
-                            )
                         }
                     }
                 }
