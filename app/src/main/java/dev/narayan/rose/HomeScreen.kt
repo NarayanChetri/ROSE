@@ -533,7 +533,7 @@ fun HomeScreen(
                 }
             } else {
                 item(key = "storage_capsule") {
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                     AnimatedVisibility(
                         visible = visible,
                         enter = fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 12 }
@@ -1009,10 +1009,10 @@ private fun CategoryGrid(
             modifier = Modifier.fillMaxWidth()
         ) { page ->
             val pageCategories = if (page == 0) page1Categories else page2Categories
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 // Row 1 (first 3 items)
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     val row1 = pageCategories.take(3)
@@ -1035,7 +1035,7 @@ private fun CategoryGrid(
 
                 // Row 2 (items 3 to 5) - keeps identical height for both pages
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     val row2 = pageCategories.drop(3).take(3)
@@ -1058,7 +1058,7 @@ private fun CategoryGrid(
                     } else {
                         // Invisible placeholder preserving exact aspect ratio of cards
                         repeat(3) {
-                            Spacer(modifier = Modifier.weight(1f).aspectRatio(1f))
+                            Spacer(modifier = Modifier.weight(1f).padding(1.dp).aspectRatio(1f))
                         }
                     }
                 }
@@ -1147,6 +1147,7 @@ private fun CategoryCard(
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         modifier = modifier
+            .padding(1.dp)
             .aspectRatio(1f)
             .graphicsLayer {
                 alpha = animatedProgress.value
@@ -1156,19 +1157,19 @@ private fun CategoryCard(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(8.dp),
+                .padding(6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
             Box(
                 modifier = Modifier
-                    .size(38.dp)
+                    .size(36.dp)
                     .background(category.color.copy(alpha = 0.16f), RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(category.icon, null, tint = category.color, modifier = Modifier.size(22.dp))
+                Icon(category.icon, null, tint = category.color, modifier = Modifier.size(20.dp))
             }
-            Spacer(modifier = Modifier.height(7.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
                 stringResource(category.labelRes),
                 style = MaterialTheme.typography.bodyMedium,
@@ -1176,7 +1177,7 @@ private fun CategoryCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.height(1.dp))
             val countText = if (count == null) "..." else animatedCount.toString()
             Text(
                 countText,
