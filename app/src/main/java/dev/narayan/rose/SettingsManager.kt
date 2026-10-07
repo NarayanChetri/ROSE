@@ -137,6 +137,34 @@ class SettingsManager(context: Context) {
             prefs.edit { putString(KEY_QUICK_ACCESS_CUSTOM, result.joinToString(QUICK_ACCESS_DELIMITER)) }
         }
 
+    // Favourite files chosen by user, stored as absolute paths joined with delimiter
+    var favouriteFiles: List<String>
+        get() {
+            val raw = prefs.getString(KEY_FAVOURITE_FILES, "") ?: return emptyList()
+            val list = raw.split(QUICK_ACCESS_DELIMITER).filter { it.isNotBlank() }
+            val seen = mutableSetOf<String>()
+            val result = mutableListOf<String>()
+            for (p in list) {
+                val normalized = try { java.io.File(p).canonicalPath } catch (_: Exception) { p.trimEnd(java.io.File.separatorChar) }
+                if (seen.add(normalized)) {
+                    result.add(p)
+                }
+            }
+            return result
+        }
+        set(value) {
+            val seen = mutableSetOf<String>()
+            val result = mutableListOf<String>()
+            for (p in value) {
+                if (p.isBlank()) continue
+                val normalized = try { java.io.File(p).canonicalPath } catch (_: Exception) { p.trimEnd(java.io.File.separatorChar) }
+                if (seen.add(normalized)) {
+                    result.add(p)
+                }
+            }
+            prefs.edit { putString(KEY_FAVOURITE_FILES, result.joinToString(QUICK_ACCESS_DELIMITER)) }
+        }
+
 
     // Last-scanned category counts (keyed by FileType.name), persisted so cold launches
     // show real counts immediately without flashing 0 or waiting for MediaStore query.
@@ -227,6 +255,7 @@ class SettingsManager(context: Context) {
         private const val KEY_USE_ROOT = "use_root"
         private const val KEY_QUICK_ACCESS_REMOVED = "quick_access_removed"
         private const val KEY_QUICK_ACCESS_CUSTOM = "quick_access_custom"
+        private const val KEY_FAVOURITE_FILES = "favourite_files"
         private const val KEY_CACHED_CATEGORY_COUNTS = "cached_category_counts"
         private const val KEY_OFFLINE_FILES = "offline_files"
         private const val KEY_USE_RECYCLE_BIN = "use_recycle_bin"
