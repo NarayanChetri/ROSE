@@ -3558,13 +3558,18 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         // certain devices/kernels. We still add the volume to the
                         // list so the user can see and open it — sizes just show 0.
                         val stats = try { StatFs(path) } catch (e: Exception) { null }
+                        val desc = volume.getDescription(getApplication()) ?: "SD Card"
+                        val isUsbVolume = desc.contains("usb", ignoreCase = true) ||
+                                path.contains("usb", ignoreCase = true) ||
+                                path.contains("otg", ignoreCase = true)
                         devices.add(
                             StorageDevice.Physical(
-                                name = volume.getDescription(getApplication()) ?: "SD Card",
+                                name = desc,
                                 path = path,
                                 totalBytes = stats?.totalBytes ?: 0L,
                                 availableBytes = stats?.availableBytes ?: 0L,
-                                isSdCard = volume.isRemovable
+                                isSdCard = volume.isRemovable,
+                                isUsb = isUsbVolume
                             )
                         )
                     }

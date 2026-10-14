@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Intent
 import android.os.Environment
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.Animatable
@@ -1690,13 +1691,19 @@ private fun StorageSection(
     viewModel: RoseViewModel,
     onOpenPath: (String) -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val allDevices = viewModel.storageDevices
-    // Show physical SD cards (removable volumes) and root storage if enabled
-    val devices = allDevices.filter {
-        (it is StorageDevice.Physical && it.isSdCard) || (it is StorageDevice.Root)
-    }
 
-    if (devices.isEmpty()) return
+    // Physical SD Card(s) (non-primary physical removable volume that is not USB)
+    val sdDevices = allDevices.filterIsInstance<StorageDevice.Physical>().filter { it.isSdCard && !it.isUsb }
+
+    // Physical USB Drive(s)
+    val usbDevices = allDevices.filterIsInstance<StorageDevice.Physical>().filter { it.isUsb }
+
+    // Root device (if enabled in settings)
+    val rootDevice = if (viewModel.useRoot) {
+        allDevices.firstOrNull { it is StorageDevice.Root } ?: StorageDevice.Root()
+    } else null
 
     Column {
         Row(
@@ -1706,21 +1713,45 @@ private fun StorageSection(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                stringResource(R.string.storage_external),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.weight(1f))
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable {
+                        viewModel.setExternalStorageExpanded(!viewModel.externalStorageExpanded)
+                    }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.storage_storages_and_drives),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
             IconButton(
-                onClick = { viewModel.setExternalStorageExpanded(!viewModel.externalStorageExpanded) },
-                modifier = Modifier.size(28.dp)
+                onClick = {
+                    Toast.makeText(context, context.getString(R.string.toast_storage_add_clicked), Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.size(32.dp)
             ) {
                 Icon(
-                    if (viewModel.externalStorageExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    imageVector = Icons.Default.Add,
+                    contentDescription = stringResource(R.string.storage_add_cloud_or_network),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            IconButton(
+                onClick = { viewModel.setExternalStorageExpanded(!viewModel.externalStorageExpanded) },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = if (viewModel.externalStorageExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                     contentDescription = if (viewModel.externalStorageExpanded) stringResource(R.string.content_desc_collapse) else stringResource(R.string.content_desc_expand),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
@@ -1736,26 +1767,154 @@ private fun StorageSection(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
                 modifier = Modifier.fillMaxWidth().animateContentSize()
             ) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 2000.dp),
-                    userScrollEnabled = false
-                ) {
-                    itemsIndexed(devices, key = { _, device -> device.path }) { index, device ->
-                        StorageDeviceItem(
-                            device = device,
-                            modifier = Modifier.animateItem(),
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // 1. SD Card(s) - Physical detected SD card or placeholder preview
+                    if (sdDevices.isNotEmpty()) {
+                        sdDevices.forEachIndexed { index, device ->
+                            val used = device.totalBytes - device.availableBytes
+                            val subtitle = if (device.totalBytes > 0) {
+                                stringResource(R.string.storage_amount_used_of_total, formatFileSize(used), formatFileSize(device.totalBytes))
+                            } else {
+                                stringResource(R.string.storage_sd_card)
+                            }
+                            StorageItemRow(
+                                title = device.name,
+                                subtitle = subtitle,
+                                icon = Icons.Default.SdCard,
+                                iconColor = Color(0xFF3B82F6),
+                                badgeText = stringResource(R.string.storage_badge_sd),
+                                badgeColor = Color(0xFF3B82F6),
+                                onClick = { onOpenPath(device.path) }
+                            )
+                            if (viewModel.showListDividers) {
+                                StorageDivider()
+                            }
+                        }
+                    } else {
+                        StorageItemRow(
+                            title = stringResource(R.string.storage_sd_card),
+                            subtitle = "SanDisk Ultra • 48.6 GB used of 64 GB",
+                            icon = Icons.Default.SdCard,
+                            iconColor = Color(0xFF3B82F6),
+                            badgeText = stringResource(R.string.storage_badge_sd),
+                            badgeColor = Color(0xFF3B82F6),
                             onClick = {
-                                onOpenPath(device.path)
+                                Toast.makeText(context, context.getString(R.string.toast_sd_preview_clicked), Toast.LENGTH_SHORT).show()
                             }
                         )
+                        if (viewModel.showListDividers) {
+                            StorageDivider()
+                        }
+                    }
 
-                        if (viewModel.showListDividers && index != devices.lastIndex) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                thickness = 0.6.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    // 2. USB / Pen Drive (OTG) - Physical detected USB or placeholder preview
+                    if (usbDevices.isNotEmpty()) {
+                        usbDevices.forEachIndexed { index, device ->
+                            val used = device.totalBytes - device.availableBytes
+                            val subtitle = if (device.totalBytes > 0) {
+                                stringResource(R.string.storage_amount_used_of_total, formatFileSize(used), formatFileSize(device.totalBytes))
+                            } else {
+                                "OTG Storage Device"
+                            }
+                            StorageItemRow(
+                                title = device.name,
+                                subtitle = subtitle,
+                                icon = Icons.Default.Usb,
+                                iconColor = Color(0xFF0D9488),
+                                badgeText = stringResource(R.string.storage_badge_otg),
+                                badgeColor = Color(0xFF0D9488),
+                                onClick = { onOpenPath(device.path) }
+                            )
+                            if (viewModel.showListDividers) {
+                                StorageDivider()
+                            }
+                        }
+                    } else {
+                        StorageItemRow(
+                            title = stringResource(R.string.storage_usb_drive),
+                            subtitle = stringResource(R.string.storage_usb_placeholder_desc),
+                            icon = Icons.Default.Usb,
+                            iconColor = Color(0xFF0D9488),
+                            badgeText = stringResource(R.string.storage_badge_otg),
+                            badgeColor = Color(0xFF0D9488),
+                            onClick = {
+                                Toast.makeText(context, context.getString(R.string.toast_usb_preview_clicked), Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                        if (viewModel.showListDividers) {
+                            StorageDivider()
+                        }
+                    }
+
+                    // 3. Root Storage (if enabled)
+                    if (rootDevice != null) {
+                        StorageItemRow(
+                            title = stringResource(R.string.storage_root),
+                            subtitle = stringResource(R.string.storage_root_desc),
+                            icon = Icons.Default.Tag,
+                            iconColor = Color(0xFFF59E0B),
+                            badgeText = "SU",
+                            badgeColor = Color(0xFFF59E0B),
+                            onClick = { onOpenPath(rootDevice.path) }
+                        )
+                        if (viewModel.showListDividers) {
+                            StorageDivider()
+                        }
+                    }
+
+                    // 4. Connected Cloud Account Placeholder (Google Drive / MEGA preview)
+                    StorageItemRow(
+                        title = stringResource(R.string.storage_google_drive),
+                        subtitle = stringResource(R.string.storage_cloud_placeholder_desc),
+                        icon = Icons.Default.Cloud,
+                        iconColor = Color(0xFF4285F4),
+                        badgeText = stringResource(R.string.storage_badge_cloud),
+                        badgeColor = Color(0xFF4285F4),
+                        onClick = {
+                            Toast.makeText(context, context.getString(R.string.toast_cloud_preview_clicked), Toast.LENGTH_SHORT).show()
+                        }
+                    )
+
+                    // Divider before bottom button
+                    StorageDivider()
+
+                    // 5. Add Cloud or Network Storage button row
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                Toast.makeText(context, context.getString(R.string.toast_storage_add_clicked), Toast.LENGTH_SHORT).show()
+                            }
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(12.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
                             )
                         }
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = stringResource(R.string.storage_add_cloud_or_network),
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
             }
@@ -1764,55 +1923,67 @@ private fun StorageSection(
 }
 
 @Composable
-private fun StorageDeviceItem(
-    device: StorageDevice,
-    modifier: Modifier = Modifier,
+private fun StorageDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(horizontal = 16.dp),
+        thickness = 0.6.dp,
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+    )
+}
+
+@Composable
+private fun StorageItemRow(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    iconColor: Color,
+    badgeText: String? = null,
+    badgeColor: Color = iconColor,
     onClick: () -> Unit
 ) {
     Row(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val isRoot = device is StorageDevice.Root
-        val icon = when {
-            isRoot -> Icons.Default.Tag
-            device is StorageDevice.Physical && device.isSdCard -> Icons.Default.SdCard
-            else -> Icons.Default.SdStorage
-        }
-        val iconColor = if (isRoot) Color(0xFFF59E0B) else MaterialTheme.colorScheme.primary
-
         Box(
             modifier = Modifier
-                .size(40.dp)
+                .size(42.dp)
                 .background(iconColor.copy(alpha = 0.12f), RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, null, tint = iconColor, modifier = Modifier.size(22.dp))
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconColor,
+                modifier = Modifier.size(22.dp)
+            )
         }
 
-        Spacer(modifier = Modifier.width(16.dp))
+        Spacer(modifier = Modifier.width(14.dp))
 
         Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Text(
-                    if (isRoot) stringResource(R.string.storage_root) else device.name,
+                    text = title,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (isRoot) {
-                    Spacer(modifier = Modifier.width(8.dp))
+                if (badgeText != null) {
                     Surface(
-                        color = Color(0xFFF59E0B).copy(alpha = 0.15f),
-                        contentColor = Color(0xFFF59E0B),
+                        color = badgeColor.copy(alpha = 0.14f),
+                        contentColor = badgeColor,
                         shape = RoundedCornerShape(6.dp)
                     ) {
                         Text(
-                            text = "SU",
+                            text = badgeText,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -1820,25 +1991,19 @@ private fun StorageDeviceItem(
                     }
                 }
             }
-            if (isRoot) {
-                Text(
-                    stringResource(R.string.storage_root_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                val used = device.totalBytes - device.availableBytes
-                Text(
-                    stringResource(R.string.storage_amount_used_of_total, formatFileSize(used), formatFileSize(device.totalBytes)),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
 
         Icon(
-            Icons.Default.ChevronRight,
-            null,
+            imageVector = Icons.Default.ChevronRight,
+            contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
             modifier = Modifier.size(20.dp)
         )

@@ -12,7 +12,8 @@ sealed class StorageDevice {
         override val path: String,
         override val totalBytes: Long,
         override val availableBytes: Long,
-        val isSdCard: Boolean = false
+        val isSdCard: Boolean = false,
+        val isUsb: Boolean = false
     ) : StorageDevice() {
         override val iconRes: Int? = null
     }
