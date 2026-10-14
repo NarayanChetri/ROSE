@@ -681,22 +681,50 @@ fun HomeScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.fillMaxWidth()
                 ) {
+                    val titleText = if (item.name.length <= 26) {
+                        stringResource(R.string.delete_single_confirm, item.name)
+                    } else if (item.isDirectory) {
+                        stringResource(R.string.delete_folder_title)
+                    } else {
+                        stringResource(R.string.delete_file_title)
+                    }
                     Text(
-                        text = stringResource(R.string.delete_file_title),
+                        text = titleText,
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             },
             text = {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    if (item.name.length > 26) {
+                        Text(
+                            text = item.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                    }
+                    val statusText = if (viewModel.useRecycleBin && !permanently) {
+                        stringResource(R.string.delete_moved_to_bin_short)
+                    } else {
+                        stringResource(R.string.delete_cannot_be_undone_short)
+                    }
                     Text(
-                        text = stringResource(R.string.delete_single_confirm, item.name) +
-                                if (viewModel.useRecycleBin && !permanently) stringResource(R.string.delete_single_moved_to_bin) else stringResource(R.string.delete_action_cannot_be_undone),
+                        text = statusText,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 20.sp
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                     if (viewModel.useRecycleBin) {
                         Spacer(modifier = Modifier.height(16.dp))

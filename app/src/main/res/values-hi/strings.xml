@@ -176,7 +176,11 @@
     <string name="delete_total_size">कुल आकार: %1$s</string>
     <string name="delete_permanently">स्थायी रूप से हटाएं</string>
     <string name="delete_permanently_title">स्थायी रूप से हटाएं</string>
-    <string name="delete_permanently_confirm">क्या आप वाकई \"%1$s\" को हटाना चाहते हैं? इसे पूर्ववत नहीं किया जा सकता।</string>
+    <string name="delete_folder_title">फ़ोल्डर हटाएं</string>
+    <string name="delete_one_item_title">1 आइटम हटाएं?</string>
+    <string name="delete_items_title">%1$d आइटम हटाएं?</string>
+    <string name="delete_moved_to_bin_short">रीसायकल बिन में भेजा जाएगा।</string>
+    <string name="delete_cannot_be_undone_short">इसे पूर्ववत नहीं किया जा सकता।</string>
     <string name="delete_permanently_bulk_confirm">क्या %1$d चयनित आइटम स्थायी रूप से हटाएं?</string>
     <!-- Dialogs: Properties -->
     <string name="prop_name">नाम</string>

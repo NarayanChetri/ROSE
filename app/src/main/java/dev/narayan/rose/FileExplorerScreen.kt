@@ -2207,11 +2207,27 @@ fun DeleteConfirmationDialog(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth()
             ) {
+                val titleText = when {
+                    isLarge -> stringResource(R.string.delete_large_item_title)
+                    pending is PendingDelete.Single -> {
+                        val name = pending.fileItem.name
+                        if (name.length <= 26) stringResource(R.string.delete_single_confirm, name)
+                        else if (pending.fileItem.isDirectory) stringResource(R.string.delete_folder_title)
+                        else stringResource(R.string.delete_file_title)
+                    }
+                    pending is PendingDelete.Selection -> {
+                        if (pending.count == 1) stringResource(R.string.delete_one_item_title)
+                        else stringResource(R.string.delete_items_title, pending.count)
+                    }
+                    else -> stringResource(R.string.delete_item_title)
+                }
                 Text(
-                    text = if (isLarge) stringResource(R.string.delete_large_item_title) else stringResource(R.string.delete_item_title),
+                    text = titleText,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
                 if (isLarge) {
                     Spacer(modifier = Modifier.height(4.dp))
@@ -2225,19 +2241,34 @@ fun DeleteConfirmationDialog(
             }
         },
         text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                val message = when (pending) {
-                    is PendingDelete.Single -> stringResource(R.string.delete_single_confirm, pending.fileItem.name)
-                    is PendingDelete.Selection -> stringResource(R.string.delete_multi_confirm, pending.count)
-                } + if (useRecycleBin && !permanently) {
-                    if (pending is PendingDelete.Single) stringResource(R.string.delete_single_moved_to_bin) else stringResource(R.string.delete_multi_moved_to_bin)
-                } else stringResource(R.string.delete_cannot_be_undone)
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                if (pending is PendingDelete.Single && pending.fileItem.name.length > 26) {
+                    Text(
+                        text = pending.fileItem.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                }
+
+                val statusText = if (useRecycleBin && !permanently) {
+                    stringResource(R.string.delete_moved_to_bin_short)
+                } else {
+                    stringResource(R.string.delete_cannot_be_undone_short)
+                }
 
                 Text(
-                    text = message,
+                    text = statusText,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 20.sp
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
 
                 if (!isOnRemovableStorage && (useRecycleBin || isLarge)) {

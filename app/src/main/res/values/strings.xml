@@ -222,7 +222,11 @@
     <string name="delete_total_size">Total size: %1$s</string>
     <string name="delete_permanently">Delete permanently</string>
     <string name="delete_permanently_title">Delete Permanently</string>
-    <string name="delete_permanently_confirm">Are you sure you want to delete \"%1$s\"? This cannot be undone.</string>
+    <string name="delete_folder_title">Delete Folder</string>
+    <string name="delete_one_item_title">Delete 1 item?</string>
+    <string name="delete_items_title">Delete %1$d items?</string>
+    <string name="delete_moved_to_bin_short">Will be moved to Recycle Bin.</string>
+    <string name="delete_cannot_be_undone_short">This can\'t be undone.</string>
     <string name="delete_permanently_bulk_confirm">Delete %1$d selected item(s) permanently?</string>
 
     <!-- Dialogs: Properties -->
