@@ -50,6 +50,8 @@ import dev.narayan.rose.document.DocumentMode
 import dev.narayan.rose.document.DocumentScreen
 import dev.narayan.rose.document.DocumentSource
 import dev.narayan.rose.update.UpdateBottomSheet
+import dev.narayan.rose.ftpserver.FtpServerScreen
+import dev.narayan.rose.ftpserver.FtpServerNotification
 
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
@@ -152,6 +154,7 @@ class MainActivity : ComponentActivity() {
 
     private var pendingArchiveUri by mutableStateOf<Uri?>(null)
     private var pendingDocument by mutableStateOf<Pair<DocumentSource, Boolean>?>(null)
+    private var pendingFtpNavigation by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -390,12 +393,22 @@ class MainActivity : ComponentActivity() {
                     if (hasStoragePermission()) {
                         var screen by remember {
                             mutableStateOf<AppScreen>(
-                                if (viewModel.startPage == StartPage.ALL_FILES) {
+                                if (intent?.getBooleanExtra(FtpServerNotification.EXTRA_OPEN_FTP, false) == true) {
+                                    AppScreen.FtpServer
+                                } else if (viewModel.startPage == StartPage.ALL_FILES) {
                                     AppScreen.Files(startPath = Environment.getExternalStorageDirectory().absolutePath, fromHome = true)
                                 } else {
                                     AppScreen.Home
                                 }
                             )
+                        }
+
+                        // Handle FTP notification click
+                        LaunchedEffect(pendingFtpNavigation) {
+                            if (pendingFtpNavigation) {
+                                screen = AppScreen.FtpServer
+                                pendingFtpNavigation = false
+                            }
                         }
 
                         // Handle auto-navigation (e.g. when USB is attached and user selects ROSE)
@@ -696,6 +709,9 @@ class MainActivity : ComponentActivity() {
                                                             onOpenFavourites = {
                                                                 screen = AppScreen.Files(favourites = true, fromHome = true)
                                                             },
+                                                            onOpenFtpServer = {
+                                                                screen = AppScreen.FtpServer
+                                                            },
                                                             onOpenRecent = {
                                                                 if (homePagerState.currentPage != 0) {
                                                                     coroutineScope.launch {
@@ -906,6 +922,10 @@ class MainActivity : ComponentActivity() {
                                             viewModel = viewModel,
                                             onBack = { screen = AppScreen.Home }
                                         )
+                                        AppScreen.FtpServer -> FtpServerScreen(
+                                            viewModel = viewModel,
+                                            onBack = { screen = AppScreen.Home }
+                                        )
                                         AppScreen.About -> AboutScreen(
                                             viewModel = viewModel,
                                             onBack = { screen = AppScreen.Home }
@@ -1040,6 +1060,10 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         if (intent == null) return
+
+        if (intent.getBooleanExtra(FtpServerNotification.EXTRA_OPEN_FTP, false)) {
+            pendingFtpNavigation = true
+        }
 
         when (intent.action) {
             Intent.ACTION_VIEW -> {
@@ -1766,6 +1790,7 @@ private sealed class AppScreen {
     object Settings : AppScreen()
     object About : AppScreen()
     object RecycleBin : AppScreen()
+    object FtpServer : AppScreen()
     data class Document(
         val source: DocumentSource,
         val isMarkdown: Boolean,

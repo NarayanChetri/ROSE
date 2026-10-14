@@ -244,6 +244,31 @@ class SettingsManager(context: Context) {
         get() = prefs.getStringSet(KEY_ADDED_STORAGE_URIS, emptySet()) ?: emptySet()
         set(value) = prefs.edit { putStringSet(KEY_ADDED_STORAGE_URIS, value) }
 
+    var ftpServerAnonymousLogin: Boolean
+        get() = prefs.getBoolean(KEY_FTP_SERVER_ANONYMOUS_LOGIN, true)
+        set(value) = prefs.edit { putBoolean(KEY_FTP_SERVER_ANONYMOUS_LOGIN, value) }
+
+    var ftpServerUsername: String
+        get() = prefs.getString(KEY_FTP_SERVER_USERNAME, "admin") ?: "admin"
+        set(value) = prefs.edit { putString(KEY_FTP_SERVER_USERNAME, value) }
+
+    var ftpServerPassword: String
+        get() = prefs.getString(KEY_FTP_SERVER_PASSWORD, "") ?: ""
+        set(value) = prefs.edit { putString(KEY_FTP_SERVER_PASSWORD, value) }
+
+    var ftpServerPort: Int
+        get() = prefs.getInt(KEY_FTP_SERVER_PORT, 2121)
+        set(value) = prefs.edit { putInt(KEY_FTP_SERVER_PORT, value) }
+
+    var ftpServerHomeDirectory: String
+        get() = prefs.getString(KEY_FTP_SERVER_HOME_DIRECTORY, android.os.Environment.getExternalStorageDirectory().absolutePath)
+            ?: android.os.Environment.getExternalStorageDirectory().absolutePath
+        set(value) = prefs.edit { putString(KEY_FTP_SERVER_HOME_DIRECTORY, value) }
+
+    var ftpServerWritable: Boolean
+        get() = prefs.getBoolean(KEY_FTP_SERVER_WRITABLE, true)
+        set(value) = prefs.edit { putBoolean(KEY_FTP_SERVER_WRITABLE, value) }
+
     companion object {
         private const val PREFS_NAME = "rose_prefs"
         private const val KEY_ADDED_STORAGE_URIS = "added_storage_uris"
@@ -281,6 +306,12 @@ class SettingsManager(context: Context) {
         private const val KEY_RECENT_FILES_EXPANDED = "recent_files_expanded"
         private const val KEY_QUICK_ACCESS_EXPANDED = "quick_access_expanded"
         private const val KEY_EXTERNAL_STORAGE_EXPANDED = "external_storage_expanded"
+        private const val KEY_FTP_SERVER_ANONYMOUS_LOGIN = "ftp_server_anonymous_login"
+        private const val KEY_FTP_SERVER_USERNAME = "ftp_server_username"
+        private const val KEY_FTP_SERVER_PASSWORD = "ftp_server_password"
+        private const val KEY_FTP_SERVER_PORT = "ftp_server_port"
+        private const val KEY_FTP_SERVER_HOME_DIRECTORY = "ftp_server_home_directory"
+        private const val KEY_FTP_SERVER_WRITABLE = "ftp_server_writable"
         private const val QUICK_ACCESS_DELIMITER = "|::|"
     }
 }
