@@ -356,6 +356,9 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     var quickAccessCustomPaths by mutableStateOf(settings.quickAccessCustomPaths)
         private set
 
+    var favouriteFiles by mutableStateOf(settings.favouriteFiles)
+        private set
+
     fun normalizePath(path: String): String {
         return try {
             File(path).canonicalPath
@@ -827,6 +830,9 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     var homeScrollIndex by mutableStateOf(0)
     var homeScrollOffset by mutableStateOf(0)
 
+    // Active page for the category grid pager on Home (0 = Categories, 1 = Favourites)
+    var categoryPageIndex by mutableStateOf(0)
+
     // Scroll state for Recycle Bin to preserve position when going back and forth
     var recycleBinScrollIndex by mutableStateOf(0)
     var recycleBinScrollOffset by mutableStateOf(0)
@@ -1156,6 +1162,17 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         if (sanitizedCustom.size != quickAccessCustomPaths.size) {
             quickAccessCustomPaths = sanitizedCustom
             settings.quickAccessCustomPaths = sanitizedCustom
+        }
+
+        // Sanitize favourite files to prevent duplicates
+        val seenFavFiles = mutableSetOf<String>()
+        val sanitizedFavFiles = favouriteFiles.filter { path ->
+            val norm = normalizePath(path)
+            seenFavFiles.add(norm)
+        }
+        if (sanitizedFavFiles.size != favouriteFiles.size) {
+            favouriteFiles = sanitizedFavFiles
+            settings.favouriteFiles = sanitizedFavFiles
         }
 
         // Clean up expired items from recycle bin
@@ -1520,7 +1537,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun sortFileList(list: List<FileItem>): List<FileItem> {
+    fun sortFileList(list: List<FileItem>): List<FileItem> {
         val comparator = when (sortBy) {
             SortBy.NAME -> compareBy<FileItem> { it.name.lowercase() }
             SortBy.DATE -> compareBy<FileItem> { it.lastModified }.thenBy { it.name.lowercase() }
@@ -2822,6 +2839,13 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             if (categoryFilterType == null && currentPath.isNotEmpty()) {
                 files = sortFileList(files)
             }
+
+            val oldNorm = normalizePath(fileItem.file.absolutePath)
+            if (favouriteFiles.any { normalizePath(it) == oldNorm }) {
+                val updatedFavs = favouriteFiles.map { if (normalizePath(it) == oldNorm) newFile.absolutePath else it }
+                favouriteFiles = updatedFavs
+                settings.favouriteFiles = updatedFavs
+            }
         } else {
             errorMessage = "Couldn't rename folder. It might be in use or restricted."
         }
@@ -3709,6 +3733,68 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         val updated = quickAccessCustomPaths.filter { normalizePath(it) != normalized }
         quickAccessCustomPaths = updated
         settings.quickAccessCustomPaths = updated
+    }
+
+    fun isFileInFavourites(path: String): Boolean {
+        if (path.isBlank()) return false
+        val normalized = normalizePath(path)
+        return favouriteFiles.any { normalizePath(it) == normalized }
+    }
+
+    fun addFavouriteFile(path: String) {
+        if (path.isBlank() || isFileInFavourites(path)) return
+        val normalized = normalizePath(path)
+        val seen = favouriteFiles.map { normalizePath(it) }.toSet()
+        if (seen.contains(normalized)) return
+
+        val updated = favouriteFiles + path
+        favouriteFiles = updated
+        settings.favouriteFiles = updated
+    }
+
+    fun removeFavouriteFile(path: String) {
+        val normalized = normalizePath(path)
+        val updated = favouriteFiles.filter { normalizePath(it) != normalized }
+        favouriteFiles = updated
+        settings.favouriteFiles = updated
+    }
+
+    fun toggleFavouriteFile(path: String) {
+        if (isFileInFavourites(path)) {
+            removeFavouriteFile(path)
+        } else {
+            addFavouriteFile(path)
+        }
+    }
+
+    fun addFavourites(fileItems: List<FileItem>) {
+        val newPaths = mutableListOf<String>()
+        for (item in fileItems) {
+            if (!item.isDirectory && !isFileInFavourites(item.file.absolutePath)) {
+                newPaths.add(item.file.absolutePath)
+            }
+        }
+        if (newPaths.isNotEmpty()) {
+            val updated = favouriteFiles + newPaths
+            favouriteFiles = updated
+            settings.favouriteFiles = updated
+        }
+    }
+
+    fun removeFavourites(fileItems: List<FileItem>) {
+        val toRemove = fileItems.map { normalizePath(it.file.absolutePath) }.toSet()
+        val updated = favouriteFiles.filter { normalizePath(it) !in toRemove }
+        favouriteFiles = updated
+        settings.favouriteFiles = updated
+    }
+
+    fun getFavouriteFileItems(): List<FileItem> {
+        return favouriteFiles.mapNotNull { path ->
+            val f = File(path)
+            if (f.exists()) {
+                FileItem(f)
+            } else null
+        }
     }
 
     // ----- Update Check (GitHub Releases) -----

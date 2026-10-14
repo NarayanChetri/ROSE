@@ -116,6 +116,16 @@
     <string name="home_recent_files">Recent files</string>
     <string name="home_section_quick_access">Quick Access</string>
     <string name="home_quick_access">Quick access</string>
+    <string name="category_favourites">Favourites</string>
+    <string name="title_favourite_files">Favourites</string>
+    <string name="action_add_to_favourites">Add to Favourites</string>
+    <string name="action_remove_from_favourites">Remove from Favourites</string>
+    <string name="toast_added_to_favourites">Added to Favourites</string>
+    <string name="toast_removed_from_favourites">Removed from Favourites</string>
+    <string name="empty_favourite_files">No favourite files</string>
+    <string name="empty_favourite_files_subtitle">Tap the 3-dot menu or long-press on any file to add it to favourites</string>
+    <string name="nav_recent">Recent</string>
+    <string name="nav_files">Files</string>
     <string name="recycle_bin_empty">Trash empty</string>
     <string name="recent_files_empty">No recent files</string>
     <string name="quick_access_empty">No quick access folders added yet</string>

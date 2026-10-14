@@ -21,6 +21,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -52,6 +53,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.foundation.shape.CircleShape
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import coil.decode.VideoFrameDecoder
@@ -60,18 +64,29 @@ import java.io.File
 
 private data class HomeCategory(
     @StringRes val labelRes: Int,
-    val type: FileType,
+    val type: FileType?,
     val icon: ImageVector,
     val color: Color,
+    val isFavourites: Boolean = false
 )
 
-private val homeCategories = listOf(
+private val page1Categories = listOf(
     HomeCategory(R.string.category_photos, FileType.IMAGE, Icons.Default.Image, Color(0xFF4C8DFF)),
     HomeCategory(R.string.category_videos, FileType.VIDEO, Icons.Default.VideoLibrary, Color(0xFF9C6ADE)),
     HomeCategory(R.string.category_audio, FileType.AUDIO, Icons.Default.MusicNote, Color(0xFFE0904C)),
     HomeCategory(R.string.category_documents, FileType.DOCUMENT, Icons.Default.Description, Color(0xFF4C9A72)),
     HomeCategory(R.string.category_apks, FileType.APK, Icons.Default.Android, Color(0xFF4CAF7D)),
     HomeCategory(R.string.category_archives, FileType.ZIP, Icons.Default.Archive, Color(0xFFC98A2E))
+)
+
+private val page2Categories = listOf(
+    HomeCategory(
+        labelRes = R.string.category_favourites,
+        type = null,
+        icon = Icons.Default.Favorite,
+        color = Color(0xFFE11D48),
+        isFavourites = true
+    )
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
@@ -84,13 +99,15 @@ fun HomeScreen(
     onOpenPath: (String, FileItem?) -> Unit,
     onOpenCategory: (FileType, String) -> Unit,
     onOpenRecent: () -> Unit,
+    onOpenFavourites: () -> Unit = {},
     onFileClick: (FileItem) -> Unit,
     onOpenWithClick: (FileItem) -> Unit,
     onShareClick: (FileItem) -> Unit,
     onSettingsClick: () -> Unit,
     onAboutClick: () -> Unit,
     onRecycleBinClick: () -> Unit,
-    onSearchActiveChange: (Boolean) -> Unit = {}
+    onSearchActiveChange: (Boolean) -> Unit = {},
+    canSwipeToRecent: Boolean = true
 ) {
     LaunchedEffect(Unit) {
         // Refresh everything when coming back to home screen
@@ -221,6 +238,7 @@ fun HomeScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             Surface(shadowElevation = 0.dp) {
                 Column {
@@ -430,11 +448,12 @@ fun HomeScreen(
     ) { padding ->
         LazyColumn(
             modifier = Modifier
-                .padding(padding)
+                .padding(top = padding.calculateTopPadding())
                 .fillMaxSize()
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = 14.dp),
             state = listState,
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(bottom = 16.dp)
         ) {
             if (isSearching && searchQuery.isNotEmpty()) {
                 val currentSearchResults = viewModel.filteredSearchResults
@@ -535,35 +554,24 @@ fun HomeScreen(
                     ) {
                         CategoryGrid(
                             counts = viewModel.categoryCounts,
+                            favouriteCount = viewModel.favouriteFiles.size,
                             isLoading = viewModel.isCategoryCountsLoading,
                             hasRunCountAnimation = viewModel.hasRunCategoryCountAnimation,
                             onAnimationFinished = { viewModel.hasRunCategoryCountAnimation = true },
                             onCategoryClick = { category ->
                                 viewModel.hasRunCategoryCountAnimation = true
-                                onOpenCategory(category.type, context.getString(category.labelRes))
-                            }
+                                if (category.isFavourites) {
+                                    onOpenFavourites()
+                                } else if (category.type != null) {
+                                    onOpenCategory(category.type, context.getString(category.labelRes))
+                                }
+                            },
+                            onOpenRecent = onOpenRecent,
+                            canSwipeToRecent = canSwipeToRecent,
+                            categoryPageIndex = viewModel.categoryPageIndex,
+                            onCategoryPageChange = { viewModel.categoryPageIndex = it }
                         )
                     }
-                }
-
-                item(key = "recent_files") {
-                    RecentFilesSection(
-                        viewModel = viewModel,
-                        recentFiles = viewModel.recentFiles,
-                        showDividers = viewModel.showListDividers,
-                        onOpenRecent = onOpenRecent,
-                        onOpenPath = onOpenPath,
-                        onFileClick = onFileClick,
-                        onOpenWithClick = onOpenWithClick,
-                        onShareClick = onShareClick,
-                        onRenameClick = { fileForRename = it },
-                        onDeleteClick = { fileForDelete = it },
-                        onExtractClick = {
-                            viewModel.prepareExtraction(it.file)
-                            android.widget.Toast.makeText(context, context.getString(R.string.toast_archive_ready_extract), android.widget.Toast.LENGTH_SHORT).show()
-                        },
-                        onPropertiesClick = { viewModel.showProperties(it) }
-                    )
                 }
 
                 if (viewModel.showQuickAccess) {
@@ -600,9 +608,6 @@ fun HomeScreen(
                     }
                 }
 
-                item(key = "bottom_spacer") {
-                    Spacer(modifier = Modifier.height(32.dp))
-                }
             }
         }
     }
@@ -866,10 +871,15 @@ private fun StorageCapsule(
 @Composable
 private fun CategoryGrid(
     counts: Map<FileType, Int>,
+    favouriteCount: Int,
     isLoading: Boolean,
     hasRunCountAnimation: Boolean,
     onAnimationFinished: () -> Unit,
-    onCategoryClick: (HomeCategory) -> Unit
+    onCategoryClick: (HomeCategory) -> Unit,
+    onOpenRecent: () -> Unit,
+    canSwipeToRecent: Boolean = true,
+    categoryPageIndex: Int = 0,
+    onCategoryPageChange: (Int) -> Unit = {}
 ) {
     var animationStarted by remember(hasRunCountAnimation) { mutableStateOf(hasRunCountAnimation) }
 
@@ -882,26 +892,220 @@ private fun CategoryGrid(
         }
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        homeCategories.chunked(3).forEachIndexed { rowIndex, row ->
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                row.forEachIndexed { colIndex, category ->
-                    CategoryCard(
-                        category = category,
-                        count = counts[category.type],
-                        animationStarted = animationStarted,
-                        hasRunCountAnimation = hasRunCountAnimation,
-                        index = rowIndex * 3 + colIndex,
-                        modifier = Modifier.weight(1f),
-                        onClick = { onCategoryClick(category) }
-                    )
+    val categoryPagerState = androidx.compose.foundation.pager.rememberPagerState(
+        initialPage = categoryPageIndex,
+        pageCount = { 2 }
+    )
+    val coroutineScope = rememberCoroutineScope()
+    var settleJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    val touchSlop = androidx.compose.ui.platform.LocalViewConfiguration.current.touchSlop
+
+    LaunchedEffect(categoryPagerState.currentPage) {
+        onCategoryPageChange(categoryPagerState.currentPage)
+    }
+
+    LaunchedEffect(categoryPageIndex) {
+        if (categoryPagerState.currentPage != categoryPageIndex) {
+            categoryPagerState.scrollToPage(categoryPageIndex)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .pointerInput(categoryPagerState.currentPage) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(pass = PointerEventPass.Main, requireUnconsumed = false)
+                    val dragPointerId = down.id
+                    var isGestureClaimed = false
+                    var prevPositionX = down.position.x
+                    val velocityTracker = VelocityTracker()
+                    velocityTracker.addPosition(down.uptimeMillis, down.position)
+
+                    while (true) {
+                        val event = awaitPointerEvent(pass = PointerEventPass.Main)
+                        val change = event.changes.firstOrNull { it.id == dragPointerId } ?: break
+
+                        if (!change.pressed) {
+                            if (isGestureClaimed) {
+                                change.consume()
+                            }
+                            break
+                        }
+
+                        val currentX = change.position.x
+                        val currentY = change.position.y
+                        val totalDx = currentX - down.position.x
+                        val totalDy = currentY - down.position.y
+
+                        if (!isGestureClaimed) {
+                            val totalDistanceSq = totalDx * totalDx + totalDy * totalDy
+                            if (totalDistanceSq > touchSlop * touchSlop) {
+                                // Vertical dominant -> let LazyColumn scroll vertically
+                                if (kotlin.math.abs(totalDy) > kotlin.math.abs(totalDx)) {
+                                    break
+                                }
+
+                                val currentPage = categoryPagerState.currentPage
+                                if (currentPage == 0) {
+                                    if (totalDx > 0f) {
+                                        // Swiping right on Page 0: user is swiping from Home to Recent files!
+                                        // Do NOT consume. Leave unconsumed so outer HorizontalPager takes it natively!
+                                        break
+                                    } else {
+                                        // Swiping left on Page 0: user is swiping from Categories to Favourites.
+                                        settleJob?.cancel()
+                                        isGestureClaimed = true
+                                        prevPositionX = currentX
+                                        change.consume()
+                                        velocityTracker.addPosition(change.uptimeMillis, change.position)
+                                    }
+                                } else {
+                                    // currentPage == 1 (Favourites)
+                                    if (totalDx > 0f) {
+                                        // Swiping right on Page 1: user is swiping back from Favourites to Categories.
+                                        settleJob?.cancel()
+                                        isGestureClaimed = true
+                                        prevPositionX = currentX
+                                        change.consume()
+                                        velocityTracker.addPosition(change.uptimeMillis, change.position)
+                                    } else {
+                                        // Swiping left on Page 1: end of pages, do nothing.
+                                        break
+                                    }
+                                }
+                            }
+                        } else {
+                            val deltaX = currentX - prevPositionX
+                            prevPositionX = currentX
+                            velocityTracker.addPosition(change.uptimeMillis, change.position)
+                            change.consume()
+                            categoryPagerState.dispatchRawDelta(-deltaX)
+                        }
+                    }
+
+                    if (isGestureClaimed) {
+                        val velocityX = velocityTracker.calculateVelocity().x
+                        val currentFraction = categoryPagerState.currentPage + categoryPagerState.currentPageOffsetFraction
+                        val targetPage = when {
+                            velocityX < -500f -> 1
+                            velocityX > 500f -> 0
+                            else -> if (currentFraction >= 0.5f) 1 else 0
+                        }
+                        settleJob = coroutineScope.launch {
+                            categoryPagerState.animateScrollToPage(
+                                page = targetPage,
+                                animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing)
+                            )
+                        }
+                    }
                 }
-                repeat(3 - row.size) {
-                    Spacer(modifier = Modifier.weight(1f))
+            },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        androidx.compose.foundation.pager.HorizontalPager(
+            state = categoryPagerState,
+            userScrollEnabled = false,
+            modifier = Modifier.fillMaxWidth()
+        ) { page ->
+            val pageCategories = if (page == 0) page1Categories else page2Categories
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Row 1 (first 3 items)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val row1 = pageCategories.take(3)
+                    row1.forEachIndexed { colIndex, category ->
+                        val count = if (category.isFavourites) favouriteCount else counts[category.type]
+                        CategoryCard(
+                            category = category,
+                            count = count,
+                            animationStarted = animationStarted,
+                            hasRunCountAnimation = hasRunCountAnimation,
+                            index = colIndex,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onCategoryClick(category) }
+                        )
+                    }
+                    repeat(3 - row1.size) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
                 }
+
+                // Row 2 (items 3 to 5) - keeps identical height for both pages
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val row2 = pageCategories.drop(3).take(3)
+                    if (row2.isNotEmpty()) {
+                        row2.forEachIndexed { colIndex, category ->
+                            val count = if (category.isFavourites) favouriteCount else counts[category.type]
+                            CategoryCard(
+                                category = category,
+                                count = count,
+                                animationStarted = animationStarted,
+                                hasRunCountAnimation = hasRunCountAnimation,
+                                index = 3 + colIndex,
+                                modifier = Modifier.weight(1f),
+                                onClick = { onCategoryClick(category) }
+                            )
+                        }
+                        repeat(3 - row2.size) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    } else {
+                        // Invisible placeholder preserving exact aspect ratio of cards
+                        repeat(3) {
+                            Spacer(modifier = Modifier.weight(1f).padding(1.dp).aspectRatio(1f))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Dot indicator
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            repeat(2) { pageIndex ->
+                val isSelected = categoryPagerState.currentPage == pageIndex
+                val width by androidx.compose.animation.core.animateDpAsState(
+                    targetValue = if (isSelected) 16.dp else 6.dp,
+                    animationSpec = androidx.compose.animation.core.tween(durationMillis = 250),
+                    label = "CategoryIndicatorWidth"
+                )
+                val color by androidx.compose.animation.animateColorAsState(
+                    targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                    animationSpec = androidx.compose.animation.core.tween(durationMillis = 250),
+                    label = "CategoryIndicatorColor"
+                )
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 4.dp, vertical = 6.dp)
+                        .size(width = width, height = 5.dp)
+                        .clip(CircleShape)
+                        .background(color)
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            if (categoryPagerState.currentPage != pageIndex) {
+                                settleJob?.cancel()
+                                settleJob = coroutineScope.launch {
+                                    categoryPagerState.animateScrollToPage(
+                                        page = pageIndex,
+                                        animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing)
+                                    )
+                                }
+                            }
+                        }
+                )
             }
         }
     }
@@ -943,7 +1147,7 @@ private fun CategoryCard(
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         modifier = modifier
-            .padding(2.dp)
+            .padding(1.dp)
             .aspectRatio(1f)
             .graphicsLayer {
                 alpha = animatedProgress.value
@@ -1150,6 +1354,32 @@ private fun RecentFilesSection(
                                         text = { Text(stringResource(R.string.action_rename), modifier = Modifier.padding(vertical = 4.dp)) },
                                         onClick = { showFileMenu = false; onRenameClick(item) },
                                         leadingIcon = { Icon(Icons.Default.Edit, null) },
+                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                                    )
+                                    HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.action_copy), modifier = Modifier.padding(vertical = 4.dp)) },
+                                        onClick = {
+                                            showFileMenu = false
+                                            viewModel.selectedFiles.clear()
+                                            viewModel.selectedFiles.add(item)
+                                            viewModel.copySelected()
+                                            onOpenPath(Environment.getExternalStorageDirectory().absolutePath, null)
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
+                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                                    )
+                                    HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.action_move), modifier = Modifier.padding(vertical = 4.dp)) },
+                                        onClick = {
+                                            showFileMenu = false
+                                            viewModel.selectedFiles.clear()
+                                            viewModel.selectedFiles.add(item)
+                                            viewModel.moveSelected()
+                                            onOpenPath(Environment.getExternalStorageDirectory().absolutePath, null)
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.ContentCut, null) },
                                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                                     )
                                     HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))

@@ -21,10 +21,17 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -599,108 +606,236 @@ class MainActivity : ComponentActivity() {
 
                                             BackHandler(enabled = (homePagerState.currentPage == 0 && !isRecentSearching && !viewModel.isSelectionMode)) {
                                                 coroutineScope.launch {
-                                                    homePagerState.animateScrollToPage(1)
+                                                    homePagerState.animateScrollToPage(
+                                                        page = 1,
+                                                        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing)
+                                                    )
                                                 }
                                             }
 
-                                            androidx.compose.foundation.pager.HorizontalPager(
-                                                state = homePagerState,
-                                                userScrollEnabled = canSwipe,
-                                                modifier = Modifier.fillMaxSize()
-                                            ) { pageIndex ->
-                                                if (pageIndex == 0) {
-                                                    FileExplorerScreen(
-                                                        viewModel = viewModel,
-                                                        startPath = null,
-                                                        startCategory = null,
-                                                        startRecent = true,
-                                                        fromHome = true,
-                                                        highlightFile = null,
-                                                        isFromAllFiles = false,
-                                                        backHandlerEnabled = (homePagerState.currentPage == 0),
-                                                        onSearchActiveChange = { isRecentSearching = it },
-                                                        onOpenPath = { path, fileToHighlight ->
-                                                            viewModel.resetFiles()
-                                                            screen = AppScreen.Files(
-                                                                startPath = path,
-                                                                fromHome = true,
-                                                                highlightFile = fileToHighlight
-                                                            )
-                                                        },
-                                                        sharedTransitionScope = this@SharedTransitionLayout,
-                                                        animatedVisibilityScope = this@AnimatedContent,
-                                                        onExitToHome = {
-                                                            coroutineScope.launch {
-                                                                homePagerState.animateScrollToPage(1)
-                                                            }
-                                                        },
-                                                        onFileClick = { fileItem ->
-                                                            if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
-                                                                if (fileItem.fileType == FileType.ZIP) {
-                                                                    viewModel.resetFiles()
-                                                                    screen = AppScreen.Files(
-                                                                        startPath = fileItem.file.absolutePath,
-                                                                        fromHome = true
-                                                                    )
-                                                                } else {
-                                                                    openFile(fileItem)
-                                                                }
-                                                            }
-                                                        },
-                                                        onOpenWithClick = { openFileWith(it) },
-                                                        onShareClick = { fileItems -> shareFiles(fileItems) },
-                                                        listState = explorerListState,
-                                                        gridState = explorerGridState
-                                                    )
-                                                } else {
-                                                    HomeScreen(
-                                                        viewModel = viewModel,
-                                                        listState = homeListState,
-                                                        onSearchActiveChange = { isHomeSearching = it },
-                                                        sharedTransitionScope = this@SharedTransitionLayout,
-                                                        animatedVisibilityScope = this@AnimatedContent,
-                                                        onOpenPath = { path, fileToHighlight ->
-                                                            val isFromAllFiles = path == Environment.getExternalStorageDirectory().absolutePath && fileToHighlight == null
-                                                            viewModel.resetFiles()
-                                                            screen = AppScreen.Files(
-                                                                startPath = path,
-                                                                fromHome = true,
-                                                                highlightFile = fileToHighlight,
-                                                                isFromAllFiles = isFromAllFiles
-                                                            )
-                                                        },
-                                                        onOpenCategory = { type, title ->
-                                                            viewModel.resetFiles()
-                                                            viewModel.browseCategory(type, title)
-                                                            screen = AppScreen.Files(category = type to title)
-                                                        },
-                                                        onOpenRecent = {
-                                                            coroutineScope.launch {
-                                                                homePagerState.animateScrollToPage(
-                                                                    page = 0,
-                                                                    animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing)
+                                            val homePagerFlingBehavior = androidx.compose.foundation.pager.PagerDefaults.flingBehavior(state = homePagerState)
+
+                                            Column(modifier = Modifier.fillMaxSize()) {
+                                                androidx.compose.foundation.pager.HorizontalPager(
+                                                    state = homePagerState,
+                                                    userScrollEnabled = canSwipe,
+                                                    flingBehavior = homePagerFlingBehavior,
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .fillMaxWidth()
+                                                ) { pageIndex ->
+                                                    if (pageIndex == 0) {
+                                                        FileExplorerScreen(
+                                                            viewModel = viewModel,
+                                                            startPath = null,
+                                                            startCategory = null,
+                                                            startRecent = true,
+                                                            fromHome = true,
+                                                            highlightFile = null,
+                                                            isFromAllFiles = false,
+                                                            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                                                            backHandlerEnabled = (homePagerState.currentPage == 0),
+                                                            onSearchActiveChange = { isRecentSearching = it },
+                                                            onOpenPath = { path, fileToHighlight ->
+                                                                viewModel.resetFiles()
+                                                                screen = AppScreen.Files(
+                                                                    startPath = path,
+                                                                    fromHome = true,
+                                                                    highlightFile = fileToHighlight
                                                                 )
-                                                            }
-                                                        },
-                                                        onFileClick = { fileItem ->
-                                                            if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
-                                                                if (fileItem.fileType == FileType.ZIP) {
-                                                                    viewModel.resetFiles()
-                                                                    screen = AppScreen.Files(
-                                                                        startPath = fileItem.file.absolutePath,
-                                                                        fromHome = true
+                                                            },
+                                                            sharedTransitionScope = this@SharedTransitionLayout,
+                                                            animatedVisibilityScope = this@AnimatedContent,
+                                                            onExitToHome = {
+                                                                coroutineScope.launch {
+                                                                    homePagerState.animateScrollToPage(
+                                                                        page = 1,
+                                                                        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing)
                                                                     )
-                                                                } else {
-                                                                    openFile(fileItem)
+                                                                }
+                                                            },
+                                                            onFileClick = { fileItem ->
+                                                                if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
+                                                                    if (fileItem.fileType == FileType.ZIP) {
+                                                                        viewModel.resetFiles()
+                                                                        screen = AppScreen.Files(
+                                                                            startPath = fileItem.file.absolutePath,
+                                                                            fromHome = true
+                                                                        )
+                                                                    } else {
+                                                                        openFile(fileItem)
+                                                                    }
+                                                                }
+                                                            },
+                                                            onOpenWithClick = { openFileWith(it) },
+                                                            onShareClick = { fileItems -> shareFiles(fileItems) },
+                                                            listState = explorerListState,
+                                                            gridState = explorerGridState
+                                                        )
+                                                    } else {
+                                                        HomeScreen(
+                                                            viewModel = viewModel,
+                                                            listState = homeListState,
+                                                            onSearchActiveChange = { isHomeSearching = it },
+                                                            sharedTransitionScope = this@SharedTransitionLayout,
+                                                            animatedVisibilityScope = this@AnimatedContent,
+                                                            onOpenPath = { path, fileToHighlight ->
+                                                                val isFromAllFiles = path == Environment.getExternalStorageDirectory().absolutePath && fileToHighlight == null
+                                                                viewModel.resetFiles()
+                                                                screen = AppScreen.Files(
+                                                                    startPath = path,
+                                                                    fromHome = true,
+                                                                    highlightFile = fileToHighlight,
+                                                                    isFromAllFiles = isFromAllFiles
+                                                                )
+                                                            },
+                                                            onOpenCategory = { type, title ->
+                                                                viewModel.resetFiles()
+                                                                viewModel.browseCategory(type, title)
+                                                                screen = AppScreen.Files(category = type to title, fromHome = true)
+                                                            },
+                                                            onOpenFavourites = {
+                                                                screen = AppScreen.Files(favourites = true, fromHome = true)
+                                                            },
+                                                            onOpenRecent = {
+                                                                if (homePagerState.currentPage != 0) {
+                                                                    coroutineScope.launch {
+                                                                        homePagerState.animateScrollToPage(
+                                                                            page = 0,
+                                                                            animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing)
+                                                                        )
+                                                                    }
+                                                                }
+                                                            },
+                                                            canSwipeToRecent = canSwipe,
+                                                            onFileClick = { fileItem ->
+                                                                if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
+                                                                    if (fileItem.fileType == FileType.ZIP) {
+                                                                        viewModel.resetFiles()
+                                                                        screen = AppScreen.Files(
+                                                                            startPath = fileItem.file.absolutePath,
+                                                                            fromHome = true
+                                                                        )
+                                                                    } else {
+                                                                        openFile(fileItem)
+                                                                    }
+                                                                }
+                                                            },
+                                                            onOpenWithClick = { openFileWith(it) },
+                                                            onShareClick = { fileItem -> shareFiles(listOf(fileItem)) },
+                                                            onSettingsClick = { screen = AppScreen.Settings },
+                                                            onAboutClick = { screen = AppScreen.About },
+                                                            onRecycleBinClick = { screen = AppScreen.RecycleBin }
+                                                        )
+                                                    }
+                                                }
+
+                                                if (!isHomeSearching && !isRecentSearching && !viewModel.isSelectionMode) {
+                                                    Surface(
+                                                        color = MaterialTheme.colorScheme.surfaceContainer,
+                                                        tonalElevation = 2.dp,
+                                                        modifier = Modifier.fillMaxWidth()
+                                                    ) {
+                                                        Column(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .windowInsetsPadding(WindowInsets.navigationBars)
+                                                        ) {
+                                                            HorizontalDivider(
+                                                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
+                                                                thickness = 0.5.dp
+                                                            )
+                                                            Row(
+                                                                modifier = Modifier
+                                                                    .fillMaxWidth()
+                                                                    .height(52.dp),
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                val isRecentSelected = homePagerState.currentPage == 0
+                                                                val isFilesSelected = homePagerState.currentPage == 1
+
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .weight(1f)
+                                                                        .fillMaxHeight()
+                                                                        .clickable(
+                                                                            interactionSource = remember { MutableInteractionSource() },
+                                                                            indication = null
+                                                                        ) {
+                                                                            coroutineScope.launch {
+                                                                                homePagerState.animateScrollToPage(
+                                                                                    page = 0,
+                                                                                    animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing)
+                                                                                )
+                                                                            }
+                                                                        },
+                                                                    contentAlignment = Alignment.Center
+                                                                ) {
+                                                                    Column(
+                                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                                        verticalArrangement = Arrangement.Center
+                                                                    ) {
+                                                                        Icon(
+                                                                            imageVector = if (isRecentSelected) Icons.Filled.Schedule else Icons.Outlined.Schedule,
+                                                                            contentDescription = stringResource(R.string.nav_recent),
+                                                                            tint = if (isRecentSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                            modifier = Modifier.size(22.dp)
+                                                                        )
+                                                                        Spacer(modifier = Modifier.height(3.dp))
+                                                                        Text(
+                                                                            text = stringResource(R.string.nav_recent),
+                                                                            style = MaterialTheme.typography.labelSmall,
+                                                                            fontWeight = if (isRecentSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                                                            color = if (isRecentSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                                                        )
+                                                                    }
+                                                                }
+
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .weight(1f)
+                                                                        .fillMaxHeight()
+                                                                        .clickable(
+                                                                            interactionSource = remember { MutableInteractionSource() },
+                                                                            indication = null
+                                                                        ) {
+                                                                            if (isFilesSelected) {
+                                                                                coroutineScope.launch {
+                                                                                    homeListState.animateScrollToItem(0)
+                                                                                }
+                                                                            } else {
+                                                                                coroutineScope.launch {
+                                                                                    homePagerState.animateScrollToPage(
+                                                                                        page = 1,
+                                                                                        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing)
+                                                                                    )
+                                                                                }
+                                                                            }
+                                                                        },
+                                                                    contentAlignment = Alignment.Center
+                                                                ) {
+                                                                    Column(
+                                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                                        verticalArrangement = Arrangement.Center
+                                                                    ) {
+                                                                        Icon(
+                                                                            imageVector = if (isFilesSelected) Icons.Filled.Folder else Icons.Outlined.Folder,
+                                                                            contentDescription = stringResource(R.string.nav_files),
+                                                                            tint = if (isFilesSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                            modifier = Modifier.size(22.dp)
+                                                                        )
+                                                                        Spacer(modifier = Modifier.height(3.dp))
+                                                                        Text(
+                                                                            text = stringResource(R.string.nav_files),
+                                                                            style = MaterialTheme.typography.labelSmall,
+                                                                            fontWeight = if (isFilesSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                                                            color = if (isFilesSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                                                        )
+                                                                    }
                                                                 }
                                                             }
-                                                        },
-                                                        onOpenWithClick = { openFileWith(it) },
-                                                        onShareClick = { fileItem -> shareFiles(listOf(fileItem)) },
-                                                        onSettingsClick = { screen = AppScreen.Settings },
-                                                        onAboutClick = { screen = AppScreen.About },
-                                                        onRecycleBinClick = { screen = AppScreen.RecycleBin }
-                                                    )
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -709,6 +844,7 @@ class MainActivity : ComponentActivity() {
                                             startPath = currentScreen.startPath,
                                             startCategory = currentScreen.category,
                                             startRecent = currentScreen.recent,
+                                            startFavourites = currentScreen.favourites,
                                             fromHome = currentScreen.fromHome,
                                             highlightFile = currentScreen.highlightFile,
                                             isFromAllFiles = currentScreen.isFromAllFiles,
@@ -728,11 +864,13 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             },
                                             onOpenPath = { path, fileToHighlight ->
+                                                val isFromAllFiles = path == Environment.getExternalStorageDirectory().absolutePath && fileToHighlight == null
                                                 viewModel.resetFiles()
                                                 screen = AppScreen.Files(
                                                     startPath = path,
                                                     fromHome = true,
-                                                    highlightFile = fileToHighlight
+                                                    highlightFile = fileToHighlight,
+                                                    isFromAllFiles = isFromAllFiles
                                                 )
                                             },
                                             onFileClick = { fileItem ->
@@ -1591,6 +1729,7 @@ private sealed class AppScreen {
         val startPath: String? = null,
         val category: Pair<FileType, String>? = null,
         val recent: Boolean = false,
+        val favourites: Boolean = false,
         val fromHome: Boolean = false,
         val highlightFile: FileItem? = null,
         val isFromAllFiles: Boolean = false,

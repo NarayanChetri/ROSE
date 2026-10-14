@@ -287,6 +287,7 @@ fun FileExplorerScreen(
     startPath: String? = null,
     startCategory: Pair<FileType, String>? = null,
     startRecent: Boolean = false,
+    startFavourites: Boolean = false,
     fromHome: Boolean = false,
     highlightFile: FileItem? = null, // New parameter
     isFromAllFiles: Boolean = false, // New parameter for seamless transition
@@ -301,7 +302,8 @@ fun FileExplorerScreen(
     gridState: androidx.compose.foundation.lazy.grid.LazyGridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState(),
     backHandlerEnabled: Boolean = true,
     onSearchActiveChange: (Boolean) -> Unit = {},
-    onOpenPath: ((String, FileItem?) -> Unit)? = null
+    onOpenPath: ((String, FileItem?) -> Unit)? = null,
+    contentWindowInsets: WindowInsets = ScaffoldDefaults.contentWindowInsets
 ) {
     val context = LocalContext.current
 
@@ -317,11 +319,12 @@ fun FileExplorerScreen(
     LaunchedEffect(isSearching) {
         onSearchActiveChange(isSearching)
     }
-    var currentView by remember(startPath, startCategory, startRecent) {
+    var currentView by remember(startPath, startCategory, startRecent, startFavourites) {
         mutableStateOf(
             when {
                 startCategory != null -> "Category"
                 startRecent -> "Recent"
+                startFavourites -> "Favourites"
                 else -> "Files"
             }
         )
@@ -380,7 +383,7 @@ fun FileExplorerScreen(
         }
     }
 
-    LaunchedEffect(startPath, startCategory, startRecent, resumePath) {
+    LaunchedEffect(startPath, startCategory, startRecent, startFavourites, resumePath) {
         if (highlightFile != null) {
             viewModel.highlightedFile = highlightFile
         }
@@ -401,6 +404,11 @@ fun FileExplorerScreen(
             startRecent -> {
                 viewModel.clearScrollPosition("recent")
                 viewModel.loadRecentFiles()
+                listState.scrollToItem(0, 0)
+                gridState.scrollToItem(0, 0)
+            }
+            startFavourites -> {
+                viewModel.clearScrollPosition("favourites")
                 listState.scrollToItem(0, 0)
                 gridState.scrollToItem(0, 0)
             }
@@ -484,7 +492,7 @@ fun FileExplorerScreen(
                 viewModel.exitCategoryMode()
                 onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
             }
-        } else if (currentView == "Recent") {
+        } else if (currentView == "Recent" || currentView == "Favourites") {
             viewModel.resetFiles()
             viewModel.exitCategoryMode()
             onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
@@ -508,9 +516,13 @@ fun FileExplorerScreen(
     }
 
     val displayedFiles = if (isSearching && searchQuery.isNotBlank()) {
-        if (currentView == "Category") viewModel.searchResults else viewModel.filteredSearchResults
+        if (currentView == "Category") viewModel.searchResults
+        else if (currentView == "Favourites") viewModel.sortFileList(viewModel.getFavouriteFileItems().filter { it.name.contains(searchQuery, ignoreCase = true) })
+        else viewModel.filteredSearchResults
     } else if (currentView == "Recent") {
         viewModel.recentFiles
+    } else if (currentView == "Favourites") {
+        viewModel.sortFileList(viewModel.getFavouriteFileItems())
     } else if (currentView == "Category") {
         viewModel.categoryFiles
     } else {
@@ -612,7 +624,7 @@ fun FileExplorerScreen(
     // scroll-position-restore logic, or the reorder animation for any sort
     // change that doesn't also need a scroll jump.
 
-    val currentIsGridView = if (currentView == "Category") viewModel.isCategoryGridView else viewModel.isGridView
+    val currentIsGridView = if (currentView == "Category" || currentView == "Favourites") viewModel.isCategoryGridView else viewModel.isGridView
 
     // Continuously save the current scroll position for the active path.
     // To avoid saving the OLD path's scroll position into the NEW path's
@@ -788,6 +800,7 @@ fun FileExplorerScreen(
             else -> {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
+                    contentWindowInsets = contentWindowInsets,
                     topBar = {
                         Surface(
                             shadowElevation = 3.dp,
@@ -818,7 +831,17 @@ fun FileExplorerScreen(
                             ) { target ->
                                 when (target) {
                                     "Selection" -> {
-                                        SelectionTopBar(viewModel)
+                                        SelectionTopBar(
+                                            viewModel = viewModel,
+                                            isAllSelected = viewModel.selectedFiles.size == effectiveDisplayedFiles.size && effectiveDisplayedFiles.isNotEmpty(),
+                                            onSelectAllClick = {
+                                                if (viewModel.selectedFiles.size == effectiveDisplayedFiles.size) {
+                                                    viewModel.exitSelectionMode()
+                                                } else {
+                                                    viewModel.selectAll(effectiveDisplayedFiles)
+                                                }
+                                            }
+                                        )
                                     }
                                     "Search" -> {
                                         Column {
@@ -892,7 +915,7 @@ fun FileExplorerScreen(
                                                     viewModel.exitCategoryMode()
                                                     onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
                                                 }
-                                            } else if (currentView == "Recent") {
+                                            } else if (currentView == "Recent" || currentView == "Favourites") {
                                                 viewModel.resetFiles()
                                                 viewModel.exitCategoryMode()
                                                 onExitToHome?.invoke() ?: (context as? android.app.Activity)?.finish()
@@ -912,6 +935,7 @@ fun FileExplorerScreen(
                                                 title = when (currentView) {
                                                     "Recent" -> stringResource(R.string.home_section_recent_files)
                                                     "Category" -> viewModel.categoryTitle ?: stringResource(R.string.category_files)
+                                                    "Favourites" -> stringResource(R.string.title_favourite_files)
                                                     else -> stringResource(R.string.category_all_files)
                                                 },
                                                 path = if (currentView == "Files") viewModel.currentPath else null,
@@ -988,7 +1012,7 @@ fun FileExplorerScreen(
                                 onExtractClick = {
                                     val fileItem = viewModel.selectedFiles.firstOrNull()
                                     if (fileItem != null) {
-                                        if (currentView == "Category" || currentView == "Recent") {
+                                        if (currentView == "Category" || currentView == "Recent" || currentView == "Favourites") {
                                             viewModel.prepareExtraction(fileItem.file)
                                             viewModel.exitSelectionMode()
                                             Toast.makeText(context, context.getString(R.string.toast_archive_ready_extract), Toast.LENGTH_SHORT).show()
@@ -1014,7 +1038,8 @@ fun FileExplorerScreen(
                                     lastNonZipView = currentView
                                     viewModel.openArchive(fileItem.file)
                                     currentView = "Files"
-                                }
+                                },
+                                onOpenPath = onOpenPath
                             )
                         }
                     },
@@ -1060,7 +1085,7 @@ fun FileExplorerScreen(
                                             modifier = Modifier
                                                 .clip(RoundedCornerShape(16.dp))
                                                 .then(
-                                                    if (currentView == "Category" || currentView == "Recent" || viewModel.currentZipFile != null) {
+                                                    if (currentView == "Category" || currentView == "Recent" || currentView == "Favourites" || viewModel.currentZipFile != null) {
                                                         Modifier.alpha(0.5f)
                                                     } else {
                                                         Modifier.clickable {
@@ -1126,7 +1151,7 @@ fun FileExplorerScreen(
                                             modifier = Modifier
                                                 .clip(RoundedCornerShape(16.dp))
                                                 .then(
-                                                    if (currentView == "Category" || currentView == "Recent" || viewModel.currentZipFile != null) {
+                                                    if (currentView == "Category" || currentView == "Recent" || currentView == "Favourites" || viewModel.currentZipFile != null) {
                                                         Modifier.alpha(0.5f)
                                                     } else {
                                                         Modifier.clickable {
@@ -1170,6 +1195,9 @@ fun FileExplorerScreen(
                                     when {
                                         currentView == "Recent" -> {
                                             viewModel.loadRecentFiles()
+                                        }
+                                        currentView == "Favourites" -> {
+                                            refreshAnimationToken++
                                         }
                                         currentView == "Category" -> {
                                             val type = viewModel.categoryFilterType
@@ -1328,9 +1356,13 @@ fun FileExplorerScreen(
                                         modifier = Modifier.fillMaxSize()
                                     ) { state ->
                                         val displayedFilesFinal = if (isSearching && searchQuery.isNotBlank()) {
-                                            if (state.view == "Category") viewModel.searchResults else viewModel.filteredSearchResults
+                                            if (state.view == "Category") viewModel.searchResults
+                                            else if (state.view == "Favourites") viewModel.sortFileList(viewModel.getFavouriteFileItems().filter { it.name.contains(searchQuery, ignoreCase = true) })
+                                            else viewModel.filteredSearchResults
                                         } else if (state.view == "Recent") {
                                             viewModel.recentFiles
+                                        } else if (state.view == "Favourites") {
+                                            viewModel.sortFileList(viewModel.getFavouriteFileItems())
                                         } else if (state.view == "Category") {
                                             viewModel.categoryFiles
                                         } else {
@@ -1355,6 +1387,7 @@ fun FileExplorerScreen(
                                         val isCurrentlyLoading = when (state.view) {
                                             "Category" -> viewModel.isCategoryLoading || isPullRefreshing
                                             "Recent" -> viewModel.isRecentLoading || isPullRefreshing
+                                            "Favourites" -> false
                                             else -> viewModel.isLoading || isPullRefreshing
                                         }
 
@@ -1375,8 +1408,37 @@ fun FileExplorerScreen(
                                                 )
                                             }
                                         } else if (displayedFilesFinal.isEmpty() && !isCurrentlyLoading) {
-                                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                                Text(if (searchQuery.isEmpty()) stringResource(R.string.no_files_found) else stringResource(R.string.no_results_for_query, searchQuery))
+                                            if (state.view == "Favourites") {
+                                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                                    Column(
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        modifier = Modifier.padding(32.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.FavoriteBorder,
+                                                            contentDescription = null,
+                                                            tint = Color(0xFFE11D48).copy(alpha = 0.5f),
+                                                            modifier = Modifier.size(64.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.height(16.dp))
+                                                        Text(
+                                                            text = stringResource(R.string.empty_favourite_files),
+                                                            style = MaterialTheme.typography.titleMedium,
+                                                            fontWeight = FontWeight.SemiBold
+                                                        )
+                                                        Spacer(modifier = Modifier.height(8.dp))
+                                                        Text(
+                                                            text = stringResource(R.string.empty_favourite_files_subtitle),
+                                                            style = MaterialTheme.typography.bodyMedium,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                                        )
+                                                    }
+                                                }
+                                            } else {
+                                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                                    Text(if (searchQuery.isEmpty()) stringResource(R.string.no_files_found) else stringResource(R.string.no_results_for_query, searchQuery))
+                                                }
                                             }
                                         } else if (isDocumentCategory) {
                                             HorizontalPager(
@@ -1510,8 +1572,20 @@ fun FileExplorerScreen(
                                                                 onRenameRequest = { showRenameDialog = fileItem },
                                                                 onOpenWith = { onOpenWithClick(fileItem) },
                                                                 onShare = { onShareClick(listOf(fileItem)) },
-                                                                onCopy = { viewModel.toggleSelection(fileItem); viewModel.copySelected() },
-                                                                onCut = { viewModel.toggleSelection(fileItem); viewModel.moveSelected() },
+                                                                onCopy = {
+                                                                    viewModel.toggleSelection(fileItem)
+                                                                    viewModel.copySelected()
+                                                                    if (currentView == "Category" || currentView == "Recent" || currentView == "Favourites") {
+                                                                        onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                                                                    }
+                                                                },
+                                                                onCut = {
+                                                                    viewModel.toggleSelection(fileItem)
+                                                                    viewModel.moveSelected()
+                                                                    if (currentView == "Category" || currentView == "Recent" || currentView == "Favourites") {
+                                                                        onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                                                                    }
+                                                                },
                                                                 onOpenLocation = null,
                                                                 onExtract = {
                                                                     viewModel.prepareExtraction(fileItem.file)
@@ -1526,7 +1600,7 @@ fun FileExplorerScreen(
                                                     }
                                                 }
                                             }
-                                        } else if (if (currentView == "Category") viewModel.isCategoryGridView else viewModel.isGridView) {
+                                        } else if (if (currentView == "Category" || currentView == "Favourites") viewModel.isCategoryGridView else viewModel.isGridView) {
                                             LazyVerticalGrid(
                                                 columns = GridCells.Adaptive(minSize = viewModel.gridItemSize.cellMinSize),
                                                 state = gridState,
@@ -1784,15 +1858,27 @@ fun FileExplorerScreen(
                                                                     onRenameRequest = { showRenameDialog = fileItem },
                                                                     onOpenWith = { onOpenWithClick(fileItem) },
                                                                     onShare = { onShareClick(listOf(fileItem)) },
-                                                                    onCopy = { viewModel.toggleSelection(fileItem); viewModel.copySelected() },
-                                                                    onCut = { viewModel.toggleSelection(fileItem); viewModel.moveSelected() },
-                                                                    onOpenLocation = if (searchQuery.isNotEmpty() || currentView == "Recent") {
+                                                                    onCopy = {
+                                                                        viewModel.toggleSelection(fileItem)
+                                                                        viewModel.copySelected()
+                                                                        if (currentView == "Category" || currentView == "Recent" || currentView == "Favourites") {
+                                                                            onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                                                                        }
+                                                                    },
+                                                                    onCut = {
+                                                                        viewModel.toggleSelection(fileItem)
+                                                                        viewModel.moveSelected()
+                                                                        if (currentView == "Category" || currentView == "Recent" || currentView == "Favourites") {
+                                                                            onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                                                                        }
+                                                                    },
+                                                                    onOpenLocation = if (searchQuery.isNotEmpty() || currentView == "Recent" || currentView == "Favourites") {
                                                                         {
                                                                             val parent = fileItem.file.parentFile
                                                                             if (parent != null) {
                                                                                 isSearching = false
                                                                                 searchQuery = ""
-                                                                                if (currentView == "Recent" && onOpenPath != null) {
+                                                                                if ((currentView == "Recent" || currentView == "Favourites") && onOpenPath != null) {
                                                                                     onOpenPath(parent.absolutePath, fileItem)
                                                                                 } else {
                                                                                     viewModel.navigateTo(parent, true)
@@ -1804,7 +1890,7 @@ fun FileExplorerScreen(
                                                                     } else null,
                                                                     onExtract = {
                                                                         val entries = if (fileItem.zipEntryPath != null) listOf(fileItem.zipEntryPath) else null
-                                                                        if (currentView == "Category" || currentView == "Recent") {
+                                                                        if (currentView == "Category" || currentView == "Recent" || currentView == "Favourites") {
                                                                             viewModel.prepareExtraction(fileItem.file, entries)
                                                                             Toast.makeText(context, context.getString(R.string.toast_archive_ready_extract), Toast.LENGTH_SHORT).show()
                                                                         } else {
@@ -1912,15 +1998,27 @@ fun FileExplorerScreen(
                                                             onRenameRequest = { showRenameDialog = fileItem },
                                                             onOpenWith = { onOpenWithClick(fileItem) },
                                                             onShare = { onShareClick(listOf(fileItem)) },
-                                                            onCopy = { viewModel.toggleSelection(fileItem); viewModel.copySelected() },
-                                                            onCut = { viewModel.toggleSelection(fileItem); viewModel.moveSelected() },
-                                                            onOpenLocation = if (searchQuery.isNotEmpty() || currentView == "Recent") {
+                                                            onCopy = {
+                                                                viewModel.toggleSelection(fileItem)
+                                                                viewModel.copySelected()
+                                                                if (currentView == "Category" || currentView == "Recent" || currentView == "Favourites") {
+                                                                    onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                                                                }
+                                                            },
+                                                            onCut = {
+                                                                viewModel.toggleSelection(fileItem)
+                                                                viewModel.moveSelected()
+                                                                if (currentView == "Category" || currentView == "Recent" || currentView == "Favourites") {
+                                                                    onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                                                                }
+                                                            },
+                                                            onOpenLocation = if (searchQuery.isNotEmpty() || currentView == "Recent" || currentView == "Favourites") {
                                                                 {
                                                                     val parent = fileItem.file.parentFile
                                                                     if (parent != null) {
                                                                         isSearching = false
                                                                         searchQuery = ""
-                                                                        if (currentView == "Recent" && onOpenPath != null) {
+                                                                        if ((currentView == "Recent" || currentView == "Favourites") && onOpenPath != null) {
                                                                             onOpenPath(parent.absolutePath, fileItem)
                                                                         } else {
                                                                             viewModel.navigateTo(parent, true)
@@ -1931,7 +2029,7 @@ fun FileExplorerScreen(
                                                                 }
                                                             } else null,
                                                             onExtract = {
-                                                                if (currentView == "Category" || currentView == "Recent") {
+                                                                if (currentView == "Category" || currentView == "Recent" || currentView == "Favourites") {
                                                                     viewModel.prepareExtraction(fileItem.file)
                                                                     Toast.makeText(context, context.getString(R.string.toast_archive_ready_extract), Toast.LENGTH_SHORT).show()
                                                                 } else {
@@ -2748,7 +2846,11 @@ fun Breadcrumbs(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SelectionTopBar(viewModel: RoseViewModel) {
+fun SelectionTopBar(
+    viewModel: RoseViewModel,
+    isAllSelected: Boolean,
+    onSelectAllClick: () -> Unit
+) {
     TopAppBar(
         title = {
             Text(
@@ -2765,7 +2867,12 @@ fun SelectionTopBar(viewModel: RoseViewModel) {
             }
         },
         actions = {
-            // Select All removed from here as it is now in the "More" menu
+            IconButton(onClick = onSelectAllClick) {
+                Icon(
+                    imageVector = if (isAllSelected) Icons.Default.Deselect else Icons.Default.Checklist,
+                    contentDescription = if (isAllSelected) stringResource(R.string.action_unselect_all) else stringResource(R.string.action_select_all)
+                )
+            }
         },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = MaterialTheme.colorScheme.surface,
@@ -2786,7 +2893,8 @@ fun SelectionBottomBar(
     onExtractClick: () -> Unit,
     isAllSelected: Boolean,
     onSelectAllClick: () -> Unit,
-    onOpenArchiveClick: ((FileItem) -> Unit)? = null
+    onOpenArchiveClick: ((FileItem) -> Unit)? = null,
+    onOpenPath: ((String, FileItem?) -> Unit)? = null
 ) {
     val context = LocalContext.current
 
@@ -2795,136 +2903,215 @@ fun SelectionBottomBar(
         tonalElevation = 3.dp,
         shadowElevation = 16.dp
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .navigationBarsPadding()
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
         ) {
-            SelectionBottomBarItem(
-                icon = Icons.Outlined.Share,
-                label = stringResource(R.string.action_share),
-                onClick = onShare,
-                modifier = Modifier.weight(1f)
+            HorizontalDivider(
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
             )
-            SelectionBottomBarItem(
-                icon = Icons.Outlined.ContentCopy,
-                label = stringResource(R.string.action_copy),
-                onClick = { viewModel.copySelected() },
-                modifier = Modifier.weight(1f)
-            )
-            SelectionBottomBarItem(
-                icon = Icons.AutoMirrored.Outlined.DriveFileMove,
-                label = stringResource(R.string.action_move),
-                onClick = { viewModel.moveSelected() },
-                modifier = Modifier.weight(1f),
-                enabled = viewModel.currentZipFile == null
-            )
-            SelectionBottomBarItem(
-                icon = Icons.Outlined.Delete,
-                label = stringResource(R.string.action_delete),
-                onClick = onDeleteClick,
-                modifier = Modifier.weight(1f),
-                enabled = viewModel.currentZipFile == null
-            )
-
-            var showMoreMenu by remember { mutableStateOf(false) }
-            Box(modifier = Modifier.weight(1f)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 SelectionBottomBarItem(
-                    icon = Icons.Default.MoreVert,
-                    label = stringResource(R.string.action_more),
-                    onClick = { showMoreMenu = true },
-                    modifier = Modifier.fillMaxWidth()
+                    icon = Icons.Outlined.Share,
+                    label = stringResource(R.string.action_share),
+                    onClick = onShare,
+                    modifier = Modifier.weight(1f)
                 )
-                DropdownMenu(
-                    expanded = showMoreMenu,
-                    onDismissRequest = { showMoreMenu = false },
-                    shape = RoundedCornerShape(16.dp),
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    offset = androidx.compose.ui.unit.DpOffset(x = (-8).dp, y = 0.dp)
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(if (isAllSelected) stringResource(R.string.action_unselect_all) else stringResource(R.string.action_select_all)) },
-                        onClick = {
-                            onSelectAllClick()
-                            showMoreMenu = false
-                        },
-                        leadingIcon = { Icon(if (isAllSelected) Icons.Default.Deselect else Icons.Default.SelectAll, null) }
+                SelectionBottomBarItem(
+                    icon = Icons.AutoMirrored.Outlined.DriveFileMove,
+                    label = stringResource(R.string.action_move),
+                    onClick = {
+                        val isVirtual = currentView == "Category" || currentView == "Recent" || currentView == "Favourites"
+                        viewModel.moveSelected()
+                        if (isVirtual) {
+                            onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    enabled = viewModel.currentZipFile == null
+                )
+                SelectionBottomBarItem(
+                    icon = Icons.Outlined.Delete,
+                    label = stringResource(R.string.action_delete),
+                    onClick = onDeleteClick,
+                    modifier = Modifier.weight(1f),
+                    enabled = viewModel.currentZipFile == null
+                )
+                SelectionBottomBarItem(
+                    icon = Icons.Outlined.ContentCopy,
+                    label = stringResource(R.string.action_copy),
+                    onClick = {
+                        val isVirtual = currentView == "Category" || currentView == "Recent" || currentView == "Favourites"
+                        viewModel.copySelected()
+                        if (isVirtual) {
+                            onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+
+                var showMoreMenu by remember { mutableStateOf(false) }
+                Box(modifier = Modifier.weight(1f)) {
+                    SelectionBottomBarItem(
+                        icon = Icons.Default.MoreVert,
+                        label = stringResource(R.string.action_more),
+                        onClick = { showMoreMenu = true },
+                        modifier = Modifier.fillMaxWidth()
                     )
-                    if (currentView != "Recent" && viewModel.currentZipFile == null) {
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.action_compress)) },
-                            onClick = {
-                                onCompressClick()
-                                showMoreMenu = false
-                            },
-                            leadingIcon = { Icon(Icons.Default.Archive, null) }
-                        )
-                    }
-                    if (viewModel.selectedFiles.size == 1) {
-                        val fileItem = viewModel.selectedFiles.first()
-                        if (viewModel.currentZipFile == null) {
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.action_rename)) },
-                                onClick = {
-                                    onRenameClick()
-                                    showMoreMenu = false
-                                },
-                                leadingIcon = { Icon(Icons.Default.Edit, null) }
-                            )
-                        }
-                        if (fileItem.isDirectory && viewModel.currentZipFile == null) {
-                            val isAlreadyInQuickAccess = viewModel.isFolderInQuickAccess(fileItem.file.absolutePath)
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        if (isAlreadyInQuickAccess) stringResource(R.string.action_already_in_quick_access)
-                                        else stringResource(R.string.action_add_to_quick_access)
-                                    )
-                                },
-                                enabled = !isAlreadyInQuickAccess,
-                                onClick = {
-                                    if (!isAlreadyInQuickAccess) {
-                                        viewModel.addQuickAccessFolder(fileItem.file.absolutePath)
-                                        Toast.makeText(context, context.getString(R.string.toast_added_to_quick_access), Toast.LENGTH_SHORT).show()
-                                    }
-                                    viewModel.exitSelectionMode()
-                                    showMoreMenu = false
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        if (isAlreadyInQuickAccess) Icons.Default.Check else Icons.Default.Add,
-                                        null
-                                    )
+                    if (showMoreMenu) {
+                        val density = LocalDensity.current
+                        val gapPx = with(density) { 8.dp.roundToPx() }
+                        val endMarginPx = with(density) { 8.dp.roundToPx() }
+                        val popupPositionProvider = remember(gapPx, endMarginPx) {
+                            object : androidx.compose.ui.window.PopupPositionProvider {
+                                override fun calculatePosition(
+                                    anchorBounds: androidx.compose.ui.unit.IntRect,
+                                    windowSize: androidx.compose.ui.unit.IntSize,
+                                    layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+                                    popupContentSize: androidx.compose.ui.unit.IntSize
+                                ): androidx.compose.ui.unit.IntOffset {
+                                    val x = (windowSize.width - popupContentSize.width - endMarginPx).coerceAtLeast(0)
+                                    val y = (anchorBounds.top - popupContentSize.height - gapPx).coerceAtLeast(0)
+                                    return androidx.compose.ui.unit.IntOffset(x, y)
                                 }
-                            )
+                            }
                         }
-                        if (fileItem.fileType == FileType.ZIP && viewModel.currentZipFile == null) {
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.action_extract)) },
-                                onClick = {
-                                    onExtractClick()
-                                    showMoreMenu = false
-                                },
-                                leadingIcon = { Icon(Icons.Outlined.Unarchive, null) }
-                            )
+                        androidx.compose.ui.window.Popup(
+                            popupPositionProvider = popupPositionProvider,
+                            onDismissRequest = { showMoreMenu = false },
+                            properties = androidx.compose.ui.window.PopupProperties(focusable = true)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                tonalElevation = 3.dp,
+                                shadowElevation = 8.dp,
+                                modifier = Modifier.width(IntrinsicSize.Max)
+                            ) {
+                                Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                                    if (currentView != "Recent" && viewModel.currentZipFile == null) {
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.action_compress)) },
+                                            onClick = {
+                                                onCompressClick()
+                                                showMoreMenu = false
+                                            },
+                                            leadingIcon = { Icon(Icons.Default.Archive, null) }
+                                        )
+                                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                    }
+                                    DropdownMenuItem(
+                                        text = { Text(if (isAllSelected) stringResource(R.string.action_unselect_all) else stringResource(R.string.action_select_all)) },
+                                        onClick = {
+                                            onSelectAllClick()
+                                            showMoreMenu = false
+                                        },
+                                        leadingIcon = { Icon(if (isAllSelected) Icons.Default.Deselect else Icons.Default.Checklist, null) }
+                                    )
+                                    if (viewModel.selectedFiles.size == 1 && viewModel.currentZipFile == null) {
+                                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.action_rename)) },
+                                            onClick = {
+                                                onRenameClick()
+                                                showMoreMenu = false
+                                            },
+                                            leadingIcon = { Icon(Icons.Default.Edit, null) }
+                                        )
+                                    }
+                                    val fileOnlySelected = viewModel.selectedFiles.filter { !it.isDirectory }
+                                    if (fileOnlySelected.isNotEmpty() && viewModel.currentZipFile == null) {
+                                        val allFav = fileOnlySelected.all { viewModel.isFileInFavourites(it.file.absolutePath) }
+                                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    if (allFav) stringResource(R.string.action_remove_from_favourites)
+                                                    else stringResource(R.string.action_add_to_favourites)
+                                                )
+                                            },
+                                            onClick = {
+                                                if (allFav) {
+                                                    viewModel.removeFavourites(fileOnlySelected)
+                                                    Toast.makeText(context, context.getString(R.string.toast_removed_from_favourites), Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    viewModel.addFavourites(fileOnlySelected)
+                                                    Toast.makeText(context, context.getString(R.string.toast_added_to_favourites), Toast.LENGTH_SHORT).show()
+                                                }
+                                                viewModel.exitSelectionMode()
+                                                showMoreMenu = false
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    if (allFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                                    null,
+                                                    tint = Color(0xFFE11D48)
+                                                )
+                                            }
+                                        )
+                                    }
+                                    if (viewModel.selectedFiles.size == 1) {
+                                        val fileItem = viewModel.selectedFiles.first()
+                                        if (fileItem.isDirectory && viewModel.currentZipFile == null) {
+                                            val isAlreadyInQuickAccess = viewModel.isFolderInQuickAccess(fileItem.file.absolutePath)
+                                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        if (isAlreadyInQuickAccess) stringResource(R.string.action_already_in_quick_access)
+                                                        else stringResource(R.string.action_add_to_quick_access)
+                                                    )
+                                                },
+                                                enabled = !isAlreadyInQuickAccess,
+                                                onClick = {
+                                                    if (!isAlreadyInQuickAccess) {
+                                                        viewModel.addQuickAccessFolder(fileItem.file.absolutePath)
+                                                        Toast.makeText(context, context.getString(R.string.toast_added_to_quick_access), Toast.LENGTH_SHORT).show()
+                                                    }
+                                                    viewModel.exitSelectionMode()
+                                                    showMoreMenu = false
+                                                },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        if (isAlreadyInQuickAccess) Icons.Default.Check else Icons.Default.Add,
+                                                        null
+                                                    )
+                                                }
+                                            )
+                                        }
+                                        if (fileItem.fileType == FileType.ZIP && viewModel.currentZipFile == null) {
+                                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.action_extract)) },
+                                                onClick = {
+                                                    onExtractClick()
+                                                    showMoreMenu = false
+                                                },
+                                                leadingIcon = { Icon(Icons.Outlined.Unarchive, null) }
+                                            )
+                                        }
+                                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.action_properties)) },
+                                            onClick = {
+                                                viewModel.showProperties(fileItem)
+                                                viewModel.exitSelectionMode()
+                                                showMoreMenu = false
+                                            },
+                                            leadingIcon = { Icon(Icons.Default.Info, null) }
+                                        )
+                                    }
+                                }
+                            }
                         }
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.action_properties)) },
-                            onClick = {
-                                viewModel.showProperties(fileItem)
-                                viewModel.exitSelectionMode()
-                                showMoreMenu = false
-                            },
-                            leadingIcon = { Icon(Icons.Default.Info, null) }
-                        )
                     }
                 }
             }
@@ -2945,17 +3132,17 @@ fun SelectionBottomBarItem(
     val finalTint = if (enabled) tint else tint.copy(alpha = 0.38f)
     Column(
         modifier = modifier
+            .fillMaxHeight()
             .clip(RoundedCornerShape(12.dp))
-            .clickable(enabled = enabled) { onClick() }
-            .padding(vertical = 10.dp),
+            .clickable(enabled = enabled) { onClick() },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(icon, contentDescription = null, tint = finalTint, modifier = Modifier.size(24.dp))
-        Spacer(modifier = Modifier.height(6.dp))
+        Icon(icon, contentDescription = null, tint = finalTint, modifier = Modifier.size(22.dp))
+        Spacer(modifier = Modifier.height(3.dp))
         Text(
             label,
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Medium),
+            style = MaterialTheme.typography.labelSmall,
             color = finalTint
         )
     }
@@ -3023,12 +3210,12 @@ fun SortMenu(expanded: Boolean, viewModel: RoseViewModel, currentView: String, o
 
         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
 
-        val isGridView = if (currentView == "Category") viewModel.isCategoryGridView else viewModel.isGridView
+        val isGridView = if (currentView == "Category" || currentView == "Favourites") viewModel.isCategoryGridView else viewModel.isGridView
 
         DropdownMenuItem(
             text = { Text(if (isGridView) stringResource(R.string.view_list) else stringResource(R.string.view_grid)) },
             onClick = {
-                if (currentView == "Category") {
+                if (currentView == "Category" || currentView == "Favourites") {
                     viewModel.setCategoryGridView(!isGridView)
                 } else {
                     viewModel.setGridView(!isGridView)
@@ -3146,8 +3333,11 @@ fun FileGridItem(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         val vm = viewModel ?: (LocalContext.current as? androidx.activity.ComponentActivity)?.let { (it as? MainActivity)?.viewModel }
+        val isFav = remember(fileItem.file.absolutePath, vm?.favouriteFiles) {
+            if (fileItem.isDirectory) false else vm?.isFileInFavourites(fileItem.file.absolutePath) == true
+        }
         Box(contentAlignment = Alignment.Center) {
-            FileIcon(fileItem, iconSize = iconSize, isVirtual = isVirtual, viewModel = vm)
+            FileIcon(fileItem, iconSize = iconSize, isVirtual = isVirtual, viewModel = vm, showFavouriteBadge = isFav)
             if (isSelected) {
                 Box(
                     modifier = Modifier.size(iconSize * 0.5f).clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
@@ -3297,8 +3487,11 @@ fun FileListItem(
                 }
             },
             leadingContent = {
+                val isFav = remember(fileItem.file.absolutePath, viewModel?.favouriteFiles) {
+                    if (fileItem.isDirectory) false else viewModel?.isFileInFavourites(fileItem.file.absolutePath) == true
+                }
                 Box(contentAlignment = Alignment.Center) {
-                    FileIcon(fileItem, isVirtual = isVirtual, viewModel = viewModel)
+                    FileIcon(fileItem, isVirtual = isVirtual, viewModel = viewModel, showFavouriteBadge = isFav)
                 }
             },
             trailingContent = {
@@ -3376,33 +3569,41 @@ fun FileListItem(
                                 onClick = { showMenu = false; onShare() },
                                 leadingIcon = { Icon(Icons.Default.Share, null) }
                             )
+                            if (!isVirtual && !fileItem.isDirectory && viewModel?.currentZipFile == null && viewModel != null) {
+                                val isFav = viewModel.isFileInFavourites(fileItem.file.absolutePath)
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            if (isFav) stringResource(R.string.action_remove_from_favourites)
+                                            else stringResource(R.string.action_add_to_favourites)
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        if (isFav) {
+                                            viewModel.removeFavouriteFile(fileItem.file.absolutePath)
+                                            Toast.makeText(context, context.getString(R.string.toast_removed_from_favourites), Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            viewModel.addFavouriteFile(fileItem.file.absolutePath)
+                                            Toast.makeText(context, context.getString(R.string.toast_added_to_favourites), Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (isFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                            null,
+                                            tint = Color(0xFFE11D48)
+                                        )
+                                    }
+                                )
+                            }
                             if (!isVirtual) {
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.action_rename)) },
                                     onClick = { showMenu = false; onRenameRequest() },
                                     leadingIcon = { Icon(Icons.Default.Edit, null) }
-                                )
-                            }
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.action_copy)) },
-                                onClick = { showMenu = false; onCopy() },
-                                leadingIcon = { Icon(Icons.Default.ContentCopy, null) }
-                            )
-                            if (!isVirtual) {
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.action_move)) },
-                                    onClick = { showMenu = false; onCut() },
-                                    leadingIcon = { Icon(Icons.Default.ContentCut, null) }
-                                )
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.action_delete)) },
-                                    onClick = { showMenu = false; onDelete() },
-                                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-                                    colors = MenuDefaults.itemColors(textColor = MaterialTheme.colorScheme.error)
                                 )
                             }
                             if ((fileItem.fileType == FileType.ZIP || isVirtual) && !isVirtual) {
@@ -3413,12 +3614,6 @@ fun FileListItem(
                                     leadingIcon = { Icon(Icons.Outlined.Unarchive, null) }
                                 )
                             }
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.action_properties)) },
-                                onClick = { showMenu = false; onProperties() },
-                                leadingIcon = { Icon(Icons.Default.Info, null) }
-                            )
                         }
                     }
                 }
@@ -3455,7 +3650,8 @@ fun FileIcon(
     iconSize: Dp = 52.dp,
     isVirtual: Boolean = false,
     folderTint: Color = Color(0xFF70C1FF),
-    viewModel: RoseViewModel? = null
+    viewModel: RoseViewModel? = null,
+    showFavouriteBadge: Boolean = false
 ) {
     val context = LocalContext.current
     val modifier = Modifier.size(iconSize).clip(RoundedCornerShape(12.dp))
@@ -3756,6 +3952,36 @@ fun FileIcon(
                     contentDescription = stringResource(R.string.content_desc_encrypted),
                     modifier = Modifier.size(iconSize * 0.22f),
                     tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+
+        if (showFavouriteBadge) {
+            val badgeAlignment = if (fileItem.isEncrypted && !isThumbnailLoaded && viewModel?.cachedZipPassword == null) {
+                Alignment.TopEnd
+            } else {
+                Alignment.BottomEnd
+            }
+            val badgeOffsetX = 2.dp
+            val badgeOffsetY = if (fileItem.isEncrypted && !isThumbnailLoaded && viewModel?.cachedZipPassword == null) (-2).dp else 2.dp
+            val badgeSize = (iconSize * 0.42f).coerceIn(14.dp, 20.dp)
+            val heartSize = (iconSize * 0.24f).coerceIn(8.dp, 12.dp)
+
+            Box(
+                modifier = Modifier
+                    .align(badgeAlignment)
+                    .offset(x = badgeOffsetX, y = badgeOffsetY)
+                    .size(badgeSize)
+                    .background(MaterialTheme.colorScheme.surface, androidx.compose.foundation.shape.CircleShape)
+                    .padding(1.5.dp)
+                    .background(Color(0xFFE11D48), androidx.compose.foundation.shape.CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.Favorite,
+                    contentDescription = null,
+                    modifier = Modifier.size(heartSize),
+                    tint = Color.White
                 )
             }
         }
