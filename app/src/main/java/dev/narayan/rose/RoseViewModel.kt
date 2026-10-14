@@ -507,6 +507,15 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 lowPath.endsWith("/android/obb") || lowPath.contains("/android/obb/")
     }
 
+    fun isRemotePath(path: String?): Boolean {
+        if (path.isNullOrBlank()) return false
+        val lower = path.lowercase().trim()
+        val schemes = listOf("mega", "onedrive", "gdrive", "dropbox", "smb", "ftp", "ftps", "sftp", "webdav", "webdavs")
+        return schemes.any { scheme ->
+            lower.startsWith("$scheme://") || lower.startsWith("$scheme:/")
+        }
+    }
+
     private val directoryCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<FileItem>>>()
 
     fun invalidateDirectoryCache(path: String? = null) {
@@ -1242,7 +1251,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     // that tells MediaStore a file is gone (see FileJob) is async and
                     // isn't done yet by the time this event fires.
                     val isRemoval = job.type is dev.narayan.rose.filejob.FileJobType.Delete ||
-                            job.type is dev.narayan.rose.filejob.FileJobType.Recycle
+                            job.type is dev.narayan.rose.filejob.FileJobType.Recycle ||
+                            job.type is dev.narayan.rose.filejob.FileJobType.Move
                     if (isRemoval) {
                         val removedItems = (files + recentFiles + categoryFiles + searchResults)
                             .filter { it.file.absolutePath in affectedPaths && !it.isDirectory }
@@ -1274,16 +1284,18 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     }
 
                     withContext(Dispatchers.Main) {
-                        files = files.filter { it.file.absolutePath !in affectedPaths }
-                        recentFiles = recentFiles.filter { it.file.absolutePath !in affectedPaths }
-                        saveCachedRecentFiles(recentFiles)
-                        categoryFiles = categoryFiles.filter { it.file.absolutePath !in affectedPaths }
-                        invalidateCategoryCache()
-                        invalidateDirectoryCache(currentPath)
-                        affectedPaths.forEach { p ->
-                            File(p).parent?.let { invalidateDirectoryCache(it) }
+                        if (isRemoval) {
+                            files = files.filter { it.file.absolutePath !in affectedPaths }
+                            recentFiles = recentFiles.filter { it.file.absolutePath !in affectedPaths }
+                            saveCachedRecentFiles(recentFiles)
+                            categoryFiles = categoryFiles.filter { it.file.absolutePath !in affectedPaths }
+                            invalidateCategoryCache()
+                            invalidateDirectoryCache(currentPath)
+                            affectedPaths.forEach { p ->
+                                File(p).parent?.let { invalidateDirectoryCache(it) }
+                            }
+                            searchResults.removeAll { it.file.absolutePath in affectedPaths }
                         }
-                        searchResults.removeAll { it.file.absolutePath in affectedPaths }
 
                         // If a recycle/restore happened, refresh the bin items too
                         if (job.type is dev.narayan.rose.filejob.FileJobType.Recycle ||
@@ -1675,6 +1687,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 // hardcoded at the filesystem layer.
                 val isSaf = SafManager.isSafUri(normalizedPath)
                 val isRestricted = !isSaf && isShizukuRestrictedPath(normalizedPath)
+                val isRemote = isRemotePath(normalizedPath)
 
                 val result = withContext(Dispatchers.IO) {
                     if (isSaf) {
@@ -1687,6 +1700,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                             safResults
                         }
                         sortFileList(sizedFileList)
+                    } else if (isRemote) {
+                        emptyList<FileItem>()
                     } else {
                         val directory = File(normalizedPath)
 
@@ -1814,7 +1829,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         rootCache = result
                     }
                     val directory = File(normalizedPath)
-                    if (!isSaf && !isRestricted && directory.exists() && directory.isDirectory) {
+                    if (!isSaf && !isRestricted && !isRemote && directory.exists() && directory.isDirectory) {
                         startWatchingDirectory(normalizedPath)
                     } else {
                         stopWatchingDirectory()
@@ -2419,6 +2434,17 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             if (safNavStack.isNotEmpty()) {
                 val parentSafPath = safNavStack.removeAt(safNavStack.lastIndex)
                 loadFiles(parentSafPath)
+                return true
+            }
+            return false
+        }
+        if (isRemotePath(currentPath)) {
+            val uri = runCatching { Uri.parse(currentPath) }.getOrNull()
+            val path = uri?.path
+            if (path != null && path != "/" && path != "/root" && path.isNotEmpty()) {
+                val parentPath = path.substringBeforeLast('/', "")
+                val newUri = currentPath.substringBefore(path) + (if (parentPath.isEmpty()) "/" else parentPath)
+                loadFiles(newUri)
                 return true
             }
             return false
@@ -3638,26 +3664,52 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             val pm = context.packageManager
             val savedTreeEntries = settings.addedStorageUris
             savedTreeEntries.forEach { entry ->
-                val uriString = entry.substringBefore("|::|")
-                val customName = if (entry.contains("|::|")) entry.substringAfter("|::|") else null
+                val parts = entry.split("|::|")
+                val uriString = parts.getOrNull(0) ?: return@forEach
+                val customName = parts.getOrNull(1)?.takeIf { it.isNotBlank() }
+                val typeString = parts.getOrNull(2)
                 val uri = try { Uri.parse(uriString) } catch (e: Exception) { null } ?: return@forEach
 
+                val storageType = when {
+                    typeString != null -> runCatching { CustomStorageType.valueOf(typeString) }.getOrDefault(CustomStorageType.DOCUMENT_TREE)
+                    uriString.startsWith("gdrive://") -> CustomStorageType.GOOGLE_DRIVE
+                    else -> {
+                        val auth = uri.authority ?: ""
+                        when {
+                            auth.contains("docs.storage") || auth.contains("com.google.android.apps.docs") -> CustomStorageType.GOOGLE_DRIVE
+                            else -> CustomStorageType.DOCUMENT_TREE
+                        }
+                    }
+                }
+
                 // Resolve name
-                val docFile = try { androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri) } catch (e: Exception) { null }
+                val docFile = if (uriString.startsWith("content://")) {
+                    try { androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri) } catch (e: Exception) { null }
+                } else null
                 val docName = docFile?.name
 
                 val authority = uri.authority ?: ""
-                val providerInfo = try { pm.resolveContentProvider(authority, 0) } catch (e: Exception) { null }
+                val providerInfo = if (uriString.startsWith("content://")) {
+                    try { pm.resolveContentProvider(authority, 0) } catch (e: Exception) { null }
+                } else null
                 val providerLabel = providerInfo?.loadLabel(pm)?.toString()
 
-                val isCloudStorage = authority != "com.android.externalstorage.documents" &&
+                val isCloudStorage = storageType == CustomStorageType.GOOGLE_DRIVE || (uriString.startsWith("content://") &&
+                        authority != "com.android.externalstorage.documents" &&
                         authority != "com.android.providers.media.documents" &&
-                        authority != "com.android.providers.downloads.documents"
+                        authority != "com.android.providers.downloads.documents")
+
+                val defaultTypeName = when (storageType) {
+                    CustomStorageType.GOOGLE_DRIVE -> "Google Drive"
+                    CustomStorageType.ANDROID_DATA -> "Android/data"
+                    CustomStorageType.ANDROID_OBB -> "Android/obb"
+                    else -> if (isCloudStorage) "Google Drive" else "External Storage"
+                }
 
                 val finalName = customName
                     ?: docName
                     ?: providerLabel
-                    ?: if (isCloudStorage) "Cloud Storage" else "External Storage"
+                    ?: defaultTypeName
 
                 devices.add(
                     StorageDevice.DocumentTree(
@@ -3667,7 +3719,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         availableBytes = 0L,
                         uriString = uriString,
                         isCloud = isCloudStorage,
-                        providerName = providerLabel
+                        providerName = providerLabel ?: defaultTypeName,
+                        storageType = storageType
                     )
                 )
             }
@@ -3691,19 +3744,36 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun addCustomStorage(uri: Uri) {
+        addCustomStorage(uri.toString(), null, CustomStorageType.DOCUMENT_TREE)
+    }
+
+    fun addCustomStorage(
+        uriString: String,
+        customName: String? = null,
+        storageType: CustomStorageType = CustomStorageType.DOCUMENT_TREE
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
-            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            try {
-                getApplication<Application>().contentResolver.takePersistableUriPermission(uri, flags)
-            } catch (e: SecurityException) {
-                try {
-                    getApplication<Application>().contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                } catch (e2: Exception) {}
+            if (uriString.startsWith("content://")) {
+                val uri = runCatching { Uri.parse(uriString) }.getOrNull()
+                if (uri != null) {
+                    val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    try {
+                        getApplication<Application>().contentResolver.takePersistableUriPermission(uri, flags)
+                    } catch (e: SecurityException) {
+                        try {
+                            getApplication<Application>().contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        } catch (e2: Exception) {}
+                    }
+                }
             }
-            val uriStr = uri.toString()
+            val entry = if (!customName.isNullOrBlank()) {
+                "$uriString|::|$customName|::|${storageType.name}"
+            } else {
+                "$uriString|::||::|${storageType.name}"
+            }
             val current = settings.addedStorageUris
-            if (!current.any { it.substringBefore("|::|") == uriStr }) {
-                settings.addedStorageUris = current + uriStr
+            if (!current.any { it.substringBefore("|::|") == uriString }) {
+                settings.addedStorageUris = current + entry
             }
             loadStorageDevices()
         }
@@ -3759,12 +3829,17 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
      * Physical local storages (Internal, SD Card, USB/Pen drive) return false.
      */
     fun isCloudStorage(path: String): Boolean {
-        if (!SafManager.isSafUri(path)) return false
-
+        if (path.startsWith("onedrive://") || path.startsWith("gdrive://") ||
+            path.startsWith("dropbox://") || path.startsWith("mega://") ||
+            path.startsWith("webdav://") || path.startsWith("webdavs://")) {
+            return true
+        }
         val treeDev = storageDevices.filterIsInstance<StorageDevice.DocumentTree>().firstOrNull { dev ->
             path == dev.path || path.startsWith(dev.path)
         }
         if (treeDev != null) return treeDev.isCloud
+
+        if (!SafManager.isSafUri(path)) return false
 
         val uri = try { Uri.parse(SafManager.normalizeSafPath(path)) } catch (e: Exception) { null }
         val authority = uri?.authority ?: ""

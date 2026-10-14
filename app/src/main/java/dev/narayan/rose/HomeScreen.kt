@@ -2035,19 +2035,28 @@ private fun StorageSection(
                     // 4. User-added DocumentTree / Cloud / External storages
                     if (treeDevices.isNotEmpty()) {
                         treeDevices.forEach { device ->
-                            val subtitle = device.providerName ?: if (device.isCloud) {
-                                stringResource(R.string.storage_cloud)
-                            } else {
-                                stringResource(R.string.storage_badge_custom)
+                            val (itemIcon, itemColor, itemBadgeText) = when (device.storageType) {
+                                CustomStorageType.GOOGLE_DRIVE -> Triple(Icons.Default.Cloud, Color(0xFF0F9D58), "Google Drive")
+                                CustomStorageType.DOCUMENT_TREE -> if (device.isCloud) {
+                                    Triple(Icons.Default.Cloud, Color(0xFF0F9D58), "Google Drive")
+                                } else {
+                                    Triple(Icons.Default.Storage, Color(0xFF8B5CF6), stringResource(R.string.storage_badge_custom))
+                                }
+                                else -> if (device.isCloud) {
+                                    Triple(Icons.Default.Cloud, Color(0xFF0F9D58), "Google Drive")
+                                } else {
+                                    Triple(Icons.Default.Storage, Color(0xFF8B5CF6), stringResource(R.string.storage_badge_custom))
+                                }
                             }
+                            val subtitle = device.providerName ?: itemBadgeText
                             var showItemMenu by remember { mutableStateOf(false) }
                             StorageItemRow(
                                 title = device.name,
                                 subtitle = subtitle,
-                                icon = if (device.isCloud) Icons.Default.Cloud else Icons.Default.Storage,
-                                iconColor = if (device.isCloud) Color(0xFF4285F4) else Color(0xFF8B5CF6),
-                                badgeText = if (device.isCloud) stringResource(R.string.storage_badge_cloud) else stringResource(R.string.storage_badge_custom),
-                                badgeColor = if (device.isCloud) Color(0xFF4285F4) else Color(0xFF8B5CF6),
+                                icon = itemIcon,
+                                iconColor = itemColor,
+                                badgeText = itemBadgeText,
+                                badgeColor = itemColor,
                                 onClick = { onOpenPath(device.path) },
                                 onLongClick = { storagePendingRemoval = device },
                                 trailingContent = {
@@ -2096,7 +2105,7 @@ private fun StorageSection(
                     // Divider before bottom button
                     StorageDivider()
 
-                    // 5. Add Cloud or Network Storage button row
+                    // 5. Add Google Drive or Storage button row
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()

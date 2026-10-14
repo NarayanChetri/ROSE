@@ -104,7 +104,7 @@
     <string name="storage_google_drive">Google Drive</string>
     <string name="storage_external">External Storage</string>
     <string name="storage_storages_and_drives">Storages &amp; Drives</string>
-    <string name="storage_add_cloud_or_network">Add Cloud or Network Storage</string>
+    <string name="storage_add_cloud_or_network">Add Google Drive or Storage</string>
     <string name="storage_sd_card">SD Card</string>
     <string name="storage_usb_drive">USB / Pen Drive (OTG)</string>
     <string name="storage_usb_placeholder_desc">SanDisk Ultra • 18.4 GB free of 32 GB</string>
@@ -531,4 +531,7 @@
     <string name="toast_root_enabled">Root access enabled</string>
     <string name="toast_root_disabled">Root access disabled</string>
     <string name="toast_root_not_available">Root access not available. Please grant superuser permissions.</string>
+
+    <string name="storage_gdrive">Google Drive</string>
+    <string name="storage_gdrive_subtitle">Connect your Google Drive account</string>
 </resources>

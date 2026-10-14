@@ -966,7 +966,8 @@ object FileOperationRunner {
         totalSize: Long,
         job: FileJob? = null,
         onProgress: ((FileJob) -> Unit)? = null,
-        activeProcesses: List<Process> = emptyList()
+        activeProcesses: List<Process> = emptyList(),
+        initialBytesAlreadyReported: Long = 0L
     ) {
         try {
             input.use { inp ->
@@ -974,15 +975,19 @@ object FileOperationRunner {
                     val buffer = ByteArray(64 * 1024) // 64 KB buffer for smooth real-time progress and speed calculations
                     var bytesRead: Int
                     var fileBytesRead = 0L
-                    var lastReportedFileBytes = 0L
+                    var lastReportedFileBytes = initialBytesAlreadyReported
                     var lastUpdate = 0L
+
+                    val baseProcessed = if (job != null) {
+                        (job.processedBytes - initialBytesAlreadyReported).coerceAtLeast(0L)
+                    } else 0L
 
                     fun reportDelta() {
                         if (job == null) return
-                        val delta = fileBytesRead - lastReportedFileBytes
-                        if (delta <= 0) return
-                        job.processedBytes += delta
-                        lastReportedFileBytes = fileBytesRead
+                        val effectiveFileBytes = maxOf(fileBytesRead, initialBytesAlreadyReported)
+                        if (effectiveFileBytes <= lastReportedFileBytes) return
+                        job.processedBytes = baseProcessed + effectiveFileBytes
+                        lastReportedFileBytes = effectiveFileBytes
                         if (job.totalBytes > 0) {
                             job.progress = (job.processedBytes.toFloat() / job.totalBytes).coerceIn(0f, 1f)
                         }
@@ -1008,7 +1013,15 @@ object FileOperationRunner {
                         }
                     }
                     out.flush()
-                    reportDelta()
+                    if (job != null) {
+                        val finalBytes = if (totalSize > 0) totalSize else fileBytesRead
+                        job.processedBytes = baseProcessed + finalBytes
+                        if (job.totalBytes > 0) {
+                            job.progress = (job.processedBytes.toFloat() / job.totalBytes).coerceIn(0f, 1f)
+                        }
+                        onProgress?.invoke(job)
+                        JobManager.updateJob(job)
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -1374,18 +1387,101 @@ object FileOperationRunner {
                 }
             }
 
+            var simulatedNetworkBytes = 0L
+            val cancellationSignal = android.os.CancellationSignal()
+            val isCloud = SafManager.isCloudUri(sourcePath)
+
             // -- SAF / Root InputStream fallback --
-            val input = try {
-                if ((sourcePath == "/" || dev.narayan.rose.RootManager.isRootPath(sourcePath)) && dev.narayan.rose.RootManager.isRootAvailable()) {
-                    dev.narayan.rose.RootManager.openInputStream(sourcePath)
-                } else if (sourceRestricted || SafManager.isSafUri(sourcePath)) {
-                    SafManager.openInputStream(context, sourcePath)
-                } else {
-                    Files.newInputStream(Paths.get(sourcePath))
+            val input = if (isCloud && job != null) {
+                val inputRef = java.util.concurrent.atomic.AtomicReference<InputStream?>()
+                val isOpeningFinished = java.util.concurrent.atomic.AtomicBoolean(false)
+                val openException = java.util.concurrent.atomic.AtomicReference<Exception?>()
+
+                val openThread = Thread({
+                    try {
+                        val stream = SafManager.openInputStream(context, sourcePath, cancellationSignal)
+                        inputRef.set(stream)
+                    } catch (e: Exception) {
+                        openException.set(e)
+                    } finally {
+                        isOpeningFinished.set(true)
+                    }
+                }, "CloudStreamOpener-${job.id}").apply {
+                    isDaemon = true
+                    start()
                 }
-            } catch (e: Exception) {
-                lastException = e
-                null
+
+                val initialRx = android.net.TrafficStats.getTotalRxBytes()
+                val hasTrafficStats = initialRx != android.net.TrafficStats.UNSUPPORTED.toLong()
+                val baseProcessedBytes = job.processedBytes
+
+                while (!isOpeningFinished.get()) {
+                    Thread.sleep(120)
+
+                    if (JobManager.isCancelled(job.id)) {
+                        cancellationSignal.cancel()
+                        openThread.interrupt()
+                        return false
+                    }
+                    try {
+                        JobManager.checkWaitIfPaused(job.id)
+                    } catch (e: Exception) {
+                        cancellationSignal.cancel()
+                        openThread.interrupt()
+                        return false
+                    }
+
+                    if (fileSize > 0L && hasTrafficStats) {
+                        val currentRx = android.net.TrafficStats.getTotalRxBytes()
+                        if (currentRx >= initialRx) {
+                            val netDelta = currentRx - initialRx
+                            // Reserve 2% for the local copy commit
+                            val progressBytes = netDelta.coerceIn(0L, (fileSize * 0.98).toLong())
+                            if (progressBytes > simulatedNetworkBytes) {
+                                simulatedNetworkBytes = progressBytes
+                                job.processedBytes = baseProcessedBytes + progressBytes
+                                if (job.totalBytes > 0L) {
+                                    job.progress = (job.processedBytes.toFloat() / job.totalBytes).coerceIn(0f, 0.98f)
+                                }
+                                JobManager.updateJob(job)
+                                onProgress?.invoke(job)
+                            }
+                        }
+                    } else if (fileSize <= 0L && hasTrafficStats) {
+                        val currentRx = android.net.TrafficStats.getTotalRxBytes()
+                        if (currentRx >= initialRx) {
+                            val netDelta = currentRx - initialRx
+                            if (netDelta > simulatedNetworkBytes) {
+                                simulatedNetworkBytes = netDelta
+                                job.processedBytes = baseProcessedBytes + netDelta
+                                job.isIndeterminate = true
+                                JobManager.updateJob(job)
+                                onProgress?.invoke(job)
+                            }
+                        }
+                    }
+                }
+
+                try { openThread.join(2000) } catch (ignored: Exception) {}
+                if (openException.get() != null) {
+                    lastException = openException.get()
+                    null
+                } else {
+                    inputRef.get()
+                }
+            } else {
+                try {
+                    if ((sourcePath == "/" || dev.narayan.rose.RootManager.isRootPath(sourcePath)) && dev.narayan.rose.RootManager.isRootAvailable()) {
+                        dev.narayan.rose.RootManager.openInputStream(sourcePath)
+                    } else if (sourceRestricted || SafManager.isSafUri(sourcePath)) {
+                        SafManager.openInputStream(context, sourcePath)
+                    } else {
+                        Files.newInputStream(Paths.get(sourcePath))
+                    }
+                } catch (e: Exception) {
+                    lastException = e
+                    null
+                }
             }
 
             val output = try {
@@ -1406,12 +1502,13 @@ object FileOperationRunner {
             if (input != null && output != null) {
                 streamCopied = try {
                     copyFileWithProgress(
-                        input,
-                        output,
-                        fileSize,
-                        job,
-                        onProgress,
-                        emptyList()
+                        input = input,
+                        output = output,
+                        totalSize = fileSize,
+                        job = job,
+                        onProgress = onProgress,
+                        activeProcesses = emptyList(),
+                        initialBytesAlreadyReported = simulatedNetworkBytes
                     )
                     job?.let { it.processedItems++ }
                     true

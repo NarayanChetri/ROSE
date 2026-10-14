@@ -225,9 +225,12 @@ class FileJobService : Service() {
             }
         }, { success ->
             notificationIds.remove(job.id)
+            lastNotifUpdateMap.remove(notificationId)
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(notificationId)
+
             // Only show completion notifications for downloads
             if (isDownload) {
-                showCompletionNotification(job, success)
+                showCompletionNotification(job, success, notificationId)
             }
 
             // Only drop foreground state / stop the service once nothing else
@@ -238,10 +241,6 @@ class FileJobService : Service() {
                 stopSelfResult(startId)
             } else {
                 stopForeground(STOP_FOREGROUND_DETACH)
-                // Cancel finished job's notification if not showing completion
-                if (!isDownload) {
-                    (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(notificationId)
-                }
                 // Maintain foreground status with one of the remaining active jobs
                 val remainingJob = JobManager.activeJobs.value.values.firstOrNull()
                 if (remainingJob != null) {
@@ -296,6 +295,8 @@ class FileJobService : Service() {
             } else {
                 getString(R.string.notif_content_indeterminate_single, job.currentFileName, sizeSuffix)
             }
+        } else if (job.type is FileJobType.Download && job.totalBytes > 0) {
+            "${job.currentFileName} • ${formatBytes(job.processedBytes)} of ${formatBytes(job.totalBytes)} ($progressPercent%)"
         } else if (job.totalItems > 1) {
             getString(R.string.notif_content_determinate_multi, job.processedItems, job.totalItems, job.currentFileName, progressPercent)
         } else {
@@ -328,8 +329,11 @@ class FileJobService : Service() {
         notificationManager.notify(notificationId, notification)
     }
 
-    private fun showCompletionNotification(job: FileJob, success: Boolean) {
-        lastNotifUpdateMap.remove(notificationIdFor(job.id))
+    private fun showCompletionNotification(job: FileJob, success: Boolean, oldNotificationId: Int = -1) {
+        if (oldNotificationId != -1) {
+            lastNotifUpdateMap.remove(oldNotificationId)
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(oldNotificationId)
+        }
         if (!hasNotificationPermission()) return
 
         val label = when (job.type) {
@@ -363,11 +367,19 @@ class FileJobService : Service() {
                 else android.R.drawable.stat_notify_error
             )
             .setAutoCancel(true)
-            .setTimeoutAfter(8000)
+            .setTimeoutAfter(5000)
             .build()
 
         val notificationManager = getSystemService(NotificationManager::class.java)
-        notificationManager.notify(COMPLETION_NOTIFICATION_ID_BASE + (job.id.hashCode() and 0xFFFF), notification)
+        val notifId = COMPLETION_NOTIFICATION_ID_BASE + (job.id.hashCode() and 0xFFFF)
+        notificationManager.notify(notifId, notification)
+
+        // Automatically disappear completion notification after 5 seconds
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            try {
+                notificationManager.cancel(notifId)
+            } catch (e: Exception) {}
+        }, 5000L)
     }
 
     private fun formatBytes(bytes: Long): String {

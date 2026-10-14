@@ -48,6 +48,27 @@ object SafManager {
         return p
     }
 
+    fun isCloudUri(path: String): Boolean {
+        val lower = path.lowercase().trim()
+        val schemes = listOf("mega", "onedrive", "gdrive", "dropbox", "smb", "ftp", "ftps", "sftp", "webdav", "webdavs")
+        if (schemes.any { lower.startsWith("$it://") || lower.startsWith("$it:/") }) {
+            return true
+        }
+        if (!isSafUri(path)) return false
+        val normalized = normalizeSafPath(path)
+        val uri = try { Uri.parse(normalized) } catch (e: Exception) { null }
+        val authority = uri?.authority ?: ""
+        return authority.contains("docs", ignoreCase = true) ||
+                authority.contains("cloud", ignoreCase = true) ||
+                authority.contains("onedrive", ignoreCase = true) ||
+                authority.contains("dropbox", ignoreCase = true) ||
+                (authority.isNotEmpty() &&
+                        authority != "com.android.externalstorage.documents" &&
+                        authority != "com.android.providers.media.documents" &&
+                        authority != "com.android.providers.downloads.documents")
+    }
+
+
     // ---------------------------------------------------------------------
     // Path classification
     // ---------------------------------------------------------------------
@@ -71,6 +92,7 @@ object SafManager {
     }
 
     fun normalizePath(path: String): String {
+        if (isSafUri(path) || path.contains("://")) return path
         var p = path.replace(Regex("/+"), "/")
         val primary = primaryStorage()
         if (p.startsWith("/sdcard")) {
@@ -717,15 +739,25 @@ object SafManager {
         }
     }
 
-    fun openInputStream(context: Context, path: String): InputStream? {
+    fun openInputStream(context: Context, path: String, signal: android.os.CancellationSignal? = null): InputStream? {
         if (isSafUri(path)) {
             val normalized = normalizeSafPath(path)
             val uri = Uri.parse(normalized)
             return try {
-                context.contentResolver.openInputStream(uri)
+                if (signal != null) {
+                    context.contentResolver.openFileDescriptor(uri, "r", signal)?.let {
+                        android.os.ParcelFileDescriptor.AutoCloseInputStream(it)
+                    } ?: context.contentResolver.openInputStream(uri)
+                } else {
+                    context.contentResolver.openInputStream(uri)
+                }
             } catch (e: Exception) {
                 try {
-                    context.contentResolver.openAssetFileDescriptor(uri, "r")?.createInputStream()
+                    if (signal != null) {
+                        context.contentResolver.openAssetFileDescriptor(uri, "r", signal)?.createInputStream()
+                    } else {
+                        context.contentResolver.openAssetFileDescriptor(uri, "r")?.createInputStream()
+                    }
                 } catch (e2: Exception) {
                     null
                 }
@@ -733,10 +765,20 @@ object SafManager {
         }
         val doc = getDocumentFile(context, path) ?: return null
         return try {
-            context.contentResolver.openInputStream(doc.uri)
+            if (signal != null) {
+                context.contentResolver.openFileDescriptor(doc.uri, "r", signal)?.let {
+                    android.os.ParcelFileDescriptor.AutoCloseInputStream(it)
+                } ?: context.contentResolver.openInputStream(doc.uri)
+            } else {
+                context.contentResolver.openInputStream(doc.uri)
+            }
         } catch (e: Exception) {
             try {
-                context.contentResolver.openAssetFileDescriptor(doc.uri, "r")?.createInputStream()
+                if (signal != null) {
+                    context.contentResolver.openAssetFileDescriptor(doc.uri, "r", signal)?.createInputStream()
+                } else {
+                    context.contentResolver.openAssetFileDescriptor(doc.uri, "r")?.createInputStream()
+                }
             } catch (e2: Exception) {
                 null
             }

@@ -1,5 +1,12 @@
 package dev.narayan.rose
 
+enum class CustomStorageType {
+    DOCUMENT_TREE,
+    GOOGLE_DRIVE,
+    ANDROID_DATA,
+    ANDROID_OBB
+}
+
 sealed class StorageDevice {
     abstract val name: String
     abstract val path: String
@@ -25,7 +32,8 @@ sealed class StorageDevice {
         override val availableBytes: Long = 0L,
         val uriString: String = path,
         val isCloud: Boolean = false,
-        val providerName: String? = null
+        val providerName: String? = null,
+        val storageType: CustomStorageType = CustomStorageType.DOCUMENT_TREE
     ) : StorageDevice() {
         override val iconRes: Int? = null
     }

@@ -1341,7 +1341,7 @@ class MainActivity : ComponentActivity() {
             val restricted = !isSaf && SafManager.isRestrictedPath(path)
             val isVirtual = fileItem.virtualZipSource != null
 
-            if (!isVirtual && !isSaf) {
+            if (!isVirtual && !isSaf && !viewModel.isRemotePath(path)) {
                 val exists = if (restricted) {
                     (SafManager.hasPermission(this, path) && SafManager.exists(this, path)) ||
                             (ShizukuManager.isAvailable() && ShizukuManager.hasPermission() && ShizukuManager.exists(path)) ||
@@ -1489,6 +1489,19 @@ class MainActivity : ComponentActivity() {
         val now = System.currentTimeMillis()
         if (now - lastFileOpenTimestamp < 500L) return
         lastFileOpenTimestamp = now
+
+        if (viewModel.isRemotePath(fileItem.file.path)) {
+            val localOffline = viewModel.getLocalOfflineFile(fileItem)
+            if (localOffline != null && localOffline.exists()) {
+                val localFileItem = fileItem.copy(file = localOffline)
+                openFile(localFileItem, passphrase)
+                return
+            } else {
+                Toast.makeText(this, "Downloading file to view...", Toast.LENGTH_SHORT).show()
+                viewModel.toggleOfflineStatus(fileItem)
+                return
+            }
+        }
 
         val ext = fileItem.extension.lowercase()
         val isMd = ext in markdownExtensions
