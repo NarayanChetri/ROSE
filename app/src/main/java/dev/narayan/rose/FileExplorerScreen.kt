@@ -2173,10 +2173,6 @@ fun DeleteConfirmationDialog(
     pending: PendingDelete,
     onDismiss: () -> Unit,
     onConfirm: (Boolean) -> Unit,
-    // When the file(s) live on a removable volume (USB / SD card) the
-    // "Delete permanently" checkbox is hidden. The user doesn't need to
-    // know whether the recycle bin is on the drive or not — the global
-    // useRecycleBin setting still applies silently.
     isOnRemovableStorage: Boolean = false
 ) {
     val totalSize = when (pending) {
@@ -2184,64 +2180,95 @@ fun DeleteConfirmationDialog(
         is PendingDelete.Selection -> pending.totalSize
     }
     val isLarge = totalSize > LARGE_FILE_THRESHOLD
-    
-    // Default to permanent only if recycle bin is disabled. Large files
-    // still show the toggle but don't force it to ON by default.
     var permanently by remember { mutableStateOf(!useRecycleBin) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(54.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f),
+                        shape = RoundedCornerShape(18.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(
-                    if (permanently) Icons.Default.DeleteForever else Icons.Default.Delete,
+                    imageVector = if (permanently) Icons.Default.DeleteForever else Icons.Default.Delete,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(28.dp)
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(if (isLarge) stringResource(R.string.delete_large_item_title) else stringResource(R.string.delete_item_title))
+            }
+        },
+        title = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = if (isLarge) stringResource(R.string.delete_large_item_title) else stringResource(R.string.delete_item_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+                if (isLarge) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.delete_total_size, formatFileSize(totalSize)),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         },
         text = {
-            Column {
+            Column(modifier = Modifier.fillMaxWidth()) {
                 val message = when (pending) {
                     is PendingDelete.Single -> stringResource(R.string.delete_single_confirm, pending.fileItem.name)
                     is PendingDelete.Selection -> stringResource(R.string.delete_multi_confirm, pending.count)
                 } + if (useRecycleBin && !permanently) {
                     if (pending is PendingDelete.Single) stringResource(R.string.delete_single_moved_to_bin) else stringResource(R.string.delete_multi_moved_to_bin)
                 } else stringResource(R.string.delete_cannot_be_undone)
-                Text(message)
 
-                if (isLarge) {
-                    Text(
-                        stringResource(R.string.delete_total_size, formatFileSize(totalSize)),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 20.sp
+                )
 
-                // Show checkbox only when recycle bin is on OR it's a large file,
-                // AND the file is NOT on removable storage (USB / SD card).
-                // For removable volumes the checkbox is hidden — the global
-                // useRecycleBin setting decides silently so we don't expose the
-                // internal ".rose_recycle_bin on the drive" detail.
                 if (!isOnRemovableStorage && (useRecycleBin || isLarge)) {
                     Spacer(modifier = Modifier.height(16.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { permanently = !permanently }
+                    Surface(
+                        onClick = { permanently = !permanently },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (permanently) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                     ) {
-                        Checkbox(
-                            checked = permanently,
-                            onCheckedChange = { permanently = it }
-                        )
-                        Text(
-                            stringResource(R.string.delete_permanently),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Checkbox(
+                                checked = permanently,
+                                onCheckedChange = { permanently = it },
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = MaterialTheme.colorScheme.error,
+                                    checkmarkColor = MaterialTheme.colorScheme.onError
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                stringResource(R.string.delete_permanently),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = if (permanently) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (permanently) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             }
@@ -2250,15 +2277,31 @@ fun DeleteConfirmationDialog(
             Button(
                 onClick = { onConfirm(permanently) },
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(14.dp),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
             ) {
-                Text(stringResource(R.string.action_delete))
+                Icon(
+                    imageVector = if (permanently) Icons.Default.DeleteForever else Icons.Default.Delete,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    stringResource(R.string.action_delete),
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+            TextButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text(stringResource(R.string.action_cancel))
+            }
         },
-        shape = RoundedCornerShape(28.dp)
+        shape = RoundedCornerShape(28.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
     )
 }
 
@@ -2827,6 +2870,7 @@ fun Breadcrumbs(
                     modifier = Modifier.clickable {
                         val targetPath = when {
                             index == 0 && activeStorageRootPath.isNotEmpty() -> File(activeStorageRootPath)
+                            isSaf -> File(activeStorageRootPath)
                             isInternal -> {
                                 val subParts = parts.subList(1, index + 1)
                                 if (subParts.isEmpty()) File(internalRootPath)

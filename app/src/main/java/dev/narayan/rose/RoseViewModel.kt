@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.Settings
 import android.webkit.MimeTypeMap
@@ -1596,14 +1597,21 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         )
 
         // Check if it's an archive, including restricted paths and shared URIs
-        val isArchive = if (path.startsWith("content://")) {
-            val uri = Uri.parse(path)
-            val mime = getApplication<Application>().contentResolver.getType(uri)
-            val displayName = getFileNameFromUri(uri)?.lowercase() ?: ""
+        val isArchive = if (path.startsWith("content://") || path.startsWith("/content:/") || path.startsWith("content:/")) {
+            val normalizedUriStr = SafManager.normalizeSafPath(path)
+            val uri = runCatching { Uri.parse(normalizedUriStr) }.getOrNull()
+            if (uri != null && (DocumentsContract.isTreeUri(uri) || storageDevices.any { it.path == path || it.path == normalizedUriStr })) {
+                false
+            } else if (uri != null) {
+                val mime = runCatching { getApplication<Application>().contentResolver.getType(uri) }.getOrNull()
+                val displayName = runCatching { getFileNameFromUri(uri)?.lowercase() }.getOrNull() ?: ""
 
-            mime in archiveMimeTypes ||
-                    archiveExtensions.any { displayName.endsWith(".$it") } ||
-                    path.lowercase().let { p -> archiveExtensions.any { p.endsWith(".$it") } }
+                mime in archiveMimeTypes ||
+                        archiveExtensions.any { displayName.endsWith(".$it") } ||
+                        path.lowercase().let { p -> archiveExtensions.any { p.endsWith(".$it") } }
+            } else {
+                false
+            }
         } else if (path.startsWith("file://")) {
             val extension = MimeTypeMap.getFileExtensionFromUrl(path).lowercase()
             extension in archiveExtensions || path.lowercase().let { p -> archiveExtensions.any { p.endsWith(".$it") } }
@@ -2365,7 +2373,12 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
     fun navigateTo(directory: File, isActuallyDirectory: Boolean = false) {
         if (currentZipFile != null) return
-        val normalizedPath = ShizukuManager.normalize(directory.absolutePath)
+        val rawPath = directory.path
+        val normalizedPath = if (SafManager.isSafUri(rawPath)) {
+            SafManager.normalizeSafPath(rawPath)
+        } else {
+            ShizukuManager.normalize(directory.absolutePath)
+        }
         // Never allow navigating directly to raw "/storage" directory on non-rooted devices
         if (!useRoot && normalizedPath == "/storage") return
 
@@ -3138,12 +3151,16 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun getFileNameFromUri(uri: Uri): String? {
         var result: String? = null
-        if (uri.scheme == "content") {
-            getApplication<Application>().contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    if (index != -1) result = cursor.getString(index)
+        if (uri.scheme == "content" && !DocumentsContract.isTreeUri(uri)) {
+            try {
+                getApplication<Application>().contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (index != -1) result = cursor.getString(index)
+                    }
                 }
+            } catch (e: Exception) {
+                // DocumentsProvider throws UnsupportedOperationException if uri cannot be queried directly
             }
         }
         if (result == null) {

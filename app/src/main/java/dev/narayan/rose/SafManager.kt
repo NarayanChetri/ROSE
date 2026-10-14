@@ -352,79 +352,91 @@ object SafManager {
 
     fun listFilesByUri(context: Context, uri: Uri): List<FileItem> {
         val results = mutableListOf<FileItem>()
-        try {
-            val authority = uri.authority ?: return emptyList()
+        val authority = uri.authority ?: return emptyList()
 
-            // Extract the tree ID and document ID. Even if it's a subfolder, 
-            // we need the tree ID to list its children.
-            val treeId = try {
-                DocumentsContract.getTreeDocumentId(uri)
-            } catch (e: Exception) {
-                null
-            }
+        val treeId = try {
+            DocumentsContract.getTreeDocumentId(uri)
+        } catch (e: Exception) {
+            null
+        }
 
-            val documentId = try {
-                DocumentsContract.getDocumentId(uri)
-            } catch (e: Exception) {
-                treeId
-            }
+        val documentId = try {
+            DocumentsContract.getDocumentId(uri)
+        } catch (e: Exception) {
+            treeId
+        }
 
-            if (treeId == null || documentId == null) return emptyList()
+        val effectiveTreeId = treeId ?: documentId
+        val effectiveDocId = documentId ?: treeId
 
-            val treeUri = DocumentsContract.buildTreeDocumentUri(authority, treeId)
-            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
+        if (effectiveTreeId != null && effectiveDocId != null) {
+            try {
+                val treeUri = DocumentsContract.buildTreeDocumentUri(authority, effectiveTreeId)
+                val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, effectiveDocId)
 
-            context.contentResolver.query(childrenUri, null, null, null, null)?.use { c ->
-                val nameIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-                val mimeIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
-                val sizeIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
-                val lastModIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
-                val idIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                context.contentResolver.query(childrenUri, null, null, null, null)?.use { c ->
+                    val nameIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                    val mimeIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                    val sizeIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+                    val lastModIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                    val idIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
 
-                while (c.moveToNext()) {
-                    val name = c.getString(nameIdx) ?: continue
-                    val mime = c.getString(mimeIdx)
-                    val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
-                    val id = c.getString(idIdx)
+                    while (c.moveToNext()) {
+                        val name = if (nameIdx >= 0 && !c.isNull(nameIdx)) c.getString(nameIdx) else null
+                        if (name.isNullOrEmpty()) continue
+                        val mime = if (mimeIdx >= 0 && !c.isNull(mimeIdx)) c.getString(mimeIdx) else null
+                        val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
+                        val id = if (idIdx >= 0 && !c.isNull(idIdx)) c.getString(idIdx) else null ?: continue
 
-                    // Always build using the treeUri to maintain access permissions
-                    val childUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
+                        // Always build using the treeUri to maintain access permissions
+                        val childUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
+                        val size = if (sizeIdx >= 0 && !c.isNull(sizeIdx)) c.getLong(sizeIdx) else 0L
+                        val lastMod = if (lastModIdx >= 0 && !c.isNull(lastModIdx)) c.getLong(lastModIdx) else 0L
 
-                    results.add(
-                        FileItem(
-                            file = File(childUri.toString()),
-                            isDirectory = isDir,
-                            name = name,
-                            size = c.getLong(sizeIdx),
-                            lastModified = c.getLong(lastModIdx),
-                            extension = name.substringAfterLast('.', "").lowercase(),
-                            mimeType = mime
+                        results.add(
+                            FileItem(
+                                file = File(childUri.toString()),
+                                isDirectory = isDir,
+                                name = name,
+                                size = size,
+                                lastModified = lastMod,
+                                extension = name.substringAfterLast('.', "").lowercase(),
+                                mimeType = mime
+                            )
                         )
-                    )
+                    }
                 }
-            }
-        } catch (e: Exception) {}
+            } catch (e: Exception) {}
+        }
 
         if (results.isEmpty()) {
             try {
-                val doc = if (DocumentsContract.isDocumentUri(context, uri)) {
-                    DocumentFile.fromSingleUri(context, uri)
+                val doc = if (DocumentsContract.isTreeUri(uri)) {
+                    DocumentFile.fromTreeUri(context, uri)
+                } else if (effectiveTreeId != null && effectiveDocId != null) {
+                    val treeUri = DocumentsContract.buildTreeDocumentUri(authority, effectiveTreeId)
+                    val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, effectiveDocId)
+                    DocumentFile.fromTreeUri(context, docUri) ?: DocumentFile.fromSingleUri(context, docUri)
                 } else {
                     DocumentFile.fromTreeUri(context, uri)
                 }
-                doc?.listFiles()?.forEach { child ->
-                    val name = child.name ?: ""
-                    results.add(
-                        FileItem(
-                            file = File(child.uri.toString()),
-                            isDirectory = child.isDirectory,
-                            name = name,
-                            size = child.length(),
-                            lastModified = child.lastModified(),
-                            extension = name.substringAfterLast('.', "").lowercase(),
-                            mimeType = child.type
-                        )
-                    )
+                if (doc != null && doc.isDirectory) {
+                    doc.listFiles().forEach { child ->
+                        val name = child.name ?: ""
+                        if (name.isNotEmpty()) {
+                            results.add(
+                                FileItem(
+                                    file = File(child.uri.toString()),
+                                    isDirectory = child.isDirectory,
+                                    name = name,
+                                    size = child.length(),
+                                    lastModified = child.lastModified(),
+                                    extension = name.substringAfterLast('.', "").lowercase(),
+                                    mimeType = child.type
+                                )
+                            )
+                        }
+                    }
                 }
             } catch (e: Exception) {}
         }

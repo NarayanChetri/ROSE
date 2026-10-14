@@ -52,6 +52,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import androidx.compose.ui.geometry.Offset
@@ -657,35 +658,75 @@ fun HomeScreen(
         var permanently by remember { mutableStateOf(!viewModel.useRecycleBin) }
         AlertDialog(
             onDismissRequest = { fileForDelete = null },
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f),
+                            shape = RoundedCornerShape(18.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (permanently) Icons.Default.DeleteForever else Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            },
             title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(stringResource(R.string.delete_file_title))
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = stringResource(R.string.delete_file_title),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
                 }
             },
             text = {
-                Column {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        stringResource(R.string.delete_single_confirm, item.name) +
-                                if (viewModel.useRecycleBin && !permanently) stringResource(R.string.delete_single_moved_to_bin) else stringResource(R.string.delete_action_cannot_be_undone)
+                        text = stringResource(R.string.delete_single_confirm, item.name) +
+                                if (viewModel.useRecycleBin && !permanently) stringResource(R.string.delete_single_moved_to_bin) else stringResource(R.string.delete_action_cannot_be_undone),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 20.sp
                     )
                     if (viewModel.useRecycleBin) {
                         Spacer(modifier = Modifier.height(16.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { permanently = !permanently }
+                        Surface(
+                            onClick = { permanently = !permanently },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (permanently) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                         ) {
-                            Checkbox(
-                                checked = permanently,
-                                onCheckedChange = { permanently = it }
-                            )
-                            Text(
-                                stringResource(R.string.delete_permanently),
-                                style = MaterialTheme.typography.bodyMedium
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Checkbox(
+                                    checked = permanently,
+                                    onCheckedChange = { permanently = it },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = MaterialTheme.colorScheme.error,
+                                        checkmarkColor = MaterialTheme.colorScheme.onError
+                                    )
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    stringResource(R.string.delete_permanently),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (permanently) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (permanently) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         }
                     }
                 }
@@ -697,13 +738,31 @@ fun HomeScreen(
                         fileForDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    shape = RoundedCornerShape(12.dp)
-                ) { Text(stringResource(R.string.action_delete)) }
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
+                ) {
+                    Icon(
+                        imageVector = if (permanently) Icons.Default.DeleteForever else Icons.Default.Delete,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        stringResource(R.string.action_delete),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             },
             dismissButton = {
-                TextButton(onClick = { fileForDelete = null }) { Text(stringResource(R.string.action_cancel)) }
+                TextButton(
+                    onClick = { fileForDelete = null },
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
             },
-            shape = RoundedCornerShape(28.dp)
+            shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
     }
 }
@@ -1278,21 +1337,32 @@ private fun RecentFilesSection(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                stringResource(R.string.home_recent_files),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.weight(1f))
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable {
+                        viewModel.setRecentFilesExpanded(!viewModel.recentFilesExpanded)
+                    }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    stringResource(R.string.home_recent_files),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
             IconButton(
                 onClick = { viewModel.setRecentFilesExpanded(!viewModel.recentFilesExpanded) },
-                modifier = Modifier.size(28.dp)
+                modifier = Modifier.size(32.dp)
             ) {
                 Icon(
                     if (viewModel.recentFilesExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                     contentDescription = if (viewModel.recentFilesExpanded) stringResource(R.string.content_desc_collapse) else stringResource(R.string.content_desc_expand),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
@@ -1553,21 +1623,32 @@ private fun QuickAccessSection(viewModel: RoseViewModel, onOpenPath: (String) ->
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                stringResource(R.string.home_quick_access),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.weight(1f))
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable {
+                        viewModel.setQuickAccessExpanded(!viewModel.quickAccessExpanded)
+                    }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    stringResource(R.string.home_quick_access),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
             IconButton(
                 onClick = { viewModel.setQuickAccessExpanded(!viewModel.quickAccessExpanded) },
-                modifier = Modifier.size(28.dp)
+                modifier = Modifier.size(32.dp)
             ) {
                 Icon(
                     if (viewModel.quickAccessExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                     contentDescription = if (viewModel.quickAccessExpanded) stringResource(R.string.content_desc_collapse) else stringResource(R.string.content_desc_expand),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
@@ -1656,14 +1737,45 @@ private fun QuickAccessSection(viewModel: RoseViewModel, onOpenPath: (String) ->
         val itemDisplayName = item.labelRes?.let { stringResource(it) } ?: item.label
         AlertDialog(
             onDismissRequest = { itemPendingRemoval = null },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(stringResource(R.string.dialog_remove_folder_title))
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                            shape = RoundedCornerShape(18.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FolderDelete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp)
+                    )
                 }
             },
-            text = { Text(stringResource(R.string.dialog_remove_quick_access_message, itemDisplayName)) },
+            title = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = stringResource(R.string.dialog_remove_folder_title),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.dialog_remove_quick_access_message, itemDisplayName),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 20.sp
+                )
+            },
             confirmButton = {
                 Button(
                     onClick = {
@@ -1674,13 +1786,31 @@ private fun QuickAccessSection(viewModel: RoseViewModel, onOpenPath: (String) ->
                         }
                         itemPendingRemoval = null
                     },
-                    shape = RoundedCornerShape(12.dp)
-                ) { Text(stringResource(R.string.action_remove)) }
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        stringResource(R.string.action_remove),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             },
             dismissButton = {
-                TextButton(onClick = { itemPendingRemoval = null }) { Text(stringResource(R.string.action_cancel)) }
+                TextButton(
+                    onClick = { itemPendingRemoval = null },
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
             },
-            shape = RoundedCornerShape(28.dp)
+            shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
     }
 }
@@ -1985,14 +2115,44 @@ private fun StorageSection(
         AlertDialog(
             onDismissRequest = { storagePendingRemoval = null },
             icon = {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
+                Box(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f),
+                            shape = RoundedCornerShape(18.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            },
+            title = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = stringResource(R.string.dialog_remove_storage_title),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.dialog_remove_storage_message, dev.name),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 20.sp
                 )
             },
-            title = { Text(stringResource(R.string.dialog_remove_storage_title)) },
-            text = { Text(stringResource(R.string.dialog_remove_storage_message, dev.name)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -2000,16 +2160,32 @@ private fun StorageSection(
                         storagePendingRemoval = null
                         Toast.makeText(context, context.getString(R.string.toast_storage_removed), Toast.LENGTH_SHORT).show()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
                 ) {
-                    Text(stringResource(R.string.action_remove))
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        stringResource(R.string.action_remove),
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { storagePendingRemoval = null }) {
+                TextButton(
+                    onClick = { storagePendingRemoval = null },
+                    shape = RoundedCornerShape(14.dp)
+                ) {
                     Text(stringResource(R.string.action_cancel))
                 }
-            }
+            },
+            shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
     }
 }
