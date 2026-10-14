@@ -240,8 +240,13 @@ class SettingsManager(context: Context) {
         get() = prefs.getString(KEY_SKIPPED_UPDATE_VERSION, null)
         set(value) = prefs.edit { putString(KEY_SKIPPED_UPDATE_VERSION, value) }
 
+    var addedStorageUris: Set<String>
+        get() = prefs.getStringSet(KEY_ADDED_STORAGE_URIS, emptySet()) ?: emptySet()
+        set(value) = prefs.edit { putStringSet(KEY_ADDED_STORAGE_URIS, value) }
+
     companion object {
         private const val PREFS_NAME = "rose_prefs"
+        private const val KEY_ADDED_STORAGE_URIS = "added_storage_uris"
         private const val KEY_AUTO_CHECK_UPDATES = "auto_check_updates"
         private const val KEY_SKIPPED_UPDATE_VERSION = "skipped_update_version"
         private const val KEY_THEME_MODE = "theme_mode"

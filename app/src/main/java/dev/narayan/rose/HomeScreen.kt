@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Intent
 import android.os.Environment
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.Animatable
@@ -51,6 +52,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import androidx.compose.ui.geometry.Offset
@@ -656,35 +658,103 @@ fun HomeScreen(
         var permanently by remember { mutableStateOf(!viewModel.useRecycleBin) }
         AlertDialog(
             onDismissRequest = { fileForDelete = null },
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f),
+                            shape = RoundedCornerShape(18.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (permanently) Icons.Default.DeleteForever else Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            },
             title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(stringResource(R.string.delete_file_title))
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val titleText = if (item.name.length <= 26) {
+                        stringResource(R.string.delete_single_confirm, item.name)
+                    } else if (item.isDirectory) {
+                        stringResource(R.string.delete_folder_title)
+                    } else {
+                        stringResource(R.string.delete_file_title)
+                    }
+                    Text(
+                        text = titleText,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             },
             text = {
-                Column {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    if (item.name.length > 26) {
+                        Text(
+                            text = item.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                    }
+                    val statusText = if (viewModel.useRecycleBin && !permanently) {
+                        stringResource(R.string.delete_moved_to_bin_short)
+                    } else {
+                        stringResource(R.string.delete_cannot_be_undone_short)
+                    }
                     Text(
-                        stringResource(R.string.delete_single_confirm, item.name) +
-                                if (viewModel.useRecycleBin && !permanently) stringResource(R.string.delete_single_moved_to_bin) else stringResource(R.string.delete_action_cannot_be_undone)
+                        text = statusText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                     if (viewModel.useRecycleBin) {
                         Spacer(modifier = Modifier.height(16.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { permanently = !permanently }
+                        Surface(
+                            onClick = { permanently = !permanently },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (permanently) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                         ) {
-                            Checkbox(
-                                checked = permanently,
-                                onCheckedChange = { permanently = it }
-                            )
-                            Text(
-                                stringResource(R.string.delete_permanently),
-                                style = MaterialTheme.typography.bodyMedium
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Checkbox(
+                                    checked = permanently,
+                                    onCheckedChange = { permanently = it },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = MaterialTheme.colorScheme.error,
+                                        checkmarkColor = MaterialTheme.colorScheme.onError
+                                    )
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    stringResource(R.string.delete_permanently),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (permanently) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (permanently) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         }
                     }
                 }
@@ -696,13 +766,31 @@ fun HomeScreen(
                         fileForDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    shape = RoundedCornerShape(12.dp)
-                ) { Text(stringResource(R.string.action_delete)) }
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
+                ) {
+                    Icon(
+                        imageVector = if (permanently) Icons.Default.DeleteForever else Icons.Default.Delete,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        stringResource(R.string.action_delete),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             },
             dismissButton = {
-                TextButton(onClick = { fileForDelete = null }) { Text(stringResource(R.string.action_cancel)) }
+                TextButton(
+                    onClick = { fileForDelete = null },
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
             },
-            shape = RoundedCornerShape(28.dp)
+            shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
     }
 }
@@ -1277,21 +1365,32 @@ private fun RecentFilesSection(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                stringResource(R.string.home_recent_files),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.weight(1f))
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable {
+                        viewModel.setRecentFilesExpanded(!viewModel.recentFilesExpanded)
+                    }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    stringResource(R.string.home_recent_files),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
             IconButton(
                 onClick = { viewModel.setRecentFilesExpanded(!viewModel.recentFilesExpanded) },
-                modifier = Modifier.size(28.dp)
+                modifier = Modifier.size(32.dp)
             ) {
                 Icon(
                     if (viewModel.recentFilesExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                     contentDescription = if (viewModel.recentFilesExpanded) stringResource(R.string.content_desc_collapse) else stringResource(R.string.content_desc_expand),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
@@ -1552,21 +1651,32 @@ private fun QuickAccessSection(viewModel: RoseViewModel, onOpenPath: (String) ->
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                stringResource(R.string.home_quick_access),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.weight(1f))
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable {
+                        viewModel.setQuickAccessExpanded(!viewModel.quickAccessExpanded)
+                    }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    stringResource(R.string.home_quick_access),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
             IconButton(
                 onClick = { viewModel.setQuickAccessExpanded(!viewModel.quickAccessExpanded) },
-                modifier = Modifier.size(28.dp)
+                modifier = Modifier.size(32.dp)
             ) {
                 Icon(
                     if (viewModel.quickAccessExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                     contentDescription = if (viewModel.quickAccessExpanded) stringResource(R.string.content_desc_collapse) else stringResource(R.string.content_desc_expand),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
@@ -1655,14 +1765,45 @@ private fun QuickAccessSection(viewModel: RoseViewModel, onOpenPath: (String) ->
         val itemDisplayName = item.labelRes?.let { stringResource(it) } ?: item.label
         AlertDialog(
             onDismissRequest = { itemPendingRemoval = null },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(stringResource(R.string.dialog_remove_folder_title))
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                            shape = RoundedCornerShape(18.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FolderDelete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp)
+                    )
                 }
             },
-            text = { Text(stringResource(R.string.dialog_remove_quick_access_message, itemDisplayName)) },
+            title = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = stringResource(R.string.dialog_remove_folder_title),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.dialog_remove_quick_access_message, itemDisplayName),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 20.sp
+                )
+            },
             confirmButton = {
                 Button(
                     onClick = {
@@ -1673,13 +1814,31 @@ private fun QuickAccessSection(viewModel: RoseViewModel, onOpenPath: (String) ->
                         }
                         itemPendingRemoval = null
                     },
-                    shape = RoundedCornerShape(12.dp)
-                ) { Text(stringResource(R.string.action_remove)) }
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        stringResource(R.string.action_remove),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             },
             dismissButton = {
-                TextButton(onClick = { itemPendingRemoval = null }) { Text(stringResource(R.string.action_cancel)) }
+                TextButton(
+                    onClick = { itemPendingRemoval = null },
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
             },
-            shape = RoundedCornerShape(28.dp)
+            shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
     }
 }
@@ -1690,13 +1849,35 @@ private fun StorageSection(
     viewModel: RoseViewModel,
     onOpenPath: (String) -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val allDevices = viewModel.storageDevices
-    // Show physical SD cards (removable volumes) and root storage if enabled
-    val devices = allDevices.filter {
-        (it is StorageDevice.Physical && it.isSdCard) || (it is StorageDevice.Root)
-    }
 
-    if (devices.isEmpty()) return
+    // Physical SD Card(s) (non-primary physical removable volume that is not USB)
+    val sdDevices = allDevices.filterIsInstance<StorageDevice.Physical>().filter { it.isSdCard && !it.isUsb }
+
+    // Physical USB Drive(s)
+    val usbDevices = allDevices.filterIsInstance<StorageDevice.Physical>().filter { it.isUsb }
+
+    // Root device (if enabled in settings)
+    val rootDevice = if (viewModel.useRoot) {
+        allDevices.firstOrNull { it is StorageDevice.Root }
+    } else null
+
+    // User-added DocumentTree / Cloud / External storages
+    val treeDevices = allDevices.filterIsInstance<StorageDevice.DocumentTree>()
+
+    val hasAnyStorages = sdDevices.isNotEmpty() || usbDevices.isNotEmpty() || rootDevice != null || treeDevices.isNotEmpty()
+
+    var storagePendingRemoval by remember { mutableStateOf<StorageDevice.DocumentTree?>(null) }
+
+    val openDocumentTreeLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
+    ) { uri: android.net.Uri? ->
+        if (uri != null) {
+            viewModel.addCustomStorage(uri)
+            Toast.makeText(context, context.getString(R.string.toast_storage_added), Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Column {
         Row(
@@ -1706,21 +1887,32 @@ private fun StorageSection(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                stringResource(R.string.storage_external),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.weight(1f))
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable {
+                        viewModel.setExternalStorageExpanded(!viewModel.externalStorageExpanded)
+                    }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.storage_storages_and_drives),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
             IconButton(
                 onClick = { viewModel.setExternalStorageExpanded(!viewModel.externalStorageExpanded) },
-                modifier = Modifier.size(28.dp)
+                modifier = Modifier.size(32.dp)
             ) {
                 Icon(
-                    if (viewModel.externalStorageExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    imageVector = if (viewModel.externalStorageExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                     contentDescription = if (viewModel.externalStorageExpanded) stringResource(R.string.content_desc_collapse) else stringResource(R.string.content_desc_expand),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
@@ -1736,83 +1928,370 @@ private fun StorageSection(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
                 modifier = Modifier.fillMaxWidth().animateContentSize()
             ) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 2000.dp),
-                    userScrollEnabled = false
-                ) {
-                    itemsIndexed(devices, key = { _, device -> device.path }) { index, device ->
-                        StorageDeviceItem(
-                            device = device,
-                            modifier = Modifier.animateItem(),
-                            onClick = {
-                                onOpenPath(device.path)
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // Empty state if no external devices or custom storages are present
+                    if (!hasAnyStorages) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 18.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(12.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Devices,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(22.dp)
+                                )
                             }
-                        )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.storage_no_external_devices),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = stringResource(R.string.storage_no_external_devices_hint),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                )
+                            }
+                        }
+                    }
 
-                        if (viewModel.showListDividers && index != devices.lastIndex) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                thickness = 0.6.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    // 1. SD Card(s) - Real detected physical SD card(s)
+                    if (sdDevices.isNotEmpty()) {
+                        sdDevices.forEach { device ->
+                            val used = device.totalBytes - device.availableBytes
+                            val subtitle = if (device.totalBytes > 0) {
+                                stringResource(R.string.storage_amount_used_of_total, formatFileSize(used), formatFileSize(device.totalBytes))
+                            } else {
+                                stringResource(R.string.storage_sd_card)
+                            }
+                            StorageItemRow(
+                                title = device.name,
+                                subtitle = subtitle,
+                                icon = Icons.Default.SdCard,
+                                iconColor = Color(0xFF3B82F6),
+                                badgeText = stringResource(R.string.storage_badge_sd),
+                                badgeColor = Color(0xFF3B82F6),
+                                onClick = { onOpenPath(device.path) }
+                            )
+                            if (viewModel.showListDividers) {
+                                StorageDivider()
+                            }
+                        }
+                    }
+
+                    // 2. USB / Pen Drive (OTG) - Real detected physical USB volume(s)
+                    if (usbDevices.isNotEmpty()) {
+                        usbDevices.forEach { device ->
+                            val used = device.totalBytes - device.availableBytes
+                            val subtitle = if (device.totalBytes > 0) {
+                                stringResource(R.string.storage_amount_used_of_total, formatFileSize(used), formatFileSize(device.totalBytes))
+                            } else {
+                                "OTG Storage Device"
+                            }
+                            StorageItemRow(
+                                title = device.name,
+                                subtitle = subtitle,
+                                icon = Icons.Default.Usb,
+                                iconColor = Color(0xFF0D9488),
+                                badgeText = stringResource(R.string.storage_badge_otg),
+                                badgeColor = Color(0xFF0D9488),
+                                onClick = { onOpenPath(device.path) }
+                            )
+                            if (viewModel.showListDividers) {
+                                StorageDivider()
+                            }
+                        }
+                    }
+
+                    // 3. Root Storage (if enabled)
+                    if (rootDevice != null) {
+                        StorageItemRow(
+                            title = stringResource(R.string.storage_root),
+                            subtitle = stringResource(R.string.storage_root_desc),
+                            icon = Icons.Default.Tag,
+                            iconColor = Color(0xFFF59E0B),
+                            badgeText = "SU",
+                            badgeColor = Color(0xFFF59E0B),
+                            onClick = { onOpenPath(rootDevice.path) }
+                        )
+                        if (viewModel.showListDividers) {
+                            StorageDivider()
+                        }
+                    }
+
+                    // 4. User-added DocumentTree / Cloud / External storages
+                    if (treeDevices.isNotEmpty()) {
+                        treeDevices.forEach { device ->
+                            val (itemIcon, itemColor, itemBadgeText) = when (device.storageType) {
+                                CustomStorageType.GOOGLE_DRIVE -> Triple(Icons.Default.Cloud, Color(0xFF0F9D58), "Google Drive")
+                                CustomStorageType.DOCUMENT_TREE -> if (device.isCloud) {
+                                    Triple(Icons.Default.Cloud, Color(0xFF0F9D58), "Google Drive")
+                                } else {
+                                    Triple(Icons.Default.Storage, Color(0xFF8B5CF6), stringResource(R.string.storage_badge_custom))
+                                }
+                                else -> if (device.isCloud) {
+                                    Triple(Icons.Default.Cloud, Color(0xFF0F9D58), "Google Drive")
+                                } else {
+                                    Triple(Icons.Default.Storage, Color(0xFF8B5CF6), stringResource(R.string.storage_badge_custom))
+                                }
+                            }
+                            val subtitle = device.providerName ?: itemBadgeText
+                            var showItemMenu by remember { mutableStateOf(false) }
+                            StorageItemRow(
+                                title = device.name,
+                                subtitle = subtitle,
+                                icon = itemIcon,
+                                iconColor = itemColor,
+                                badgeText = itemBadgeText,
+                                badgeColor = itemColor,
+                                onClick = { onOpenPath(device.path) },
+                                onLongClick = { storagePendingRemoval = device },
+                                trailingContent = {
+                                    Box {
+                                        IconButton(
+                                            onClick = { showItemMenu = true },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.MoreVert,
+                                                contentDescription = stringResource(R.string.content_desc_more_options),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                        DropdownMenu(
+                                            expanded = showItemMenu,
+                                            onDismissRequest = { showItemMenu = false },
+                                            shape = RoundedCornerShape(14.dp),
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                                        ) {
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.action_remove)) },
+                                                onClick = {
+                                                    showItemMenu = false
+                                                    storagePendingRemoval = device
+                                                },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        Icons.Default.Delete,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.error
+                                                    )
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            )
+                            if (viewModel.showListDividers) {
+                                StorageDivider()
+                            }
+                        }
+                    }
+
+                    // Divider before bottom button
+                    StorageDivider()
+
+                    // 5. Add Google Drive or Storage button row
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                openDocumentTreeLauncher.launch(null)
+                            }
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(12.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
                             )
                         }
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = stringResource(R.string.storage_add_cloud_or_network),
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
             }
         }
     }
+
+    storagePendingRemoval?.let { dev ->
+        AlertDialog(
+            onDismissRequest = { storagePendingRemoval = null },
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f),
+                            shape = RoundedCornerShape(18.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            },
+            title = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = stringResource(R.string.dialog_remove_storage_title),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.dialog_remove_storage_message, dev.name),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 20.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.removeCustomStorage(dev.uriString)
+                        storagePendingRemoval = null
+                        Toast.makeText(context, context.getString(R.string.toast_storage_removed), Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        stringResource(R.string.action_remove),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { storagePendingRemoval = null },
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+            shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    }
 }
 
 @Composable
-private fun StorageDeviceItem(
-    device: StorageDevice,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
+private fun StorageDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(horizontal = 16.dp),
+        thickness = 0.6.dp,
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun StorageItemRow(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    iconColor: Color,
+    badgeText: String? = null,
+    badgeColor: Color = iconColor,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+    trailingContent: (@Composable () -> Unit)? = null
 ) {
     Row(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(horizontal = 16.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val isRoot = device is StorageDevice.Root
-        val icon = when {
-            isRoot -> Icons.Default.Tag
-            device is StorageDevice.Physical && device.isSdCard -> Icons.Default.SdCard
-            else -> Icons.Default.SdStorage
-        }
-        val iconColor = if (isRoot) Color(0xFFF59E0B) else MaterialTheme.colorScheme.primary
-
         Box(
             modifier = Modifier
-                .size(40.dp)
+                .size(42.dp)
                 .background(iconColor.copy(alpha = 0.12f), RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, null, tint = iconColor, modifier = Modifier.size(22.dp))
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconColor,
+                modifier = Modifier.size(22.dp)
+            )
         }
 
-        Spacer(modifier = Modifier.width(16.dp))
+        Spacer(modifier = Modifier.width(14.dp))
 
         Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Text(
-                    if (isRoot) stringResource(R.string.storage_root) else device.name,
+                    text = title,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (isRoot) {
-                    Spacer(modifier = Modifier.width(8.dp))
+                if (badgeText != null) {
                     Surface(
-                        color = Color(0xFFF59E0B).copy(alpha = 0.15f),
-                        contentColor = Color(0xFFF59E0B),
+                        color = badgeColor.copy(alpha = 0.14f),
+                        contentColor = badgeColor,
                         shape = RoundedCornerShape(6.dp)
                     ) {
                         Text(
-                            text = "SU",
+                            text = badgeText,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -1820,28 +2299,26 @@ private fun StorageDeviceItem(
                     }
                 }
             }
-            if (isRoot) {
-                Text(
-                    stringResource(R.string.storage_root_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                val used = device.totalBytes - device.availableBytes
-                Text(
-                    stringResource(R.string.storage_amount_used_of_total, formatFileSize(used), formatFileSize(device.totalBytes)),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
 
-        Icon(
-            Icons.Default.ChevronRight,
-            null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-            modifier = Modifier.size(20.dp)
-        )
+        if (trailingContent != null) {
+            trailingContent()
+        } else {
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }
 

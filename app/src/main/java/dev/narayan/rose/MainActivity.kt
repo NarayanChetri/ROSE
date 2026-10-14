@@ -1337,10 +1337,11 @@ class MainActivity : ComponentActivity() {
         try {
             val file = fileItem.file
             val path = file.absolutePath
-            val restricted = SafManager.isRestrictedPath(path)
+            val isSaf = SafManager.isSafUri(path) || SafManager.isSafUri(fileItem.file.path)
+            val restricted = !isSaf && SafManager.isRestrictedPath(path)
             val isVirtual = fileItem.virtualZipSource != null
 
-            if (!isVirtual) {
+            if (!isVirtual && !isSaf && !viewModel.isRemotePath(path)) {
                 val exists = if (restricted) {
                     (SafManager.hasPermission(this, path) && SafManager.exists(this, path)) ||
                             (ShizukuManager.isAvailable() && ShizukuManager.hasPermission() && ShizukuManager.exists(path)) ||
@@ -1395,6 +1396,9 @@ class MainActivity : ComponentActivity() {
                     }
                     return null
                 }
+            } else if (isSaf) {
+                val rawSafPath = if (SafManager.isSafUri(fileItem.file.path)) fileItem.file.path else path
+                Uri.parse(SafManager.normalizeSafPath(rawSafPath))
             } else if (restricted) {
                 if (file.exists() && file.canRead()) {
                     FileProvider.getUriForFile(
@@ -1486,6 +1490,19 @@ class MainActivity : ComponentActivity() {
         if (now - lastFileOpenTimestamp < 500L) return
         lastFileOpenTimestamp = now
 
+        if (viewModel.isRemotePath(fileItem.file.path)) {
+            val localOffline = viewModel.getLocalOfflineFile(fileItem)
+            if (localOffline != null && localOffline.exists()) {
+                val localFileItem = fileItem.copy(file = localOffline)
+                openFile(localFileItem, passphrase)
+                return
+            } else {
+                Toast.makeText(this, "Downloading file to view...", Toast.LENGTH_SHORT).show()
+                viewModel.toggleOfflineStatus(fileItem)
+                return
+            }
+        }
+
         val ext = fileItem.extension.lowercase()
         val isMd = ext in markdownExtensions
         val isTxt = ext in textExtensions
@@ -1503,6 +1520,14 @@ class MainActivity : ComponentActivity() {
             }
 
             val path = fileItem.file.absolutePath
+            val isSaf = SafManager.isSafUri(path) || SafManager.isSafUri(fileItem.file.path)
+            if (isSaf) {
+                val rawSafPath = if (SafManager.isSafUri(fileItem.file.path)) fileItem.file.path else path
+                val safUri = Uri.parse(SafManager.normalizeSafPath(rawSafPath))
+                pendingDocument = DocumentSource.UriSource(safUri, fileItem.name, isReadOnly = false) to isMd
+                return
+            }
+
             val restricted = SafManager.isRestrictedPath(path)
             if (restricted) {
                 val safUri = if (SafManager.hasPermission(this, path)) SafManager.getContentUri(this, path) else null

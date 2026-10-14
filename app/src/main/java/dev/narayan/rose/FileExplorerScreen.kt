@@ -35,6 +35,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -42,6 +43,7 @@ import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.automirrored.outlined.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.*
 import androidx.compose.runtime.*
@@ -51,6 +53,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -60,6 +63,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -1255,8 +1259,10 @@ fun FileExplorerScreen(
                             val hasShizuku = ShizukuManager.isAvailable() && ShizukuManager.hasPermission()
                             val hasSaf = SafManager.hasPermission(LocalContext.current, viewModel.currentPath)
 
+                            val isRemote = viewModel.isRemotePath(viewModel.currentPath)
+
                             // Show the card if access was explicitly denied by the load process for a filesystem folder
-                            val accessDenied = viewModel.accessDenied && currentView == "Files" && viewModel.categoryFilterType == null
+                            val accessDenied = viewModel.accessDenied && currentView == "Files" && viewModel.categoryFilterType == null && !isRemote
 
                             if (accessDenied && !viewModel.isLoading) {
                                 val isSystemRestricted = isRestricted
@@ -1436,8 +1442,15 @@ fun FileExplorerScreen(
                                                     }
                                                 }
                                             } else {
-                                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                                    Text(if (searchQuery.isEmpty()) stringResource(R.string.no_files_found) else stringResource(R.string.no_results_for_query, searchQuery))
+                                                if (isRemote && searchQuery.isEmpty()) {
+                                                    RemoteStorageEmptyView(
+                                                        path = viewModel.currentPath,
+                                                        onRefresh = { viewModel.loadFiles(viewModel.currentPath, isManualRefresh = true) }
+                                                    )
+                                                } else {
+                                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                                        Text(if (searchQuery.isEmpty()) stringResource(R.string.no_files_found) else stringResource(R.string.no_results_for_query, searchQuery))
+                                                    }
                                                 }
                                             }
                                         } else if (isDocumentCategory) {
@@ -2173,10 +2186,6 @@ fun DeleteConfirmationDialog(
     pending: PendingDelete,
     onDismiss: () -> Unit,
     onConfirm: (Boolean) -> Unit,
-    // When the file(s) live on a removable volume (USB / SD card) the
-    // "Delete permanently" checkbox is hidden. The user doesn't need to
-    // know whether the recycle bin is on the drive or not — the global
-    // useRecycleBin setting still applies silently.
     isOnRemovableStorage: Boolean = false
 ) {
     val totalSize = when (pending) {
@@ -2184,64 +2193,126 @@ fun DeleteConfirmationDialog(
         is PendingDelete.Selection -> pending.totalSize
     }
     val isLarge = totalSize > LARGE_FILE_THRESHOLD
-    
-    // Default to permanent only if recycle bin is disabled. Large files
-    // still show the toggle but don't force it to ON by default.
     var permanently by remember { mutableStateOf(!useRecycleBin) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(54.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f),
+                        shape = RoundedCornerShape(18.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(
-                    if (permanently) Icons.Default.DeleteForever else Icons.Default.Delete,
+                    imageVector = if (permanently) Icons.Default.DeleteForever else Icons.Default.Delete,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(28.dp)
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(if (isLarge) stringResource(R.string.delete_large_item_title) else stringResource(R.string.delete_item_title))
+            }
+        },
+        title = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                val titleText = when {
+                    isLarge -> stringResource(R.string.delete_large_item_title)
+                    pending is PendingDelete.Single -> {
+                        val name = pending.fileItem.name
+                        if (name.length <= 26) stringResource(R.string.delete_single_confirm, name)
+                        else if (pending.fileItem.isDirectory) stringResource(R.string.delete_folder_title)
+                        else stringResource(R.string.delete_file_title)
+                    }
+                    pending is PendingDelete.Selection -> {
+                        if (pending.count == 1) stringResource(R.string.delete_one_item_title)
+                        else stringResource(R.string.delete_items_title, pending.count)
+                    }
+                    else -> stringResource(R.string.delete_item_title)
+                }
+                Text(
+                    text = titleText,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (isLarge) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.delete_total_size, formatFileSize(totalSize)),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         },
         text = {
-            Column {
-                val message = when (pending) {
-                    is PendingDelete.Single -> stringResource(R.string.delete_single_confirm, pending.fileItem.name)
-                    is PendingDelete.Selection -> stringResource(R.string.delete_multi_confirm, pending.count)
-                } + if (useRecycleBin && !permanently) {
-                    if (pending is PendingDelete.Single) stringResource(R.string.delete_single_moved_to_bin) else stringResource(R.string.delete_multi_moved_to_bin)
-                } else stringResource(R.string.delete_cannot_be_undone)
-                Text(message)
-
-                if (isLarge) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                if (pending is PendingDelete.Single && pending.fileItem.name.length > 26) {
                     Text(
-                        stringResource(R.string.delete_total_size, formatFileSize(totalSize)),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(top = 4.dp)
+                        text = pending.fileItem.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(bottom = 6.dp)
                     )
                 }
 
-                // Show checkbox only when recycle bin is on OR it's a large file,
-                // AND the file is NOT on removable storage (USB / SD card).
-                // For removable volumes the checkbox is hidden — the global
-                // useRecycleBin setting decides silently so we don't expose the
-                // internal ".rose_recycle_bin on the drive" detail.
+                val statusText = if (useRecycleBin && !permanently) {
+                    stringResource(R.string.delete_moved_to_bin_short)
+                } else {
+                    stringResource(R.string.delete_cannot_be_undone_short)
+                }
+
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+
                 if (!isOnRemovableStorage && (useRecycleBin || isLarge)) {
                     Spacer(modifier = Modifier.height(16.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { permanently = !permanently }
+                    Surface(
+                        onClick = { permanently = !permanently },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (permanently) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                     ) {
-                        Checkbox(
-                            checked = permanently,
-                            onCheckedChange = { permanently = it }
-                        )
-                        Text(
-                            stringResource(R.string.delete_permanently),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Checkbox(
+                                checked = permanently,
+                                onCheckedChange = { permanently = it },
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = MaterialTheme.colorScheme.error,
+                                    checkmarkColor = MaterialTheme.colorScheme.onError
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                stringResource(R.string.delete_permanently),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = if (permanently) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (permanently) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             }
@@ -2250,15 +2321,31 @@ fun DeleteConfirmationDialog(
             Button(
                 onClick = { onConfirm(permanently) },
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(14.dp),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
             ) {
-                Text(stringResource(R.string.action_delete))
+                Icon(
+                    imageVector = if (permanently) Icons.Default.DeleteForever else Icons.Default.Delete,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    stringResource(R.string.action_delete),
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+            TextButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text(stringResource(R.string.action_cancel))
+            }
         },
-        shape = RoundedCornerShape(28.dp)
+        shape = RoundedCornerShape(28.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
     )
 }
 
@@ -2607,15 +2694,24 @@ fun Breadcrumbs(
     val isInternal = path == internalRootPath || path.startsWith("$internalRootPath/")
     val isRootBrowsing = !isInternal && (path == "/" || dev.narayan.rose.RootManager.isRootPath(path))
 
+    val isSaf = SafManager.isSafUri(path)
+    val knownTreeDevice = if (!isInternal && !isRootBrowsing) {
+        storageDevices.filterIsInstance<StorageDevice.DocumentTree>().firstOrNull { dev ->
+            val devClean = dev.path.replace("://", ":/").trimEnd('/')
+            val pathClean = path.replace("://", ":/").trimEnd('/')
+            path == dev.path || path.startsWith(dev.path) || pathClean == devClean || pathClean.startsWith("$devClean/")
+        }
+    } else null
+
     // Match physical device from storageDevices list (e.g. SD Card, USB OTG drive)
-    val knownPhysicalDevice = if (!isInternal && !isRootBrowsing) {
+    val knownPhysicalDevice = if (!isInternal && !isRootBrowsing && knownTreeDevice == null) {
         storageDevices.filterIsInstance<StorageDevice.Physical>().firstOrNull { dev ->
             dev.isSdCard && (path == dev.path || path.startsWith("${dev.path}/"))
         }
     } else null
 
     // Fallback: If storageDevices hasn't loaded yet or volume wasn't enumerated, detect /storage/<volume-id>
-    val storageVolumeRoot = if (!isInternal && !isRootBrowsing && knownPhysicalDevice == null && path.startsWith("/storage/")) {
+    val storageVolumeRoot = if (!isInternal && !isRootBrowsing && knownTreeDevice == null && knownPhysicalDevice == null && path.startsWith("/storage/")) {
         val segment = path.removePrefix("/storage/").substringBefore('/')
         if (segment.isNotEmpty() && segment != "emulated" && segment != "self") {
             "/storage/$segment"
@@ -2625,16 +2721,29 @@ fun Breadcrumbs(
     val (activeStorageRootPath, activeStorageLabel) = when {
         isInternal -> internalRootPath to internalStorageLabel
         isRootBrowsing -> "/" to rootLabel
+        knownTreeDevice != null -> knownTreeDevice.path to knownTreeDevice.name
         knownPhysicalDevice != null -> knownPhysicalDevice.path to knownPhysicalDevice.name
         storageVolumeRoot != null -> storageVolumeRoot to File(storageVolumeRoot).name
+        isSaf -> path to (Uri.parse(path).lastPathSegment ?: "Drive")
         else -> "" to ""
     }
 
     val relativePath = when {
         isInternal -> internalStorageLabel + path.removePrefix(internalRootPath)
         isRootBrowsing -> if (path == "/") rootLabel else "$rootLabel$path"
+        knownTreeDevice != null -> {
+            val devClean = knownTreeDevice.path.replace("://", ":/").trimEnd('/')
+            val pathClean = path.replace("://", ":/").trimEnd('/')
+            if (path == knownTreeDevice.path || pathClean == devClean) {
+                knownTreeDevice.name
+            } else {
+                val subPath = pathClean.removePrefix(devClean).trimStart('/')
+                "${knownTreeDevice.name}/$subPath"
+            }
+        }
         knownPhysicalDevice != null -> activeStorageLabel + path.removePrefix(knownPhysicalDevice.path)
         storageVolumeRoot != null -> activeStorageLabel + path.removePrefix(storageVolumeRoot)
+        isSaf -> activeStorageLabel
         else -> path
     }
 
@@ -2690,6 +2799,7 @@ fun Breadcrumbs(
                         storageDevices.forEachIndexed { devIndex, dev ->
                             val isCurrent = when (dev) {
                                 is StorageDevice.Root -> isRootBrowsing
+                                is StorageDevice.DocumentTree -> path == dev.path || path.startsWith(dev.path)
                                 is StorageDevice.Physical -> {
                                     if (dev.isSdCard) {
                                         path == dev.path || path.startsWith("${dev.path}/") ||
@@ -2701,15 +2811,26 @@ fun Breadcrumbs(
                             }
                             val isRootDev = dev is StorageDevice.Root
                             val isSd = dev is StorageDevice.Physical && dev.isSdCard
+                            val isUsb = dev is StorageDevice.Physical && dev.isUsb
+                            val isDocTree = dev is StorageDevice.DocumentTree
                             val devIcon = when {
                                 isRootDev -> Icons.Default.Tag
+                                isUsb -> Icons.Default.Usb
                                 isSd -> Icons.Default.SdCard
+                                isDocTree -> if (dev.isCloud) Icons.Default.Cloud else Icons.Default.Storage
                                 else -> Icons.Default.PhoneAndroid
                             }
-                            val devColor = if (isRootDev) Color(0xFFF59E0B) else MaterialTheme.colorScheme.primary
+                            val devColor = when {
+                                isRootDev -> Color(0xFFF59E0B)
+                                isUsb -> Color(0xFF0D9488)
+                                isSd -> Color(0xFF3B82F6)
+                                isDocTree -> if (dev.isCloud) Color(0xFF4285F4) else Color(0xFF8B5CF6)
+                                else -> MaterialTheme.colorScheme.primary
+                            }
                             val devDisplayName = when {
                                 isRootDev -> stringResource(R.string.storage_root)
-                                isSd -> dev.name
+                                isSd || isUsb -> dev.name
+                                isDocTree -> dev.name
                                 else -> stringResource(R.string.breadcrumbs_internal_storage)
                             }
 
@@ -2756,6 +2877,12 @@ fun Breadcrumbs(
                                                 val totalStr = Formatter.formatFileSize(context, dev.totalBytes)
                                                 stringResource(R.string.storage_free_of_total, freeStr, totalStr)
                                             }
+                                            dev is StorageDevice.DocumentTree -> dev.providerName ?: if (dev.isCloud) {
+                                                stringResource(R.string.storage_cloud)
+                                            } else {
+                                                stringResource(R.string.storage_badge_custom)
+                                            }
+                                            SafManager.isSafUri(dev.path) -> dev.name
                                             else -> dev.path
                                         }
                                         Text(
@@ -2801,6 +2928,7 @@ fun Breadcrumbs(
                     modifier = Modifier.clickable {
                         val targetPath = when {
                             index == 0 && activeStorageRootPath.isNotEmpty() -> File(activeStorageRootPath)
+                            isSaf -> File(activeStorageRootPath)
                             isInternal -> {
                                 val subParts = parts.subList(1, index + 1)
                                 if (subParts.isEmpty()) File(internalRootPath)
@@ -3027,7 +3155,7 @@ fun SelectionBottomBar(
                                             leadingIcon = { Icon(Icons.Default.Edit, null) }
                                         )
                                     }
-                                    val fileOnlySelected = viewModel.selectedFiles.filter { !it.isDirectory }
+                                    val fileOnlySelected = viewModel.selectedFiles.filter { !it.isDirectory && !viewModel.isCloudStorage(it.file.absolutePath) }
                                     if (fileOnlySelected.isNotEmpty() && viewModel.currentZipFile == null) {
                                         val allFav = fileOnlySelected.all { viewModel.isFileInFavourites(it.file.absolutePath) }
                                         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
@@ -3054,6 +3182,39 @@ fun SelectionBottomBar(
                                                     if (allFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                                                     null,
                                                     tint = Color(0xFFE11D48)
+                                                )
+                                            }
+                                        )
+                                    }
+                                    val savableOfflineFiles = fileOnlySelected.filter {
+                                        !it.isDirectory && viewModel.isCloudStorage(it.file.absolutePath)
+                                    }
+                                    if (savableOfflineFiles.isNotEmpty() && viewModel.currentZipFile == null) {
+                                        val allOffline = savableOfflineFiles.all { viewModel.isFileOffline(it.file.absolutePath) }
+                                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    if (allOffline) stringResource(R.string.action_remove_offline)
+                                                    else stringResource(R.string.action_save_offline)
+                                                )
+                                            },
+                                            onClick = {
+                                                savableOfflineFiles.forEach { viewModel.toggleOfflineStatus(it) }
+                                                val msg = if (allOffline) {
+                                                    context.getString(R.string.toast_removed_from_offline)
+                                                } else {
+                                                    context.getString(R.string.toast_saving_offline)
+                                                }
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                viewModel.exitSelectionMode()
+                                                showMoreMenu = false
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    if (allOffline) Icons.Default.CloudDone else Icons.Default.Download,
+                                                    null,
+                                                    tint = if (allOffline) Color(0xFF10B981) else MaterialTheme.colorScheme.primary
                                                 )
                                             }
                                         )
@@ -3334,7 +3495,7 @@ fun FileGridItem(
     ) {
         val vm = viewModel ?: (LocalContext.current as? androidx.activity.ComponentActivity)?.let { (it as? MainActivity)?.viewModel }
         val isFav = remember(fileItem.file.absolutePath, vm?.favouriteFiles) {
-            if (fileItem.isDirectory) false else vm?.isFileInFavourites(fileItem.file.absolutePath) == true
+            if (fileItem.isDirectory || vm?.isCloudStorage(fileItem.file.absolutePath) == true) false else vm?.isFileInFavourites(fileItem.file.absolutePath) == true
         }
         Box(contentAlignment = Alignment.Center) {
             FileIcon(fileItem, iconSize = iconSize, isVirtual = isVirtual, viewModel = vm, showFavouriteBadge = isFav)
@@ -3488,7 +3649,7 @@ fun FileListItem(
             },
             leadingContent = {
                 val isFav = remember(fileItem.file.absolutePath, viewModel?.favouriteFiles) {
-                    if (fileItem.isDirectory) false else viewModel?.isFileInFavourites(fileItem.file.absolutePath) == true
+                    if (fileItem.isDirectory || viewModel?.isCloudStorage(fileItem.file.absolutePath) == true) false else viewModel?.isFileInFavourites(fileItem.file.absolutePath) == true
                 }
                 Box(contentAlignment = Alignment.Center) {
                     FileIcon(fileItem, isVirtual = isVirtual, viewModel = viewModel, showFavouriteBadge = isFav)
@@ -3569,7 +3730,8 @@ fun FileListItem(
                                 onClick = { showMenu = false; onShare() },
                                 leadingIcon = { Icon(Icons.Default.Share, null) }
                             )
-                            if (!isVirtual && !fileItem.isDirectory && viewModel?.currentZipFile == null && viewModel != null) {
+                            val isCloud = viewModel?.isCloudStorage(fileItem.file.absolutePath) == true
+                            if (!isCloud && !isVirtual && !fileItem.isDirectory && viewModel?.currentZipFile == null && viewModel != null) {
                                 val isFav = viewModel.isFileInFavourites(fileItem.file.absolutePath)
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                 DropdownMenuItem(
@@ -3594,6 +3756,36 @@ fun FileListItem(
                                             if (isFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                                             null,
                                             tint = Color(0xFFE11D48)
+                                        )
+                                    }
+                                )
+                            }
+                            val canSaveOffline = !isVirtual && !fileItem.isDirectory && viewModel?.currentZipFile == null && isCloud
+                            if (canSaveOffline && viewModel != null) {
+                                val isOffline = viewModel.isFileOffline(fileItem.file.absolutePath)
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            if (isOffline) stringResource(R.string.action_remove_offline)
+                                            else stringResource(R.string.action_save_offline)
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        viewModel.toggleOfflineStatus(fileItem)
+                                        val msg = if (isOffline) {
+                                            context.getString(R.string.toast_removed_from_offline)
+                                        } else {
+                                            context.getString(R.string.toast_saving_offline)
+                                        }
+                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (isOffline) Icons.Default.CloudDone else Icons.Default.Download,
+                                            contentDescription = null,
+                                            tint = if (isOffline) Color(0xFF10B981) else MaterialTheme.colorScheme.primary
                                         )
                                     }
                                 )
@@ -3654,13 +3846,18 @@ fun FileIcon(
     showFavouriteBadge: Boolean = false
 ) {
     val context = LocalContext.current
-    val modifier = Modifier.size(iconSize).clip(RoundedCornerShape(12.dp))
     var isThumbnailLoaded by remember { mutableStateOf(false) }
 
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        when (fileItem.fileType) {
-            FileType.IMAGE, FileType.VIDEO -> {
-                val placeholderIcon = if (fileItem.fileType == FileType.IMAGE) Icons.Default.Image else Icons.Default.Movie
+    Box(modifier = Modifier.size(iconSize), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            when (fileItem.fileType) {
+                FileType.IMAGE, FileType.VIDEO -> {
+                    val placeholderIcon = if (fileItem.fileType == FileType.IMAGE) Icons.Default.Image else Icons.Default.Movie
 
                 if (isVirtual && fileItem.virtualZipSource != null) {
                     val zipThumb by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = fileItem.file.absolutePath, key2 = viewModel?.cachedZipPassword) {
@@ -3835,7 +4032,7 @@ fun FileIcon(
                                 }
                             }
                             .crossfade(80)
-                            .videoFrameMillis(1000)
+                            .videoFrameMillis(0)
                             .build(),
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
@@ -3935,58 +4132,92 @@ fun FileIcon(
             FileType.DOCUMENT -> FileTypeBadge(Icons.Default.Description, FileIconColors.document, iconSize, Modifier.fillMaxSize())
             else -> FileTypeBadge(Icons.Default.InsertDriveFile, MaterialTheme.colorScheme.secondary, iconSize, Modifier.fillMaxSize())
         }
+    }
 
-        if (fileItem.isEncrypted && !isThumbnailLoaded && viewModel?.cachedZipPassword == null) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .offset(x = 2.dp, y = 2.dp)
-                    .size(iconSize * 0.35f)
-                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(4.dp))
-                    .padding(2.dp)
-                    .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(2.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.Lock,
-                    contentDescription = stringResource(R.string.content_desc_encrypted),
-                    modifier = Modifier.size(iconSize * 0.22f),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
+    if (fileItem.isEncrypted && !isThumbnailLoaded && viewModel?.cachedZipPassword == null) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .offset(x = 2.dp, y = 2.dp)
+                .size(iconSize * 0.35f)
+                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(4.dp))
+                .padding(2.dp)
+                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(2.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.Lock,
+                contentDescription = stringResource(R.string.content_desc_encrypted),
+                modifier = Modifier.size(iconSize * 0.22f),
+                tint = MaterialTheme.colorScheme.primary
+            )
         }
+    }
 
-        if (showFavouriteBadge) {
-            val badgeAlignment = if (fileItem.isEncrypted && !isThumbnailLoaded && viewModel?.cachedZipPassword == null) {
-                Alignment.TopEnd
-            } else {
-                Alignment.BottomEnd
-            }
-            val badgeOffsetX = 2.dp
-            val badgeOffsetY = if (fileItem.isEncrypted && !isThumbnailLoaded && viewModel?.cachedZipPassword == null) (-2).dp else 2.dp
-            val badgeSize = (iconSize * 0.42f).coerceIn(14.dp, 20.dp)
-            val heartSize = (iconSize * 0.24f).coerceIn(8.dp, 12.dp)
+    if (showFavouriteBadge && viewModel?.isCloudStorage(fileItem.file.absolutePath) != true) {
+        val badgeAlignment = if (fileItem.isEncrypted && !isThumbnailLoaded && viewModel?.cachedZipPassword == null) {
+            Alignment.TopEnd
+        } else {
+            Alignment.BottomEnd
+        }
+        val badgeOffsetX = 2.dp
+        val badgeOffsetY = if (fileItem.isEncrypted && !isThumbnailLoaded && viewModel?.cachedZipPassword == null) (-2).dp else 2.dp
+        val badgeSize = (iconSize * 0.42f).coerceIn(14.dp, 20.dp)
+        val heartSize = (iconSize * 0.24f).coerceIn(8.dp, 12.dp)
 
-            Box(
-                modifier = Modifier
-                    .align(badgeAlignment)
-                    .offset(x = badgeOffsetX, y = badgeOffsetY)
-                    .size(badgeSize)
-                    .background(MaterialTheme.colorScheme.surface, androidx.compose.foundation.shape.CircleShape)
-                    .padding(1.5.dp)
-                    .background(Color(0xFFE11D48), androidx.compose.foundation.shape.CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.Favorite,
-                    contentDescription = null,
-                    modifier = Modifier.size(heartSize),
-                    tint = Color.White
-                )
-            }
+        Box(
+            modifier = Modifier
+                .align(badgeAlignment)
+                .offset(x = badgeOffsetX, y = badgeOffsetY)
+                .size(badgeSize)
+                .background(MaterialTheme.colorScheme.surface, CircleShape)
+                .padding(1.5.dp)
+                .background(Color(0xFFE11D48), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.Favorite,
+                contentDescription = null,
+                modifier = Modifier.size(heartSize),
+                tint = Color.White
+            )
+        }
+    }
+
+    val isOffline = viewModel?.isFileOffline(fileItem.file.absolutePath) == true
+    if (isOffline) {
+        val offlineBadgeSize = (iconSize * 0.44f).coerceIn(16.dp, 22.dp)
+        val iconInnerSize = (iconSize * 0.28f).coerceIn(10.dp, 14.dp)
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .offset(x = (-3).dp, y = 3.dp)
+                .shadow(elevation = 3.dp, shape = CircleShape)
+                .size(offlineBadgeSize)
+                .background(MaterialTheme.colorScheme.surface, CircleShape)
+                .padding(1.5.dp)
+                .background(
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color(0xFF10B981),
+                            Color(0xFF047857)
+                        )
+                    ),
+                    shape = CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.CloudDone,
+                contentDescription = stringResource(R.string.status_offline_available),
+                modifier = Modifier.size(iconInnerSize),
+                tint = Color.White
+            )
         }
     }
 }
+}
+
 
 
 private object FileIconColors {
@@ -4988,3 +5219,146 @@ fun MarkdownText(
     }
     Text(annotatedString, style = style, color = color)
 }
+
+@Composable
+fun RemoteStorageEmptyView(
+    path: String,
+    onRefresh: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val lower = path.lowercase()
+    val (icon, color, title, desc) = when {
+        lower.startsWith("mega://") -> Triple(
+            Icons.Default.CloudSync,
+            Color(0xFFD9272E),
+            "Mega Cloud Storage"
+        ) to "Connected to Mega account. This folder is empty."
+        lower.startsWith("onedrive://") -> Triple(
+            Icons.Default.Cloud,
+            Color(0xFF0078D4),
+            "Microsoft OneDrive"
+        ) to "Connected to OneDrive account. This folder is empty."
+        lower.startsWith("gdrive://") -> Triple(
+            Icons.Default.Cloud,
+            Color(0xFF0F9D58),
+            "Google Drive"
+        ) to "Connected to Google Drive. This folder is empty."
+        lower.startsWith("dropbox://") -> Triple(
+            Icons.Default.CloudQueue,
+            Color(0xFF0061FF),
+            "Dropbox Cloud Storage"
+        ) to "Connected to Dropbox account. This folder is empty."
+        lower.startsWith("smb://") -> Triple(
+            Icons.Default.Dns,
+            Color(0xFF0284C7),
+            "Windows Share (SMB)"
+        ) to "Connected to SMB server. This share is empty."
+        lower.startsWith("ftp://") || lower.startsWith("ftps://") -> Triple(
+            Icons.Default.SwapHoriz,
+            Color(0xFFEA580C),
+            "FTP Server"
+        ) to "Connected to FTP server. Directory is empty."
+        lower.startsWith("sftp://") -> Triple(
+            Icons.Default.Terminal,
+            Color(0xFF16A34A),
+            "SFTP Server (SSH)"
+        ) to "Connected to SFTP server. Directory is empty."
+        lower.startsWith("webdav://") || lower.startsWith("webdavs://") -> Triple(
+            Icons.Default.FolderShared,
+            Color(0xFF7C3AED),
+            "WebDAV Server"
+        ) to "Connected to WebDAV server. Directory is empty."
+        else -> Triple(
+            Icons.Default.Cloud,
+            MaterialTheme.colorScheme.primary,
+            "Remote Storage"
+        ) to "Connected to remote service. No files found."
+    }.let { (triple, description) ->
+        listOf(triple.first, triple.second, triple.third, description)
+    }.let {
+        @Suppress("UNCHECKED_CAST")
+        Tuple4(it[0] as androidx.compose.ui.graphics.vector.ImageVector, it[1] as Color, it[2] as String, it[3] as String)
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 28.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .background(color.copy(alpha = 0.12f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = color,
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFF22C55E).copy(alpha = 0.15f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .background(Color(0xFF22C55E), CircleShape)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Connected",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF15803D)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = desc,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            FilledTonalButton(
+                onClick = onRefresh,
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.action_refresh))
+            }
+        }
+    }
+}
+
+private data class Tuple4<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)

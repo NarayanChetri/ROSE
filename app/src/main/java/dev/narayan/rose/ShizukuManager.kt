@@ -209,7 +209,7 @@ object ShizukuManager {
      * Skips normalization for URIs to prevent breaking them.
      */
     fun normalize(path: String): String {
-        if (path.startsWith("content://") || path.startsWith("file://") || path.startsWith("/content:/")) {
+        if (path.startsWith("content://") || path.startsWith("file://") || path.startsWith("/content:/") || path.contains("://")) {
             return path
         }
 

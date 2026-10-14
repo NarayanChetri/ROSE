@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.Settings
 import android.webkit.MimeTypeMap
@@ -504,6 +505,15 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         val lowPath = try { File(path).canonicalPath.lowercase() } catch (e: Exception) { path.lowercase() }
         return lowPath.endsWith("/android/data") || lowPath.contains("/android/data/") ||
                 lowPath.endsWith("/android/obb") || lowPath.contains("/android/obb/")
+    }
+
+    fun isRemotePath(path: String?): Boolean {
+        if (path.isNullOrBlank()) return false
+        val lower = path.lowercase().trim()
+        val schemes = listOf("mega", "onedrive", "gdrive", "dropbox", "smb", "ftp", "ftps", "sftp", "webdav", "webdavs")
+        return schemes.any { scheme ->
+            lower.startsWith("$scheme://") || lower.startsWith("$scheme:/")
+        }
     }
 
     private val directoryCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<FileItem>>>()
@@ -1241,7 +1251,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     // that tells MediaStore a file is gone (see FileJob) is async and
                     // isn't done yet by the time this event fires.
                     val isRemoval = job.type is dev.narayan.rose.filejob.FileJobType.Delete ||
-                            job.type is dev.narayan.rose.filejob.FileJobType.Recycle
+                            job.type is dev.narayan.rose.filejob.FileJobType.Recycle ||
+                            job.type is dev.narayan.rose.filejob.FileJobType.Move
                     if (isRemoval) {
                         val removedItems = (files + recentFiles + categoryFiles + searchResults)
                             .filter { it.file.absolutePath in affectedPaths && !it.isDirectory }
@@ -1273,16 +1284,18 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     }
 
                     withContext(Dispatchers.Main) {
-                        files = files.filter { it.file.absolutePath !in affectedPaths }
-                        recentFiles = recentFiles.filter { it.file.absolutePath !in affectedPaths }
-                        saveCachedRecentFiles(recentFiles)
-                        categoryFiles = categoryFiles.filter { it.file.absolutePath !in affectedPaths }
-                        invalidateCategoryCache()
-                        invalidateDirectoryCache(currentPath)
-                        affectedPaths.forEach { p ->
-                            File(p).parent?.let { invalidateDirectoryCache(it) }
+                        if (isRemoval) {
+                            files = files.filter { it.file.absolutePath !in affectedPaths }
+                            recentFiles = recentFiles.filter { it.file.absolutePath !in affectedPaths }
+                            saveCachedRecentFiles(recentFiles)
+                            categoryFiles = categoryFiles.filter { it.file.absolutePath !in affectedPaths }
+                            invalidateCategoryCache()
+                            invalidateDirectoryCache(currentPath)
+                            affectedPaths.forEach { p ->
+                                File(p).parent?.let { invalidateDirectoryCache(it) }
+                            }
+                            searchResults.removeAll { it.file.absolutePath in affectedPaths }
                         }
-                        searchResults.removeAll { it.file.absolutePath in affectedPaths }
 
                         // If a recycle/restore happened, refresh the bin items too
                         if (job.type is dev.narayan.rose.filejob.FileJobType.Recycle ||
@@ -1342,21 +1355,27 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 val targetFile = File(downloadType.targetFile.toString())
 
                 if (result.success) {
-                    if (!offlineFiles.contains(sourcePath)) {
-                        val updated = offlineFiles + sourcePath
+                    val normalizedSource = SafManager.normalizeSafPath(sourcePath)
+                    val updated = offlineFiles + sourcePath + normalizedSource
+                    withContext(Dispatchers.Main) {
                         offlineFiles = updated
                         settings.offlineFiles = updated
+                        files = files.toList()
                     }
                 } else {
                     // Download failed or was cancelled
                     if (targetFile.exists()) targetFile.delete()
-                    if (offlineFiles.contains(sourcePath)) {
-                        val updated = offlineFiles - sourcePath
+                    val normalizedSource = SafManager.normalizeSafPath(sourcePath)
+                    val updated = offlineFiles.filterNot {
+                        it == sourcePath || it == normalizedSource || SafManager.normalizeSafPath(it) == normalizedSource
+                    }.toSet()
+                    withContext(Dispatchers.Main) {
                         offlineFiles = updated
                         settings.offlineFiles = updated
-                    }
-                    if (result.error != null) {
-                        errorMessage = "Couldn't save ${downloadType.source.displayName} offline: ${result.error}"
+                        files = files.toList()
+                        if (result.error != null) {
+                            errorMessage = "Couldn't save ${downloadType.source.displayName} offline: ${result.error}"
+                        }
                     }
                 }
             }
@@ -1596,14 +1615,21 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         )
 
         // Check if it's an archive, including restricted paths and shared URIs
-        val isArchive = if (path.startsWith("content://")) {
-            val uri = Uri.parse(path)
-            val mime = getApplication<Application>().contentResolver.getType(uri)
-            val displayName = getFileNameFromUri(uri)?.lowercase() ?: ""
+        val isArchive = if (path.startsWith("content://") || path.startsWith("/content:/") || path.startsWith("content:/")) {
+            val normalizedUriStr = SafManager.normalizeSafPath(path)
+            val uri = runCatching { Uri.parse(normalizedUriStr) }.getOrNull()
+            if (uri != null && (DocumentsContract.isTreeUri(uri) || storageDevices.any { it.path == path || it.path == normalizedUriStr })) {
+                false
+            } else if (uri != null) {
+                val mime = runCatching { getApplication<Application>().contentResolver.getType(uri) }.getOrNull()
+                val displayName = runCatching { getFileNameFromUri(uri)?.lowercase() }.getOrNull() ?: ""
 
-            mime in archiveMimeTypes ||
-                    archiveExtensions.any { displayName.endsWith(".$it") } ||
-                    path.lowercase().let { p -> archiveExtensions.any { p.endsWith(".$it") } }
+                mime in archiveMimeTypes ||
+                        archiveExtensions.any { displayName.endsWith(".$it") } ||
+                        path.lowercase().let { p -> archiveExtensions.any { p.endsWith(".$it") } }
+            } else {
+                false
+            }
         } else if (path.startsWith("file://")) {
             val extension = MimeTypeMap.getFileExtensionFromUrl(path).lowercase()
             extension in archiveExtensions || path.lowercase().let { p -> archiveExtensions.any { p.endsWith(".$it") } }
@@ -1659,121 +1685,136 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 // Android/data and Android/obb can never be reached via raw java.io.File,
                 // even with MANAGE_EXTERNAL_STORAGE, on Android 12+ - that block is
                 // hardcoded at the filesystem layer.
-                val isRestricted = isShizukuRestrictedPath(normalizedPath)
+                val isSaf = SafManager.isSafUri(normalizedPath)
+                val isRestricted = !isSaf && isShizukuRestrictedPath(normalizedPath)
+                val isRemote = isRemotePath(normalizedPath)
 
                 val result = withContext(Dispatchers.IO) {
-                    val directory = File(normalizedPath)
-
-                    // Try normal filesystem access first (fastest)
-                    val rawFiles = if (isRestricted) null else try { directory.listFiles() } catch (e: Exception) { null }
-
-                    if (rawFiles != null) {
-                        // Normal access worked
-                        val filteredFiles = if (!showHiddenFiles) {
-                            rawFiles.filter { !it.name.startsWith(".") }
-                        } else {
-                            rawFiles.toList()
+                    if (isSaf) {
+                        val safResults = SafManager.listFiles(getApplication(), normalizedPath).let { list ->
+                            if (!showHiddenFiles) list.filter { !it.name.startsWith(".") } else list
                         }
-
-                        // Per-item counts are independent of each other, so fan them
-                        // out instead of doing thousands of sequential listFiles()
-                        // calls one after another - that's what was stalling first
-                        // paint on folders with many subfolders. Already inside
-                        // withContext(Dispatchers.IO) above, so this stays on IO.
-                        val fileList = coroutineScope {
-                            filteredFiles.map { file ->
-                                async {
-                                    FileItem(
-                                        file = file,
-                                        itemCount = getItemCount(file, showHiddenFiles)
-                                    )
-                                }
-                            }.awaitAll()
-                        }
-
                         val sizedFileList = if (sortBy == SortBy.SIZE) {
-                            withFolderSizes(fileList)
+                            withFolderSizes(safResults)
                         } else {
-                            fileList
+                            safResults
                         }
-
                         sortFileList(sizedFileList)
-                    } else if (isRestricted) {
-                        // Restricted path (Android/data or obb)
+                    } else if (isRemote) {
+                        emptyList<FileItem>()
+                    } else {
+                        val directory = File(normalizedPath)
 
-                        // Ditto NFile style: request binder if not available
-                        if (!ShizukuManager.isAvailable()) {
-                            ShizukuManager.requestBinder(getApplication())
-                        }
+                        // Try normal filesystem access first (fastest)
+                        val rawFiles = if (isRestricted) null else try { directory.listFiles() } catch (e: Exception) { null }
 
-                        // Wait a short moment for binder (CX File Explorer/NFile style smoothness)
-                        if (!ShizukuManager.isAvailable()) {
-                            repeat(6) {
-                                if (ShizukuManager.isAvailable()) return@repeat
-                                kotlinx.coroutines.delay(60)
-                            }
-                        }
-
-                        // Priority 1: Shizuku (Professional solution, no picker)
-                        val restrictedList = if (ShizukuManager.isAvailable()) {
-                            if (ShizukuManager.hasPermission()) {
-                                val shizukuResults = ShizukuManager.listFiles(normalizedPath, showHiddenFiles)
-
-                                // Fallback to SAF only if Shizuku returned empty and SAF permission is held
-                                if (shizukuResults.isEmpty() && SafManager.hasPermission(getApplication(), normalizedPath)) {
-                                    val safResults = SafManager.listFiles(getApplication(), normalizedPath).let { list ->
-                                        if (!showHiddenFiles) list.filter { !it.name.startsWith(".") } else list
-                                    }
-                                    if (safResults.isNotEmpty()) safResults else shizukuResults
-                                } else {
-                                    shizukuResults
-                                }
+                        if (rawFiles != null) {
+                            // Normal access worked
+                            val filteredFiles = if (!showHiddenFiles) {
+                                rawFiles.filter { !it.name.startsWith(".") }
                             } else {
-                                // Shizuku running but needs authorization.
-                                // Must set accessDenied = true so RestrictedFolderView is shown with "Grant Access"!
+                                rawFiles.toList()
+                            }
+
+                            // Per-item counts are independent of each other, so fan them
+                            // out instead of doing thousands of sequential listFiles()
+                            // calls one after another - that's what was stalling first
+                            // paint on folders with many subfolders. Already inside
+                            // withContext(Dispatchers.IO) above, so this stays on IO.
+                            val fileList = coroutineScope {
+                                filteredFiles.map { file ->
+                                    async {
+                                        FileItem(
+                                            file = file,
+                                            itemCount = getItemCount(file, showHiddenFiles)
+                                        )
+                                    }
+                                }.awaitAll()
+                            }
+
+                            val sizedFileList = if (sortBy == SortBy.SIZE) {
+                                withFolderSizes(fileList)
+                            } else {
+                                fileList
+                            }
+
+                            sortFileList(sizedFileList)
+                        } else if (isRestricted) {
+                            // Restricted path (Android/data or obb)
+
+                            // Ditto NFile style: request binder if not available
+                            if (!ShizukuManager.isAvailable()) {
+                                ShizukuManager.requestBinder(getApplication())
+                            }
+
+                            // Wait a short moment for binder (CX File Explorer/NFile style smoothness)
+                            if (!ShizukuManager.isAvailable()) {
+                                repeat(6) {
+                                    if (ShizukuManager.isAvailable()) return@repeat
+                                    kotlinx.coroutines.delay(60)
+                                }
+                            }
+
+                            // Priority 1: Shizuku (Professional solution, no picker)
+                            val restrictedList = if (ShizukuManager.isAvailable()) {
+                                if (ShizukuManager.hasPermission()) {
+                                    val shizukuResults = ShizukuManager.listFiles(normalizedPath, showHiddenFiles)
+
+                                    // Fallback to SAF only if Shizuku returned empty and SAF permission is held
+                                    if (shizukuResults.isEmpty() && SafManager.hasPermission(getApplication(), normalizedPath)) {
+                                        val safResults = SafManager.listFiles(getApplication(), normalizedPath).let { list ->
+                                            if (!showHiddenFiles) list.filter { !it.name.startsWith(".") } else list
+                                        }
+                                        if (safResults.isNotEmpty()) safResults else shizukuResults
+                                    } else {
+                                        shizukuResults
+                                    }
+                                } else {
+                                    // Shizuku running but needs authorization.
+                                    // Must set accessDenied = true so RestrictedFolderView is shown with "Grant Access"!
+                                    withContext(Dispatchers.Main) {
+                                        accessDenied = true
+                                    }
+                                    emptyList<FileItem>()
+                                }
+                            } else if (SafManager.hasPermission(getApplication(), normalizedPath)) {
+                                // Priority 2: SAF (Fallback ONLY if Shizuku is truly unavailable)
+                                val safResults = SafManager.listFiles(getApplication(), normalizedPath).let { list ->
+                                    if (!showHiddenFiles) list.filter { !it.name.startsWith(".") } else list
+                                }
+                                safResults
+                            } else {
+                                // No Shizuku AND no SAF permission.
                                 withContext(Dispatchers.Main) {
                                     accessDenied = true
                                 }
-                                emptyList<FileItem>()
+                                emptyList()
                             }
-                        } else if (SafManager.hasPermission(getApplication(), normalizedPath)) {
-                            // Priority 2: SAF (Fallback ONLY if Shizuku is truly unavailable)
-                            val safResults = SafManager.listFiles(getApplication(), normalizedPath).let { list ->
-                                if (!showHiddenFiles) list.filter { !it.name.startsWith(".") } else list
-                            }
-                            safResults
-                        } else {
-                            // No Shizuku AND no SAF permission.
-                            withContext(Dispatchers.Main) {
-                                accessDenied = true
-                            }
-                            emptyList()
-                        }
 
-                        val sizedFileList = if (sortBy == SortBy.SIZE) {
-                            withFolderSizes(restrictedList)
-                        } else {
-                            restrictedList
-                        }
-                        sortFileList(sizedFileList)
-                    } else {
-                        // Normal folder where File.listFiles() failed (e.g. root or OS protected folder)
-                        if (useRoot && RootManager.isRootAvailable()) {
-                            val rootFiles = RootManager.listFiles(normalizedPath, showHiddenFiles)
                             val sizedFileList = if (sortBy == SortBy.SIZE) {
-                                withFolderSizes(rootFiles)
+                                withFolderSizes(restrictedList)
                             } else {
-                                rootFiles
+                                restrictedList
                             }
                             sortFileList(sizedFileList)
                         } else {
-                            withContext(Dispatchers.Main) {
-                                accessDenied = true
+                            // Normal folder where File.listFiles() failed (e.g. root or OS protected folder)
+                            if (useRoot && RootManager.isRootAvailable()) {
+                                val rootFiles = RootManager.listFiles(normalizedPath, showHiddenFiles)
+                                val sizedFileList = if (sortBy == SortBy.SIZE) {
+                                    withFolderSizes(rootFiles)
+                                } else {
+                                    rootFiles
+                                }
+                                sortFileList(sizedFileList)
+                            } else {
+                                withContext(Dispatchers.Main) {
+                                    accessDenied = true
+                                }
+                                emptyList()
                             }
-                            emptyList()
                         }
                     }
-
                 }
 
                 withContext(Dispatchers.Main) {
@@ -1788,7 +1829,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         rootCache = result
                     }
                     val directory = File(normalizedPath)
-                    if (!isRestricted && directory.exists() && directory.isDirectory) {
+                    if (!isSaf && !isRestricted && !isRemote && directory.exists() && directory.isDirectory) {
                         startWatchingDirectory(normalizedPath)
                     } else {
                         stopWatchingDirectory()
@@ -2349,21 +2390,32 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private val safNavStack = mutableListOf<String>()
+
     fun navigateTo(directory: File, isActuallyDirectory: Boolean = false) {
         if (currentZipFile != null) return
-        val normalizedPath = ShizukuManager.normalize(directory.absolutePath)
+        val rawPath = directory.path
+        val normalizedPath = if (SafManager.isSafUri(rawPath)) {
+            SafManager.normalizeSafPath(rawPath)
+        } else {
+            ShizukuManager.normalize(directory.absolutePath)
+        }
         // Never allow navigating directly to raw "/storage" directory on non-rooted devices
         if (!useRoot && normalizedPath == "/storage") return
 
         val isRootPath = normalizedPath == "/" || (useRoot && RootManager.isRootPath(normalizedPath))
         // If isActuallyDirectory is true, we trust the caller (e.g. from FileItem)
         val isKnownStorage = storageDevices.any { it.path == normalizedPath }
-        val shouldNavigate = isActuallyDirectory || isKnownStorage || isRootPath || File(normalizedPath).isDirectory ||
+        val isSaf = SafManager.isSafUri(normalizedPath)
+        val shouldNavigate = isSaf || isActuallyDirectory || isKnownStorage || isRootPath || File(normalizedPath).isDirectory ||
                 (SafManager.isRestrictedPath(normalizedPath) &&
                         (SafManager.hasPermission(getApplication(), normalizedPath) ||
                                 (ShizukuManager.isAvailable() && ShizukuManager.hasPermission())))
 
         if (shouldNavigate) {
+            if (SafManager.isSafUri(currentPath) && currentPath != normalizedPath) {
+                safNavStack.add(currentPath)
+            }
             exitSelectionMode()
             loadFiles(normalizedPath)
         }
@@ -2379,8 +2431,22 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             return true
         }
         if (SafManager.isSafUri(currentPath)) {
-            // For now, navigating up from SAF just goes back to home
-            // (or we could try to parse the URI and find parent document)
+            if (safNavStack.isNotEmpty()) {
+                val parentSafPath = safNavStack.removeAt(safNavStack.lastIndex)
+                loadFiles(parentSafPath)
+                return true
+            }
+            return false
+        }
+        if (isRemotePath(currentPath)) {
+            val uri = runCatching { Uri.parse(currentPath) }.getOrNull()
+            val path = uri?.path
+            if (path != null && path != "/" && path != "/root" && path.isNotEmpty()) {
+                val parentPath = path.substringBeforeLast('/', "")
+                val newUri = currentPath.substringBefore(path) + (if (parentPath.isEmpty()) "/" else parentPath)
+                loadFiles(newUri)
+                return true
+            }
             return false
         }
         if (currentPath == "/") {
@@ -2746,6 +2812,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         isCategoryLoading = false
         isRefreshing = false
         exitSelectionMode()
+        safNavStack.clear()
         if (currentPath.isEmpty()) {
             currentPath = Environment.getExternalStorageDirectory().absolutePath
         }
@@ -3116,12 +3183,16 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun getFileNameFromUri(uri: Uri): String? {
         var result: String? = null
-        if (uri.scheme == "content") {
-            getApplication<Application>().contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    if (index != -1) result = cursor.getString(index)
+        if (uri.scheme == "content" && !DocumentsContract.isTreeUri(uri)) {
+            try {
+                getApplication<Application>().contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (index != -1) result = cursor.getString(index)
+                    }
                 }
+            } catch (e: Exception) {
+                // DocumentsProvider throws UnsupportedOperationException if uri cannot be queried directly
             }
         }
         if (result == null) {
@@ -3558,13 +3629,18 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         // certain devices/kernels. We still add the volume to the
                         // list so the user can see and open it — sizes just show 0.
                         val stats = try { StatFs(path) } catch (e: Exception) { null }
+                        val desc = volume.getDescription(getApplication()) ?: "SD Card"
+                        val isUsbVolume = desc.contains("usb", ignoreCase = true) ||
+                                path.contains("usb", ignoreCase = true) ||
+                                path.contains("otg", ignoreCase = true)
                         devices.add(
                             StorageDevice.Physical(
-                                name = volume.getDescription(getApplication()) ?: "SD Card",
+                                name = desc,
                                 path = path,
                                 totalBytes = stats?.totalBytes ?: 0L,
                                 availableBytes = stats?.availableBytes ?: 0L,
-                                isSdCard = volume.isRemovable
+                                isSdCard = volume.isRemovable,
+                                isUsb = isUsbVolume
                             )
                         )
                     }
@@ -3579,6 +3655,72 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         path = "/",
                         totalBytes = stats?.totalBytes ?: 0L,
                         availableBytes = stats?.availableBytes ?: 0L
+                    )
+                )
+            }
+
+            // 3. User-added DocumentTree / Cloud / External storages
+            val context = getApplication<Application>()
+            val pm = context.packageManager
+            val savedTreeEntries = settings.addedStorageUris
+            savedTreeEntries.forEach { entry ->
+                val parts = entry.split("|::|")
+                val uriString = parts.getOrNull(0) ?: return@forEach
+                val customName = parts.getOrNull(1)?.takeIf { it.isNotBlank() }
+                val typeString = parts.getOrNull(2)
+                val uri = try { Uri.parse(uriString) } catch (e: Exception) { null } ?: return@forEach
+
+                val storageType = when {
+                    typeString != null -> runCatching { CustomStorageType.valueOf(typeString) }.getOrDefault(CustomStorageType.DOCUMENT_TREE)
+                    uriString.startsWith("gdrive://") -> CustomStorageType.GOOGLE_DRIVE
+                    else -> {
+                        val auth = uri.authority ?: ""
+                        when {
+                            auth.contains("docs.storage") || auth.contains("com.google.android.apps.docs") -> CustomStorageType.GOOGLE_DRIVE
+                            else -> CustomStorageType.DOCUMENT_TREE
+                        }
+                    }
+                }
+
+                // Resolve name
+                val docFile = if (uriString.startsWith("content://")) {
+                    try { androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri) } catch (e: Exception) { null }
+                } else null
+                val docName = docFile?.name
+
+                val authority = uri.authority ?: ""
+                val providerInfo = if (uriString.startsWith("content://")) {
+                    try { pm.resolveContentProvider(authority, 0) } catch (e: Exception) { null }
+                } else null
+                val providerLabel = providerInfo?.loadLabel(pm)?.toString()
+
+                val isCloudStorage = storageType == CustomStorageType.GOOGLE_DRIVE || (uriString.startsWith("content://") &&
+                        authority != "com.android.externalstorage.documents" &&
+                        authority != "com.android.providers.media.documents" &&
+                        authority != "com.android.providers.downloads.documents")
+
+                val defaultTypeName = when (storageType) {
+                    CustomStorageType.GOOGLE_DRIVE -> "Google Drive"
+                    CustomStorageType.ANDROID_DATA -> "Android/data"
+                    CustomStorageType.ANDROID_OBB -> "Android/obb"
+                    else -> if (isCloudStorage) "Google Drive" else "External Storage"
+                }
+
+                val finalName = customName
+                    ?: docName
+                    ?: providerLabel
+                    ?: defaultTypeName
+
+                devices.add(
+                    StorageDevice.DocumentTree(
+                        name = finalName,
+                        path = uriString,
+                        totalBytes = 0L,
+                        availableBytes = 0L,
+                        uriString = uriString,
+                        isCloud = isCloudStorage,
+                        providerName = providerLabel ?: defaultTypeName,
+                        storageType = storageType
                     )
                 )
             }
@@ -3601,6 +3743,55 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun addCustomStorage(uri: Uri) {
+        addCustomStorage(uri.toString(), null, CustomStorageType.DOCUMENT_TREE)
+    }
+
+    fun addCustomStorage(
+        uriString: String,
+        customName: String? = null,
+        storageType: CustomStorageType = CustomStorageType.DOCUMENT_TREE
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (uriString.startsWith("content://")) {
+                val uri = runCatching { Uri.parse(uriString) }.getOrNull()
+                if (uri != null) {
+                    val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    try {
+                        getApplication<Application>().contentResolver.takePersistableUriPermission(uri, flags)
+                    } catch (e: SecurityException) {
+                        try {
+                            getApplication<Application>().contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        } catch (e2: Exception) {}
+                    }
+                }
+            }
+            val entry = if (!customName.isNullOrBlank()) {
+                "$uriString|::|$customName|::|${storageType.name}"
+            } else {
+                "$uriString|::||::|${storageType.name}"
+            }
+            val current = settings.addedStorageUris
+            if (!current.any { it.substringBefore("|::|") == uriString }) {
+                settings.addedStorageUris = current + entry
+            }
+            loadStorageDevices()
+        }
+    }
+
+    fun removeCustomStorage(uriString: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val uri = Uri.parse(uriString)
+                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                getApplication<Application>().contentResolver.releasePersistableUriPermission(uri, flags)
+            } catch (e: Exception) {}
+            val current = settings.addedStorageUris
+            settings.addedStorageUris = current.filterNot { it.substringBefore("|::|") == uriString }.toSet()
+            loadStorageDevices()
+        }
+    }
+
     var pendingUsbNavigation by mutableStateOf(false)
         private set
 
@@ -3618,22 +3809,45 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Returns true if [path] lives on a removable physical volume (SD card or
-     * USB OTG drive). Used to suppress the "Delete permanently" checkbox in the
-     * confirmation dialog — for removable drives there is no recycle-bin benefit
-     * visible to the user (the bin is on the drive itself and lost if the drive
-     * is ejected), so we hide the toggle and let the global useRecycleBin
-     * setting decide silently, without exposing the low-level detail.
+     * USB OTG drive), or on an added SAF document tree.
      */
     fun isRemovableStorage(path: String): Boolean {
         return storageDevices.any { device ->
-            device is StorageDevice.Physical &&
+            (device is StorageDevice.Physical &&
                     device.isSdCard &&
-                    path.startsWith(device.path)
+                    path.startsWith(device.path)) ||
+            (device is StorageDevice.DocumentTree &&
+                    (path == device.path || path.startsWith(device.path)))
         }
     }
 
     /** True if the user is currently browsing a removable storage path. */
     fun isCurrentPathRemovable(): Boolean = isRemovableStorage(currentPath)
+
+    /**
+     * Returns true if [path] belongs to a remote cloud storage account (e.g. Google Drive, OneDrive).
+     * Physical local storages (Internal, SD Card, USB/Pen drive) return false.
+     */
+    fun isCloudStorage(path: String): Boolean {
+        if (path.startsWith("onedrive://") || path.startsWith("gdrive://") ||
+            path.startsWith("dropbox://") || path.startsWith("mega://") ||
+            path.startsWith("webdav://") || path.startsWith("webdavs://")) {
+            return true
+        }
+        val treeDev = storageDevices.filterIsInstance<StorageDevice.DocumentTree>().firstOrNull { dev ->
+            path == dev.path || path.startsWith(dev.path)
+        }
+        if (treeDev != null) return treeDev.isCloud
+
+        if (!SafManager.isSafUri(path)) return false
+
+        val uri = try { Uri.parse(SafManager.normalizeSafPath(path)) } catch (e: Exception) { null }
+        val authority = uri?.authority ?: ""
+        return authority.isNotEmpty() &&
+                authority != "com.android.externalstorage.documents" &&
+                authority != "com.android.providers.media.documents" &&
+                authority != "com.android.providers.downloads.documents"
+    }
 
     // One-shot event: set to the ejected volume path when Android broadcasts
     // MEDIA_REMOVED / MEDIA_UNMOUNTED / MEDIA_EJECT. UI observes this to
@@ -3669,15 +3883,19 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val path = fileItem.file.absolutePath
             val fileName = offlineFileName(fileItem)
-            if (offlineFiles.contains(path)) {
+            if (isFileOffline(path)) {
                 // Remove from offline
                 val localFile = File(getApplication<Application>().getExternalFilesDir("offline"), fileName)
                 if (localFile.exists()) localFile.delete()
 
-                val updated = offlineFiles - path
+                val normalized = SafManager.normalizeSafPath(path)
+                val updated = offlineFiles.filterNot {
+                    it == path || it == normalized || SafManager.normalizeSafPath(it) == normalized
+                }.toSet()
                 withContext(Dispatchers.Main) {
                     offlineFiles = updated
                     settings.offlineFiles = updated
+                    files = files.toList()
                 }
             } else {
                 // Save as offline.
@@ -3702,7 +3920,14 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun isFileOffline(path: String): Boolean = offlineFiles.contains(path)
+    fun isFileOffline(path: String): Boolean {
+        if (offlineFiles.contains(path)) return true
+        val normalized = SafManager.normalizeSafPath(path)
+        if (offlineFiles.contains(normalized)) return true
+        if (path.startsWith("/") && offlineFiles.contains(path.removePrefix("/"))) return true
+        if (!path.startsWith("/") && offlineFiles.contains("/$path")) return true
+        return false
+    }
 
     fun getLocalOfflineFile(fileItem: FileItem): File? {
         if (!isFileOffline(fileItem.file.absolutePath)) return null

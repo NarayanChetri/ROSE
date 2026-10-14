@@ -103,6 +103,31 @@
     <string name="storage_drive_fallback">Drive</string>
     <string name="storage_google_drive">Google Drive</string>
     <string name="storage_external">External Storage</string>
+    <string name="storage_storages_and_drives">Storages &amp; Drives</string>
+    <string name="storage_add_cloud_or_network">Add Google Drive or Storage</string>
+    <string name="storage_sd_card">SD Card</string>
+    <string name="storage_usb_drive">USB / Pen Drive (OTG)</string>
+    <string name="storage_usb_placeholder_desc">SanDisk Ultra • 18.4 GB free of 32 GB</string>
+    <string name="storage_cloud_placeholder_desc">connected_account@gmail.com • 9.4 GB of 15 GB used</string>
+    <string name="storage_badge_sd">SD</string>
+    <string name="storage_badge_otg">OTG</string>
+    <string name="storage_badge_cloud">Cloud</string>
+    <string name="toast_storage_add_clicked">Add Cloud or Network Storage</string>
+    <string name="toast_storage_added">Storage added successfully</string>
+    <string name="toast_storage_removed">Storage removed</string>
+    <string name="storage_badge_custom">Drive</string>
+    <string name="storage_no_external_devices">No external drives connected</string>
+    <string name="storage_no_external_devices_hint">Connect a USB drive, SD card, or tap \"+\" to add storage</string>
+    <string name="dialog_remove_storage_title">Remove Storage</string>
+    <string name="dialog_remove_storage_message">Are you sure you want to remove \"%1$s\" from ROSE?</string>
+    <string name="action_save_offline">Save offline</string>
+    <string name="action_remove_offline">Remove offline</string>
+    <string name="toast_saving_offline">Downloading for offline access…</string>
+    <string name="toast_removed_from_offline">Removed from offline</string>
+    <string name="status_offline_available">Available offline</string>
+    <string name="toast_cloud_preview_clicked">Google Drive (Preview) — Cloud storage integration coming soon</string>
+    <string name="toast_usb_preview_clicked">USB Drive (OTG Preview) — Connect a physical OTG drive to browse</string>
+    <string name="toast_sd_preview_clicked">SD Card (Preview) — Insert an SD card to browse</string>
     <string name="storage_free_of_total">%1$s free of %2$s</string>
     <string name="storage_used">%1$s used</string>
     <string name="storage_used_of_total">used of %1$s</string>
@@ -197,7 +222,11 @@
     <string name="delete_total_size">Total size: %1$s</string>
     <string name="delete_permanently">Delete permanently</string>
     <string name="delete_permanently_title">Delete Permanently</string>
-    <string name="delete_permanently_confirm">Are you sure you want to delete \"%1$s\"? This cannot be undone.</string>
+    <string name="delete_folder_title">Delete Folder</string>
+    <string name="delete_one_item_title">Delete 1 item?</string>
+    <string name="delete_items_title">Delete %1$d items?</string>
+    <string name="delete_moved_to_bin_short">Will be moved to Recycle Bin.</string>
+    <string name="delete_cannot_be_undone_short">This can\'t be undone.</string>
     <string name="delete_permanently_bulk_confirm">Delete %1$d selected item(s) permanently?</string>
 
     <!-- Dialogs: Properties -->
@@ -502,4 +531,7 @@
     <string name="toast_root_enabled">Root access enabled</string>
     <string name="toast_root_disabled">Root access disabled</string>
     <string name="toast_root_not_available">Root access not available. Please grant superuser permissions.</string>
+
+    <string name="storage_gdrive">Google Drive</string>
+    <string name="storage_gdrive_subtitle">Connect your Google Drive account</string>
 </resources>

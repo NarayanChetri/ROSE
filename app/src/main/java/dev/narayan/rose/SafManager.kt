@@ -30,17 +30,44 @@ object SafManager {
     /** Document Uri (not tree) for the root - used only as the picker's starting location. */
     private val ROOT_DOCUMENT_URI: Uri = DocumentsContract.buildDocumentUri(AUTHORITY, DOC_ID_ROOT)
 
-    fun isSafUri(path: String): Boolean = path.startsWith("content://") || path.startsWith("content:/") || path.startsWith("/content:/")
+    fun isSafUri(path: String): Boolean =
+        path.startsWith("content://") || path.startsWith("content:/") || path.startsWith("/content:/") || path.contains("content:/")
 
-    private fun normalizeSafPath(path: String): String {
-        if (path.startsWith("/content:/")) {
-            return "content://" + path.removePrefix("/content:/").removePrefix("/")
+    fun normalizeSafPath(path: String): String {
+        val p = path.trim()
+        if (p.startsWith("/content:/")) {
+            return "content://" + p.removePrefix("/content:/").removePrefix("/")
         }
-        if (path.startsWith("content:/") && !path.startsWith("content://")) {
-            return "content://" + path.removePrefix("content:/")
+        if (p.startsWith("content:/") && !p.startsWith("content://")) {
+            return "content://" + p.removePrefix("content:/").removePrefix("/")
         }
-        return path
+        if (p.contains("content:/")) {
+            val after = p.substringAfter("content:/").removePrefix("/")
+            return "content://$after"
+        }
+        return p
     }
+
+    fun isCloudUri(path: String): Boolean {
+        val lower = path.lowercase().trim()
+        val schemes = listOf("mega", "onedrive", "gdrive", "dropbox", "smb", "ftp", "ftps", "sftp", "webdav", "webdavs")
+        if (schemes.any { lower.startsWith("$it://") || lower.startsWith("$it:/") }) {
+            return true
+        }
+        if (!isSafUri(path)) return false
+        val normalized = normalizeSafPath(path)
+        val uri = try { Uri.parse(normalized) } catch (e: Exception) { null }
+        val authority = uri?.authority ?: ""
+        return authority.contains("docs", ignoreCase = true) ||
+                authority.contains("cloud", ignoreCase = true) ||
+                authority.contains("onedrive", ignoreCase = true) ||
+                authority.contains("dropbox", ignoreCase = true) ||
+                (authority.isNotEmpty() &&
+                        authority != "com.android.externalstorage.documents" &&
+                        authority != "com.android.providers.media.documents" &&
+                        authority != "com.android.providers.downloads.documents")
+    }
+
 
     // ---------------------------------------------------------------------
     // Path classification
@@ -52,13 +79,20 @@ object SafManager {
     fun isRestrictedPath(path: String): Boolean {
         if (isSafUri(path)) return true
         val lowPath = try { File(path).canonicalPath.lowercase() } catch (e: Exception) { path.lowercase() }
-        
+
+        // The app's own internal/external files directory (inside Android/data/dev.narayan.rose)
+        // is never restricted to our own process!
+        if (lowPath.contains("/android/data/dev.narayan.rose") || lowPath.contains("/android/obb/dev.narayan.rose")) {
+            return false
+        }
+
         // Check for Android/data or Android/obb at the end of path or as a directory segment
         return lowPath.endsWith("/android/data") || lowPath.contains("/android/data/") ||
                 lowPath.endsWith("/android/obb") || lowPath.contains("/android/obb/")
     }
 
     fun normalizePath(path: String): String {
+        if (isSafUri(path) || path.contains("://")) return path
         var p = path.replace(Regex("/+"), "/")
         val primary = primaryStorage()
         if (p.startsWith("/sdcard")) {
@@ -191,7 +225,11 @@ object SafManager {
         if (isSafUri(path)) {
             val parsedUri = Uri.parse(normalizeSafPath(path))
             return try {
-                DocumentFile.fromTreeUri(context, parsedUri) ?: DocumentFile.fromSingleUri(context, parsedUri)
+                if (DocumentsContract.isDocumentUri(context, parsedUri)) {
+                    DocumentFile.fromSingleUri(context, parsedUri)
+                } else {
+                    DocumentFile.fromTreeUri(context, parsedUri) ?: DocumentFile.fromSingleUri(context, parsedUri)
+                }
             } catch (e: Exception) {
                 try {
                     DocumentFile.fromSingleUri(context, parsedUri)
@@ -243,7 +281,12 @@ object SafManager {
     fun exists(context: Context, path: String): Boolean {
         if (isSafUri(path)) {
             return try {
-                val doc = DocumentFile.fromSingleUri(context, Uri.parse(normalizeSafPath(path)))
+                val parsedUri = Uri.parse(normalizeSafPath(path))
+                val doc = if (DocumentsContract.isDocumentUri(context, parsedUri)) {
+                    DocumentFile.fromSingleUri(context, parsedUri)
+                } else {
+                    DocumentFile.fromTreeUri(context, parsedUri) ?: DocumentFile.fromSingleUri(context, parsedUri)
+                }
                 doc?.exists() == true
             } catch (e: Exception) {
                 false
@@ -253,11 +296,29 @@ object SafManager {
         return doc != null && doc.exists()
     }
 
-    fun isDirectory(context: Context, path: String): Boolean =
-        getDocumentFile(context, path)?.isDirectory == true
+    fun isDirectory(context: Context, path: String): Boolean {
+        if (isSafUri(path)) {
+            val parsedUri = Uri.parse(normalizeSafPath(path))
+            return try {
+                if (DocumentsContract.isDocumentUri(context, parsedUri)) {
+                    val doc = DocumentFile.fromSingleUri(context, parsedUri)
+                    doc?.isDirectory == true
+                } else {
+                    val doc = DocumentFile.fromTreeUri(context, parsedUri)
+                    doc?.isDirectory == true || DocumentsContract.isTreeUri(parsedUri)
+                }
+            } catch (e: Exception) {
+                false
+            }
+        }
+        return getDocumentFile(context, path)?.isDirectory == true
+    }
 
     /** Content Uri for a path, suitable for ACTION_VIEW / ACTION_SEND with FLAG_GRANT_READ_URI_PERMISSION. */
     fun getContentUri(context: Context, path: String): Uri? {
+        if (isSafUri(path)) {
+            return Uri.parse(normalizeSafPath(path))
+        }
         val doc = getDocumentFile(context, path)
         if (doc != null) return doc.uri
         val (rootDocId, relativePath) = splitAndroidSubRoot(path) ?: return null
@@ -349,58 +410,95 @@ object SafManager {
 
     fun listFilesByUri(context: Context, uri: Uri): List<FileItem> {
         val results = mutableListOf<FileItem>()
-        try {
-            val authority = uri.authority ?: return emptyList()
+        val authority = uri.authority ?: return emptyList()
 
-            // Extract the tree ID and document ID. Even if it's a subfolder, 
-            // we need the tree ID to list its children.
-            val treeId = try {
-                DocumentsContract.getTreeDocumentId(uri)
-            } catch (e: Exception) {
-                null
-            }
+        val treeId = try {
+            DocumentsContract.getTreeDocumentId(uri)
+        } catch (e: Exception) {
+            null
+        }
 
-            val documentId = try {
-                DocumentsContract.getDocumentId(uri)
-            } catch (e: Exception) {
-                treeId
-            }
+        val documentId = try {
+            DocumentsContract.getDocumentId(uri)
+        } catch (e: Exception) {
+            treeId
+        }
 
-            if (treeId == null || documentId == null) return emptyList()
+        val effectiveTreeId = treeId ?: documentId
+        val effectiveDocId = documentId ?: treeId
 
-            val treeUri = DocumentsContract.buildTreeDocumentUri(authority, treeId)
-            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
+        if (effectiveTreeId != null && effectiveDocId != null) {
+            try {
+                val treeUri = DocumentsContract.buildTreeDocumentUri(authority, effectiveTreeId)
+                val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, effectiveDocId)
 
-            context.contentResolver.query(childrenUri, null, null, null, null)?.use { c ->
-                val nameIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-                val mimeIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
-                val sizeIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
-                val lastModIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
-                val idIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                context.contentResolver.query(childrenUri, null, null, null, null)?.use { c ->
+                    val nameIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                    val mimeIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                    val sizeIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+                    val lastModIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                    val idIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
 
-                while (c.moveToNext()) {
-                    val name = c.getString(nameIdx) ?: continue
-                    val mime = c.getString(mimeIdx)
-                    val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
-                    val id = c.getString(idIdx)
+                    while (c.moveToNext()) {
+                        val name = if (nameIdx >= 0 && !c.isNull(nameIdx)) c.getString(nameIdx) else null
+                        if (name.isNullOrEmpty()) continue
+                        val mime = if (mimeIdx >= 0 && !c.isNull(mimeIdx)) c.getString(mimeIdx) else null
+                        val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
+                        val id = if (idIdx >= 0 && !c.isNull(idIdx)) c.getString(idIdx) else null ?: continue
 
-                    // Always build using the treeUri to maintain access permissions
-                    val childUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
+                        // Always build using the treeUri to maintain access permissions
+                        val childUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
+                        val size = if (sizeIdx >= 0 && !c.isNull(sizeIdx)) c.getLong(sizeIdx) else 0L
+                        val lastMod = if (lastModIdx >= 0 && !c.isNull(lastModIdx)) c.getLong(lastModIdx) else 0L
 
-                    results.add(
-                        FileItem(
-                            file = File(childUri.toString()),
-                            isDirectory = isDir,
-                            name = name,
-                            size = c.getLong(sizeIdx),
-                            lastModified = c.getLong(lastModIdx),
-                            extension = name.substringAfterLast('.', "").lowercase(),
-                            mimeType = mime
+                        results.add(
+                            FileItem(
+                                file = File(childUri.toString()),
+                                isDirectory = isDir,
+                                name = name,
+                                size = size,
+                                lastModified = lastMod,
+                                extension = name.substringAfterLast('.', "").lowercase(),
+                                mimeType = mime
+                            )
                         )
-                    )
+                    }
                 }
-            }
-        } catch (e: Exception) {}
+            } catch (e: Exception) {}
+        }
+
+        if (results.isEmpty()) {
+            try {
+                val doc = if (DocumentsContract.isTreeUri(uri)) {
+                    DocumentFile.fromTreeUri(context, uri)
+                } else if (effectiveTreeId != null && effectiveDocId != null) {
+                    val treeUri = DocumentsContract.buildTreeDocumentUri(authority, effectiveTreeId)
+                    val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, effectiveDocId)
+                    DocumentFile.fromTreeUri(context, docUri) ?: DocumentFile.fromSingleUri(context, docUri)
+                } else {
+                    DocumentFile.fromTreeUri(context, uri)
+                }
+                if (doc != null && doc.isDirectory) {
+                    doc.listFiles().forEach { child ->
+                        val name = child.name ?: ""
+                        if (name.isNotEmpty()) {
+                            results.add(
+                                FileItem(
+                                    file = File(child.uri.toString()),
+                                    isDirectory = child.isDirectory,
+                                    name = name,
+                                    size = child.length(),
+                                    lastModified = child.lastModified(),
+                                    extension = name.substringAfterLast('.', "").lowercase(),
+                                    mimeType = child.type
+                                )
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {}
+        }
+
         return results
     }
 
@@ -515,12 +613,13 @@ object SafManager {
      * when the DocumentFile wrapper hasn't resolved a length yet.
      */
     fun getReliableSize(context: Context, path: String): Long {
-        val doc = getDocumentFile(context, path) ?: return 0L
-        val fromDoc = doc.length()
+        val uri = if (isSafUri(path)) Uri.parse(normalizeSafPath(path)) else getContentUri(context, path) ?: return 0L
+        val doc = if (!isSafUri(path)) getDocumentFile(context, path) else null
+        val fromDoc = doc?.length() ?: 0L
         if (fromDoc > 0) return fromDoc
 
         return try {
-            context.contentResolver.query(doc.uri, arrayOf(DocumentsContract.Document.COLUMN_SIZE), null, null, null)?.use { c ->
+            context.contentResolver.query(uri, arrayOf(DocumentsContract.Document.COLUMN_SIZE), null, null, null)?.use { c ->
                 if (c.moveToFirst()) {
                     val idx = c.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
                     if (idx >= 0 && !c.isNull(idx)) c.getLong(idx) else 0L
@@ -640,9 +739,50 @@ object SafManager {
         }
     }
 
-    fun openInputStream(context: Context, path: String): InputStream? {
+    fun openInputStream(context: Context, path: String, signal: android.os.CancellationSignal? = null): InputStream? {
+        if (isSafUri(path)) {
+            val normalized = normalizeSafPath(path)
+            val uri = Uri.parse(normalized)
+            return try {
+                if (signal != null) {
+                    context.contentResolver.openFileDescriptor(uri, "r", signal)?.let {
+                        android.os.ParcelFileDescriptor.AutoCloseInputStream(it)
+                    } ?: context.contentResolver.openInputStream(uri)
+                } else {
+                    context.contentResolver.openInputStream(uri)
+                }
+            } catch (e: Exception) {
+                try {
+                    if (signal != null) {
+                        context.contentResolver.openAssetFileDescriptor(uri, "r", signal)?.createInputStream()
+                    } else {
+                        context.contentResolver.openAssetFileDescriptor(uri, "r")?.createInputStream()
+                    }
+                } catch (e2: Exception) {
+                    null
+                }
+            }
+        }
         val doc = getDocumentFile(context, path) ?: return null
-        return context.contentResolver.openInputStream(doc.uri)
+        return try {
+            if (signal != null) {
+                context.contentResolver.openFileDescriptor(doc.uri, "r", signal)?.let {
+                    android.os.ParcelFileDescriptor.AutoCloseInputStream(it)
+                } ?: context.contentResolver.openInputStream(doc.uri)
+            } else {
+                context.contentResolver.openInputStream(doc.uri)
+            }
+        } catch (e: Exception) {
+            try {
+                if (signal != null) {
+                    context.contentResolver.openAssetFileDescriptor(doc.uri, "r", signal)?.createInputStream()
+                } else {
+                    context.contentResolver.openAssetFileDescriptor(doc.uri, "r")?.createInputStream()
+                }
+            } catch (e2: Exception) {
+                null
+            }
+        }
     }
 
     fun openOutputStreamForNewFile(context: Context, path: String, mimeType: String? = null): OutputStream? {
