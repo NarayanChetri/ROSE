@@ -2856,6 +2856,12 @@ fun Breadcrumbs(
                                                 val totalStr = Formatter.formatFileSize(context, dev.totalBytes)
                                                 stringResource(R.string.storage_free_of_total, freeStr, totalStr)
                                             }
+                                            dev is StorageDevice.DocumentTree -> dev.providerName ?: if (dev.isCloud) {
+                                                stringResource(R.string.storage_cloud)
+                                            } else {
+                                                stringResource(R.string.storage_badge_custom)
+                                            }
+                                            SafManager.isSafUri(dev.path) -> dev.name
                                             else -> dev.path
                                         }
                                         Text(

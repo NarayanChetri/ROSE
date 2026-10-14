@@ -327,13 +327,21 @@ object FileOperationRunner {
                         job.currentFileName = type.source.displayName
                         onProgress(job)
                         JobManager.updateJob(job)
-                        copyRecursive(appContext, type.source.path, type.targetFile, job) {
+                        val success = copyRecursive(
+                            context = appContext,
+                            sourcePath = type.source.path,
+                            target = type.targetFile,
+                            job = job,
+                            knownIsDir = false,
+                            knownSize = if ((stats?.first ?: 0L) > 0L) stats?.first else null
+                        ) {
                             onProgress(it)
                             JobManager.updateJob(it)
                         }
-                        job.completedPaths.add(type.source.path)
-                        touchedPaths.add(type.targetFile.toString())
-                        job.processedItems++
+                        if (success) {
+                            job.completedPaths.add(type.source.path)
+                            touchedPaths.add(type.targetFile.toString())
+                        }
                     }
                     is FileJobType.Recycle -> {
                         type.sources.forEach { source ->
@@ -1316,51 +1324,53 @@ object FileOperationRunner {
             var destChannel: java.nio.channels.FileChannel? = null
             var destCloseable: java.io.Closeable? = null
 
-            try {
-                // Open source channel
-                if (sourceRestricted || SafManager.isSafUri(sourcePath)) {
-                    val pfd = SafManager.openFileDescriptor(context, sourcePath, "r")
-                    if (pfd != null) {
-                        val stream = android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd)
-                        srcCloseable = stream
-                        srcChannel = stream.channel
+            if (!SafManager.isSafUri(sourcePath) && !SafManager.isSafUri(targetPath)) {
+                try {
+                    // Open source channel
+                    if (sourceRestricted) {
+                        val pfd = SafManager.openFileDescriptor(context, sourcePath, "r")
+                        if (pfd != null) {
+                            val stream = android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd)
+                            srcCloseable = stream
+                            srcChannel = stream.channel
+                        }
+                    } else {
+                        val fis = java.io.FileInputStream(java.io.File(sourcePath))
+                        srcCloseable = fis
+                        srcChannel = fis.channel
                     }
-                } else {
-                    val fis = java.io.FileInputStream(java.io.File(sourcePath))
-                    srcCloseable = fis
-                    srcChannel = fis.channel
-                }
 
-                // Open dest channel
-                if (targetRestricted) {
-                    val pfd = SafManager.openFileDescriptorForNewFile(context, targetPath)
-                    if (pfd != null) {
-                        val stream = android.os.ParcelFileDescriptor.AutoCloseOutputStream(pfd)
-                        destCloseable = stream
-                        destChannel = stream.channel
+                    // Open dest channel
+                    if (targetRestricted) {
+                        val pfd = SafManager.openFileDescriptorForNewFile(context, targetPath)
+                        if (pfd != null) {
+                            val stream = android.os.ParcelFileDescriptor.AutoCloseOutputStream(pfd)
+                            destCloseable = stream
+                            destChannel = stream.channel
+                        }
+                    } else {
+                        target.parent?.let { if (!Files.exists(it)) Files.createDirectories(it) }
+                        val fos = java.io.FileOutputStream(target.toFile())
+                        destCloseable = fos
+                        destChannel = fos.channel
                     }
-                } else {
-                    target.parent?.let { if (!Files.exists(it)) Files.createDirectories(it) }
-                    val fos = java.io.FileOutputStream(target.toFile())
-                    destCloseable = fos
-                    destChannel = fos.channel
-                }
 
-                if (srcChannel != null && destChannel != null) {
-                    copyChannelWithProgress(srcChannel, destChannel, fileSize, job, onProgress)
-                    job?.let { it.processedItems++ }
-                    return true
+                    if (srcChannel != null && destChannel != null) {
+                        copyChannelWithProgress(srcChannel, destChannel, fileSize, job, onProgress)
+                        job?.let { it.processedItems++ }
+                        return true
+                    }
+                } catch (e: Exception) {
+                    lastException = e
+                    cleanTarget()
+                    if (JobManager.isCancelled(job?.id ?: "")) {
+                        throw java.io.InterruptedIOException("Cancelled")
+                    }
+                    // If channel copy failed, fall through to streaming fallback below
+                } finally {
+                    try { srcCloseable?.close() } catch (ignored: Exception) {}
+                    try { destCloseable?.close() } catch (ignored: Exception) {}
                 }
-            } catch (e: Exception) {
-                lastException = e
-                cleanTarget()
-                if (JobManager.isCancelled(job?.id ?: "")) {
-                    throw java.io.InterruptedIOException("Cancelled")
-                }
-                // If channel copy failed, fall through to streaming fallback below
-            } finally {
-                try { srcCloseable?.close() } catch (ignored: Exception) {}
-                try { destCloseable?.close() } catch (ignored: Exception) {}
             }
 
             // -- SAF / Root InputStream fallback --

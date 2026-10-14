@@ -30,16 +30,22 @@ object SafManager {
     /** Document Uri (not tree) for the root - used only as the picker's starting location. */
     private val ROOT_DOCUMENT_URI: Uri = DocumentsContract.buildDocumentUri(AUTHORITY, DOC_ID_ROOT)
 
-    fun isSafUri(path: String): Boolean = path.startsWith("content://") || path.startsWith("content:/") || path.startsWith("/content:/")
+    fun isSafUri(path: String): Boolean =
+        path.startsWith("content://") || path.startsWith("content:/") || path.startsWith("/content:/") || path.contains("content:/")
 
     fun normalizeSafPath(path: String): String {
-        if (path.startsWith("/content:/")) {
-            return "content://" + path.removePrefix("/content:/").removePrefix("/")
+        val p = path.trim()
+        if (p.startsWith("/content:/")) {
+            return "content://" + p.removePrefix("/content:/").removePrefix("/")
         }
-        if (path.startsWith("content:/") && !path.startsWith("content://")) {
-            return "content://" + path.removePrefix("content:/")
+        if (p.startsWith("content:/") && !p.startsWith("content://")) {
+            return "content://" + p.removePrefix("content:/").removePrefix("/")
         }
-        return path
+        if (p.contains("content:/")) {
+            val after = p.substringAfter("content:/").removePrefix("/")
+            return "content://$after"
+        }
+        return p
     }
 
     // ---------------------------------------------------------------------
@@ -52,7 +58,13 @@ object SafManager {
     fun isRestrictedPath(path: String): Boolean {
         if (isSafUri(path)) return true
         val lowPath = try { File(path).canonicalPath.lowercase() } catch (e: Exception) { path.lowercase() }
-        
+
+        // The app's own internal/external files directory (inside Android/data/dev.narayan.rose)
+        // is never restricted to our own process!
+        if (lowPath.contains("/android/data/dev.narayan.rose") || lowPath.contains("/android/obb/dev.narayan.rose")) {
+            return false
+        }
+
         // Check for Android/data or Android/obb at the end of path or as a directory segment
         return lowPath.endsWith("/android/data") || lowPath.contains("/android/data/") ||
                 lowPath.endsWith("/android/obb") || lowPath.contains("/android/obb/")
@@ -191,7 +203,11 @@ object SafManager {
         if (isSafUri(path)) {
             val parsedUri = Uri.parse(normalizeSafPath(path))
             return try {
-                DocumentFile.fromTreeUri(context, parsedUri) ?: DocumentFile.fromSingleUri(context, parsedUri)
+                if (DocumentsContract.isDocumentUri(context, parsedUri)) {
+                    DocumentFile.fromSingleUri(context, parsedUri)
+                } else {
+                    DocumentFile.fromTreeUri(context, parsedUri) ?: DocumentFile.fromSingleUri(context, parsedUri)
+                }
             } catch (e: Exception) {
                 try {
                     DocumentFile.fromSingleUri(context, parsedUri)
@@ -243,7 +259,12 @@ object SafManager {
     fun exists(context: Context, path: String): Boolean {
         if (isSafUri(path)) {
             return try {
-                val doc = DocumentFile.fromSingleUri(context, Uri.parse(normalizeSafPath(path)))
+                val parsedUri = Uri.parse(normalizeSafPath(path))
+                val doc = if (DocumentsContract.isDocumentUri(context, parsedUri)) {
+                    DocumentFile.fromSingleUri(context, parsedUri)
+                } else {
+                    DocumentFile.fromTreeUri(context, parsedUri) ?: DocumentFile.fromSingleUri(context, parsedUri)
+                }
                 doc?.exists() == true
             } catch (e: Exception) {
                 false
@@ -253,8 +274,23 @@ object SafManager {
         return doc != null && doc.exists()
     }
 
-    fun isDirectory(context: Context, path: String): Boolean =
-        getDocumentFile(context, path)?.isDirectory == true
+    fun isDirectory(context: Context, path: String): Boolean {
+        if (isSafUri(path)) {
+            val parsedUri = Uri.parse(normalizeSafPath(path))
+            return try {
+                if (DocumentsContract.isDocumentUri(context, parsedUri)) {
+                    val doc = DocumentFile.fromSingleUri(context, parsedUri)
+                    doc?.isDirectory == true
+                } else {
+                    val doc = DocumentFile.fromTreeUri(context, parsedUri)
+                    doc?.isDirectory == true || DocumentsContract.isTreeUri(parsedUri)
+                }
+            } catch (e: Exception) {
+                false
+            }
+        }
+        return getDocumentFile(context, path)?.isDirectory == true
+    }
 
     /** Content Uri for a path, suitable for ACTION_VIEW / ACTION_SEND with FLAG_GRANT_READ_URI_PERMISSION. */
     fun getContentUri(context: Context, path: String): Uri? {
@@ -683,14 +719,28 @@ object SafManager {
 
     fun openInputStream(context: Context, path: String): InputStream? {
         if (isSafUri(path)) {
+            val normalized = normalizeSafPath(path)
+            val uri = Uri.parse(normalized)
             return try {
-                context.contentResolver.openInputStream(Uri.parse(normalizeSafPath(path)))
+                context.contentResolver.openInputStream(uri)
             } catch (e: Exception) {
-                null
+                try {
+                    context.contentResolver.openAssetFileDescriptor(uri, "r")?.createInputStream()
+                } catch (e2: Exception) {
+                    null
+                }
             }
         }
         val doc = getDocumentFile(context, path) ?: return null
-        return context.contentResolver.openInputStream(doc.uri)
+        return try {
+            context.contentResolver.openInputStream(doc.uri)
+        } catch (e: Exception) {
+            try {
+                context.contentResolver.openAssetFileDescriptor(doc.uri, "r")?.createInputStream()
+            } catch (e2: Exception) {
+                null
+            }
+        }
     }
 
     fun openOutputStreamForNewFile(context: Context, path: String, mimeType: String? = null): OutputStream? {
