@@ -69,7 +69,8 @@ private data class HomeCategory(
     val type: FileType?,
     val icon: ImageVector,
     val color: Color,
-    val isFavourites: Boolean = false
+    val isFavourites: Boolean = false,
+    val isFtp: Boolean = false
 )
 
 private val page1Categories = listOf(
@@ -88,6 +89,13 @@ private val page2Categories = listOf(
         icon = Icons.Default.Favorite,
         color = Color(0xFFE11D48),
         isFavourites = true
+    ),
+    HomeCategory(
+        labelRes = R.string.category_ftp_server,
+        type = null,
+        icon = Icons.Default.WifiTethering,
+        color = Color(0xFF00897B),
+        isFtp = true
     )
 )
 
@@ -102,6 +110,7 @@ fun HomeScreen(
     onOpenCategory: (FileType, String) -> Unit,
     onOpenRecent: () -> Unit,
     onOpenFavourites: () -> Unit = {},
+    onOpenFtpServer: () -> Unit = {},
     onFileClick: (FileItem) -> Unit,
     onOpenWithClick: (FileItem) -> Unit,
     onShareClick: (FileItem) -> Unit,
@@ -564,6 +573,8 @@ fun HomeScreen(
                                 viewModel.hasRunCategoryCountAnimation = true
                                 if (category.isFavourites) {
                                     onOpenFavourites()
+                                } else if (category.isFtp) {
+                                    onOpenFtpServer()
                                 } else if (category.type != null) {
                                     onOpenCategory(category.type, context.getString(category.labelRes))
                                 }
@@ -1326,11 +1337,28 @@ private fun CategoryCard(
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(modifier = Modifier.height(1.dp))
-            val countText = if (count == null) "..." else animatedCount.toString()
+            val countText = if (category.isFtp) {
+                val ftpState by dev.narayan.rose.ftpserver.FtpServerService.state.collectAsState()
+                when (ftpState) {
+                    dev.narayan.rose.ftpserver.FtpServerState.RUNNING -> stringResource(R.string.ftp_server_state_summary_running)
+                    dev.narayan.rose.ftpserver.FtpServerState.STARTING -> stringResource(R.string.ftp_server_state_summary_starting)
+                    else -> stringResource(R.string.ftp_server_state_summary_stopped)
+                }
+            } else if (count == null) {
+                "..."
+            } else {
+                animatedCount.toString()
+            }
             Text(
                 countText,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (category.isFtp) {
+                    val ftpState by dev.narayan.rose.ftpserver.FtpServerService.state.collectAsState()
+                    if (ftpState == dev.narayan.rose.ftpserver.FtpServerState.RUNNING) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                fontWeight = if (category.isFtp) FontWeight.SemiBold else FontWeight.Normal
             )
         }
     }

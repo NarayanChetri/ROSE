@@ -89,6 +89,7 @@
     <string name="category_apks">APKs</string>
     <string name="category_files">Files</string>
     <string name="category_all_files">All Files</string>
+    <string name="category_ftp_server">FTP server</string>
     <string name="album_unknown">Unknown Album</string>
 
     <!-- Common Statuses -->
@@ -534,4 +535,39 @@
 
     <string name="storage_gdrive">Google Drive</string>
     <string name="storage_gdrive_subtitle">Connect your Google Drive account</string>
+
+    <!-- FTP Server -->
+    <string name="ftp_server_title">FTP server</string>
+    <string name="ftp_server_subtitle">Access phone files from PC over Wi-Fi</string>
+    <string name="ftp_server_state_title">Status</string>
+    <string name="ftp_server_state_summary_starting">Starting…</string>
+    <string name="ftp_server_state_summary_running">Running</string>
+    <string name="ftp_server_state_summary_stopping">Stopping…</string>
+    <string name="ftp_server_state_summary_stopped">Stopped</string>
+    <string name="ftp_server_url_title">FTP address</string>
+    <string name="ftp_server_url_hint">Enter this address in your PC file explorer</string>
+    <string name="ftp_server_url_summary_no_local_inet_address">Not connected to Wi-Fi or Hotspot</string>
+    <string name="ftp_server_url_menu_copy_url">Copy address</string>
+    <string name="ftp_server_url_copied">Address copied to clipboard</string>
+    <string name="ftp_server_password_copied">Password copied to clipboard</string>
+    <string name="ftp_server_configuration_title">Server Configuration</string>
+    <string name="ftp_server_anonymous_login_title">Anonymous login</string>
+    <string name="ftp_server_anonymous_login_summary">Allow connection without username or password</string>
+    <string name="ftp_server_username_title">Username</string>
+    <string name="ftp_server_password_title">Password</string>
+    <string name="ftp_server_port_title">Port</string>
+    <string name="ftp_server_home_directory_title">Root directory</string>
+    <string name="ftp_server_home_directory_select">Select root folder</string>
+    <string name="ftp_server_writable_title">Allow write access</string>
+    <string name="ftp_server_writable_summary">Allow PC to upload, edit, rename, and delete files</string>
+    <string name="ftp_server_add_tile_title">Add Quick Settings tile</string>
+    <string name="ftp_server_add_tile_summary">Add a tile to quickly start and stop the FTP server</string>
+    <string name="ftp_server_notification_channel_name">FTP Server</string>
+    <string name="ftp_server_notification_channel_description">Shows active FTP server address and controls</string>
+    <string name="ftp_server_notification_stop">Stop</string>
+    <string name="ftp_server_how_to_connect_title">How to connect from PC</string>
+    <string name="ftp_server_how_to_connect_win">Windows: Open File Explorer, type the FTP address above into the address bar, and press Enter.</string>
+    <string name="ftp_server_how_to_connect_mac">macOS: In Finder, press Cmd+K, paste the FTP address, and click Connect.</string>
+    <string name="ftp_server_how_to_connect_linux">Linux: Open Files (Nautilus) → Other Locations → Connect to Server.</string>
+    <string name="ftp_server_how_to_connect_note">Ensure both your phone and PC are connected to the same Wi-Fi network or Mobile Hotspot.</string>
 </resources>

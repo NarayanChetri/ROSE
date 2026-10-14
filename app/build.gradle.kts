@@ -30,7 +30,7 @@ android {
 
     splits {
         abi {
-            isEnable = true
+            isEnable = false
             reset()
             include("arm64-v8a", "armeabi-v7a", "x86_64")
             isUniversalApk = true
@@ -43,6 +43,8 @@ android {
             excludes += "**/kotlin/**"
             excludes += "**/io.netty.versions.properties"
             excludes += "/*.txt"
+            excludes += "/META-INF/DEPENDENCIES"
+            excludes += "/META-INF/INDEX.LIST"
         }
     }
 
@@ -124,6 +126,9 @@ dependencies {
     implementation(libs.commonmark.ext.gfm.strikethrough)
     implementation(libs.commonmark.ext.autolink)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.ftpserver.core)
+    implementation(libs.mina.core)
+    implementation(libs.slf4j.android)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

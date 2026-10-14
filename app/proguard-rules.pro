@@ -13,3 +13,10 @@
 -keep class rikka.shizuku.** { *; }
 -keep class dev.narayan.rose.shizuku.** { *; }
 -keep class dev.narayan.rose.RestrictedFileProvider { *; }
+
+# Apache FtpServer
+-keepclassmembers class * implements org.apache.mina.core.service.IoProcessor {
+    public <init>(java.util.concurrent.ExecutorService);
+    public <init>(java.util.concurrent.Executor);
+    public <init>();
+}
