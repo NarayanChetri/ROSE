@@ -199,6 +199,14 @@ fun SettingsScreen(
             SettingsSection(title = stringResource(R.string.settings_section_home_screen), icon = Icons.Default.Home) {
                 SettingsGroup {
                     SettingsSwitchRow(
+                        icon = Icons.Default.Schedule,
+                        title = stringResource(R.string.settings_show_recent_files),
+                        subtitle = stringResource(R.string.settings_show_recent_files_subtitle),
+                        checked = viewModel.showRecentFiles,
+                        onCheckedChange = { viewModel.setShowRecentFiles(it) }
+                    )
+                    SettingsDivider()
+                    SettingsSwitchRow(
                         icon = Icons.Default.Bolt,
                         title = stringResource(R.string.settings_show_quick_access),
                         subtitle = stringResource(R.string.settings_show_quick_access_subtitle),

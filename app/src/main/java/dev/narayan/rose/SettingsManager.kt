@@ -188,6 +188,10 @@ class SettingsManager(context: Context) {
         get() = prefs.getStringSet(KEY_OFFLINE_FILES, emptySet()) ?: emptySet()
         set(value) = prefs.edit { putStringSet(KEY_OFFLINE_FILES, value) }
 
+    var showRecentFiles: Boolean
+        get() = prefs.getBoolean(KEY_SHOW_RECENT_FILES, true)
+        set(value) = prefs.edit { putBoolean(KEY_SHOW_RECENT_FILES, value) }
+
     var showQuickAccess: Boolean
         get() = prefs.getBoolean(KEY_SHOW_QUICK_ACCESS, true)
         set(value) = prefs.edit { putBoolean(KEY_SHOW_QUICK_ACCESS, value) }
@@ -195,6 +199,10 @@ class SettingsManager(context: Context) {
     var showExternalStorage: Boolean
         get() = prefs.getBoolean(KEY_SHOW_EXTERNAL_STORAGE, true)
         set(value) = prefs.edit { putBoolean(KEY_SHOW_EXTERNAL_STORAGE, value) }
+
+    var recentFilesExpanded: Boolean
+        get() = prefs.getBoolean(KEY_RECENT_FILES_EXPANDED, true)
+        set(value) = prefs.edit { putBoolean(KEY_RECENT_FILES_EXPANDED, value) }
 
     var quickAccessExpanded: Boolean
         get() = prefs.getBoolean(KEY_QUICK_ACCESS_EXPANDED, true)
@@ -262,8 +270,10 @@ class SettingsManager(context: Context) {
         private const val KEY_RECENT_FILES_LIMIT = "recent_files_limit"
         private const val KEY_EXCLUDED_FOLDERS = "excluded_folders"
         private const val KEY_NOTIFICATION_PRIMER_SHOWN = "notification_primer_shown"
+        private const val KEY_SHOW_RECENT_FILES = "show_recent_files"
         private const val KEY_SHOW_QUICK_ACCESS = "show_quick_access"
         private const val KEY_SHOW_EXTERNAL_STORAGE = "show_external_storage"
+        private const val KEY_RECENT_FILES_EXPANDED = "recent_files_expanded"
         private const val KEY_QUICK_ACCESS_EXPANDED = "quick_access_expanded"
         private const val KEY_EXTERNAL_STORAGE_EXPANDED = "external_storage_expanded"
         private const val QUICK_ACCESS_DELIMITER = "|::|"

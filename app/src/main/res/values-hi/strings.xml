@@ -255,6 +255,8 @@
     <string name="settings_use_recycle_bin">रीसायकल बिन का उपयोग करें</string>
     <string name="settings_use_recycle_bin_subtitle">हटाई गई फ़ाइलें रीसायकल बिन में भेजी जाती हैं और 30 दिनों तक रखी जाती हैं</string>
     <string name="settings_section_home_screen">होम स्क्रीन</string>
+    <string name="settings_show_recent_files">हाल की फ़ाइलें दिखाएं</string>
+    <string name="settings_show_recent_files_subtitle">मुख्य पृष्ठ पर हाल की फ़ाइलों का अनुभाग दिखाएं</string>
     <string name="settings_show_quick_access">त्वरित एक्सेस दिखाएं</string>
     <string name="settings_show_quick_access_subtitle">मुख्य पृष्ठ पर त्वरित एक्सेस अनुभाग दिखाएं</string>
     <string name="settings_section_storage">स्टोरेज</string>

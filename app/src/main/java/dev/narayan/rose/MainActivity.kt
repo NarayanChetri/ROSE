@@ -27,15 +27,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NotificationsActive
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -819,14 +818,14 @@ class MainActivity : ComponentActivity() {
                                                                         verticalArrangement = Arrangement.Center
                                                                     ) {
                                                                         Icon(
-                                                                            imageVector = if (isFilesSelected) Icons.Filled.Folder else Icons.Outlined.Folder,
-                                                                            contentDescription = stringResource(R.string.nav_files),
+                                                                            painter = painterResource(R.drawable.ic_nav_home_minimal),
+                                                                            contentDescription = stringResource(R.string.nav_home),
                                                                             tint = if (isFilesSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                                                             modifier = Modifier.size(22.dp)
                                                                         )
                                                                         Spacer(modifier = Modifier.height(3.dp))
                                                                         Text(
-                                                                            text = stringResource(R.string.nav_files),
+                                                                            text = stringResource(R.string.nav_home),
                                                                             style = MaterialTheme.typography.labelSmall,
                                                                             fontWeight = if (isFilesSelected) FontWeight.SemiBold else FontWeight.Normal,
                                                                             color = if (isFilesSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant

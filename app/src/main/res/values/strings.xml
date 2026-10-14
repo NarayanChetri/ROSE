@@ -125,7 +125,8 @@
     <string name="empty_favourite_files">No favourite files</string>
     <string name="empty_favourite_files_subtitle">Tap the 3-dot menu or long-press on any file to add it to favourites</string>
     <string name="nav_recent">Recent</string>
-    <string name="nav_files">Files</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_files">Home</string>
     <string name="recycle_bin_empty">Trash empty</string>
     <string name="recent_files_empty">No recent files</string>
     <string name="quick_access_empty">No quick access folders added yet</string>
@@ -289,6 +290,8 @@
     <string name="settings_use_recycle_bin">Use Recycle Bin</string>
     <string name="settings_use_recycle_bin_subtitle">Deleted files are moved to Recycle Bin and kept for 30 days</string>
     <string name="settings_section_home_screen">Home Screen</string>
+    <string name="settings_show_recent_files">Show Recent Files</string>
+    <string name="settings_show_recent_files_subtitle">Show the Recent Files section on the landing page</string>
     <string name="settings_show_quick_access">Show Quick Access</string>
     <string name="settings_show_quick_access_subtitle">Show the Quick Access section on the landing page</string>
     <string name="settings_section_storage">Storage</string>

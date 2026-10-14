@@ -341,11 +341,17 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         settings.notificationPrimerShown = true
     }
 
+    private val _showRecentFiles = mutableStateOf(settings.showRecentFiles)
+    val showRecentFiles: Boolean by _showRecentFiles
+
     private val _showQuickAccess = mutableStateOf(settings.showQuickAccess)
     val showQuickAccess: Boolean by _showQuickAccess
 
     private val _showExternalStorage = mutableStateOf(settings.showExternalStorage)
     val showExternalStorage: Boolean by _showExternalStorage
+
+    private var _recentFilesExpanded = mutableStateOf(settings.recentFilesExpanded)
+    val recentFilesExpanded: Boolean by _recentFilesExpanded
 
     private var _quickAccessExpanded = mutableStateOf(settings.quickAccessExpanded)
     val quickAccessExpanded: Boolean by _quickAccessExpanded
@@ -1465,6 +1471,11 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         settings.useRecycleBin = enabled
     }
 
+    fun setShowRecentFiles(enabled: Boolean) {
+        _showRecentFiles.value = enabled
+        settings.showRecentFiles = enabled
+    }
+
     fun setShowQuickAccess(enabled: Boolean) {
         _showQuickAccess.value = enabled
         settings.showQuickAccess = enabled
@@ -1473,6 +1484,11 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     fun setShowExternalStorage(enabled: Boolean) {
         _showExternalStorage.value = enabled
         settings.showExternalStorage = enabled
+    }
+
+    fun setRecentFilesExpanded(expanded: Boolean) {
+        _recentFilesExpanded.value = expanded
+        settings.recentFilesExpanded = expanded
     }
 
     fun setQuickAccessExpanded(expanded: Boolean) {
