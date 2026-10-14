@@ -3748,6 +3748,26 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     /** True if the user is currently browsing a removable storage path. */
     fun isCurrentPathRemovable(): Boolean = isRemovableStorage(currentPath)
 
+    /**
+     * Returns true if [path] belongs to a remote cloud storage account (e.g. Google Drive, OneDrive).
+     * Physical local storages (Internal, SD Card, USB/Pen drive) return false.
+     */
+    fun isCloudStorage(path: String): Boolean {
+        if (!SafManager.isSafUri(path)) return false
+
+        val treeDev = storageDevices.filterIsInstance<StorageDevice.DocumentTree>().firstOrNull { dev ->
+            path == dev.path || path.startsWith(dev.path)
+        }
+        if (treeDev != null) return treeDev.isCloud
+
+        val uri = try { Uri.parse(SafManager.normalizeSafPath(path)) } catch (e: Exception) { null }
+        val authority = uri?.authority ?: ""
+        return authority.isNotEmpty() &&
+                authority != "com.android.externalstorage.documents" &&
+                authority != "com.android.providers.media.documents" &&
+                authority != "com.android.providers.downloads.documents"
+    }
+
     // One-shot event: set to the ejected volume path when Android broadcasts
     // MEDIA_REMOVED / MEDIA_UNMOUNTED / MEDIA_EJECT. UI observes this to
     // navigate away and show a Snackbar, then calls clearStorageRemovedEvent().

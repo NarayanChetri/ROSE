@@ -3166,10 +3166,7 @@ fun SelectionBottomBar(
                                         )
                                     }
                                     val savableOfflineFiles = fileOnlySelected.filter {
-                                        it.fileType == FileType.VIDEO ||
-                                                viewModel.isRemovableStorage(it.file.absolutePath) ||
-                                                SafManager.isSafUri(it.file.absolutePath) ||
-                                                (it.file.absolutePath.startsWith("/storage/") && !it.file.absolutePath.startsWith(Environment.getExternalStorageDirectory().absolutePath))
+                                        !it.isDirectory && viewModel.isCloudStorage(it.file.absolutePath)
                                     }
                                     if (savableOfflineFiles.isNotEmpty() && viewModel.currentZipFile == null) {
                                         val allOffline = savableOfflineFiles.all { viewModel.isFileOffline(it.file.absolutePath) }
@@ -3741,11 +3738,8 @@ fun FileListItem(
                                     }
                                 )
                             }
-                            val isVideo = fileItem.fileType == FileType.VIDEO
-                            val isExternal = viewModel?.isRemovableStorage(fileItem.file.absolutePath) == true ||
-                                    SafManager.isSafUri(fileItem.file.absolutePath) ||
-                                    (fileItem.file.absolutePath.startsWith("/storage/") && !fileItem.file.absolutePath.startsWith(Environment.getExternalStorageDirectory().absolutePath))
-                            val canSaveOffline = !isVirtual && !fileItem.isDirectory && viewModel?.currentZipFile == null && (isVideo || isExternal)
+                            val isCloud = viewModel?.isCloudStorage(fileItem.file.absolutePath) == true
+                            val canSaveOffline = !isVirtual && !fileItem.isDirectory && viewModel?.currentZipFile == null && isCloud
                             if (canSaveOffline && viewModel != null) {
                                 val isOffline = viewModel.isFileOffline(fileItem.file.absolutePath)
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
