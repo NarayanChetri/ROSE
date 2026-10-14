@@ -32,7 +32,7 @@ object SafManager {
 
     fun isSafUri(path: String): Boolean = path.startsWith("content://") || path.startsWith("content:/") || path.startsWith("/content:/")
 
-    private fun normalizeSafPath(path: String): String {
+    fun normalizeSafPath(path: String): String {
         if (path.startsWith("/content:/")) {
             return "content://" + path.removePrefix("/content:/").removePrefix("/")
         }
@@ -258,6 +258,9 @@ object SafManager {
 
     /** Content Uri for a path, suitable for ACTION_VIEW / ACTION_SEND with FLAG_GRANT_READ_URI_PERMISSION. */
     fun getContentUri(context: Context, path: String): Uri? {
+        if (isSafUri(path)) {
+            return Uri.parse(normalizeSafPath(path))
+        }
         val doc = getDocumentFile(context, path)
         if (doc != null) return doc.uri
         val (rootDocId, relativePath) = splitAndroidSubRoot(path) ?: return null
@@ -401,6 +404,31 @@ object SafManager {
                 }
             }
         } catch (e: Exception) {}
+
+        if (results.isEmpty()) {
+            try {
+                val doc = if (DocumentsContract.isDocumentUri(context, uri)) {
+                    DocumentFile.fromSingleUri(context, uri)
+                } else {
+                    DocumentFile.fromTreeUri(context, uri)
+                }
+                doc?.listFiles()?.forEach { child ->
+                    val name = child.name ?: ""
+                    results.add(
+                        FileItem(
+                            file = File(child.uri.toString()),
+                            isDirectory = child.isDirectory,
+                            name = name,
+                            size = child.length(),
+                            lastModified = child.lastModified(),
+                            extension = name.substringAfterLast('.', "").lowercase(),
+                            mimeType = child.type
+                        )
+                    )
+                }
+            } catch (e: Exception) {}
+        }
+
         return results
     }
 
@@ -515,12 +543,13 @@ object SafManager {
      * when the DocumentFile wrapper hasn't resolved a length yet.
      */
     fun getReliableSize(context: Context, path: String): Long {
-        val doc = getDocumentFile(context, path) ?: return 0L
-        val fromDoc = doc.length()
+        val uri = if (isSafUri(path)) Uri.parse(normalizeSafPath(path)) else getContentUri(context, path) ?: return 0L
+        val doc = if (!isSafUri(path)) getDocumentFile(context, path) else null
+        val fromDoc = doc?.length() ?: 0L
         if (fromDoc > 0) return fromDoc
 
         return try {
-            context.contentResolver.query(doc.uri, arrayOf(DocumentsContract.Document.COLUMN_SIZE), null, null, null)?.use { c ->
+            context.contentResolver.query(uri, arrayOf(DocumentsContract.Document.COLUMN_SIZE), null, null, null)?.use { c ->
                 if (c.moveToFirst()) {
                     val idx = c.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
                     if (idx >= 0 && !c.isNull(idx)) c.getLong(idx) else 0L
@@ -641,6 +670,13 @@ object SafManager {
     }
 
     fun openInputStream(context: Context, path: String): InputStream? {
+        if (isSafUri(path)) {
+            return try {
+                context.contentResolver.openInputStream(Uri.parse(normalizeSafPath(path)))
+            } catch (e: Exception) {
+                null
+            }
+        }
         val doc = getDocumentFile(context, path) ?: return null
         return context.contentResolver.openInputStream(doc.uri)
     }

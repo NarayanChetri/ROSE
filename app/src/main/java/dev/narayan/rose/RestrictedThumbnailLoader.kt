@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 import java.io.File
+import android.net.Uri
 
 /**
  * Loads thumbnails for images and videos located in restricted directories (Android/data, Android/obb)
@@ -59,6 +60,16 @@ object RestrictedThumbnailLoader {
     }
 
     private fun loadImageThumbnail(context: Context, path: String): Bitmap? {
+        if (SafManager.isSafUri(path)) {
+            try {
+                val uri = Uri.parse(SafManager.normalizeSafPath(path))
+                val thumb = android.provider.DocumentsContract.getDocumentThumbnail(
+                    context.contentResolver, uri, android.graphics.Point(TARGET_SIZE, TARGET_SIZE), null
+                )
+                if (thumb != null) return scaleBitmap(thumb, TARGET_SIZE, TARGET_SIZE)
+            } catch (e: Throwable) {}
+        }
+
         // Priority 1: SAF input stream if permission is present
         if (SafManager.hasPermission(context, path)) {
             val uri = SafManager.getContentUri(context, path)
@@ -106,6 +117,16 @@ object RestrictedThumbnailLoader {
     }
 
     private fun loadVideoThumbnail(context: Context, path: String): Bitmap? {
+        if (SafManager.isSafUri(path)) {
+            try {
+                val uri = Uri.parse(SafManager.normalizeSafPath(path))
+                val thumb = android.provider.DocumentsContract.getDocumentThumbnail(
+                    context.contentResolver, uri, android.graphics.Point(TARGET_SIZE, TARGET_SIZE), null
+                )
+                if (thumb != null) return scaleBitmap(thumb, TARGET_SIZE, TARGET_SIZE)
+            } catch (e: Throwable) {}
+        }
+
         val retriever = MediaMetadataRetriever()
         var tempFile: File? = null
         try {
@@ -117,6 +138,7 @@ object RestrictedThumbnailLoader {
                         context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
                             retriever.setDataSource(pfd.fileDescriptor)
                             val frame = retriever.getFrameAtTime(1000000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                                ?: retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                                 ?: retriever.frameAtTime
                             if (frame != null) {
                                 return scaleBitmap(frame, TARGET_SIZE, TARGET_SIZE)
@@ -124,6 +146,35 @@ object RestrictedThumbnailLoader {
                         }
                     } catch (e: Throwable) {
                         Log.w(TAG, "SAF video thumbnail failed for $path", e)
+                    }
+
+                    // Fallback for SAF without direct file descriptor support: stream header
+                    try {
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            tempFile = File.createTempFile("thumb_vid_saf_", ".tmp", context.cacheDir)
+                            tempFile!!.outputStream().use { output ->
+                                val buffer = ByteArray(16384)
+                                var total = 0
+                                val limit = 4 * 1024 * 1024 // Read first 4MB
+                                while (total < limit) {
+                                    val read = input.read(buffer)
+                                    if (read == -1) break
+                                    output.write(buffer, 0, read)
+                                    total += read
+                                }
+                            }
+                            if (tempFile!!.exists() && tempFile!!.length() > 0) {
+                                retriever.setDataSource(tempFile!!.absolutePath)
+                                val frame = retriever.getFrameAtTime(1000000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                                    ?: retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                                    ?: retriever.frameAtTime
+                                if (frame != null) {
+                                    return scaleBitmap(frame, TARGET_SIZE, TARGET_SIZE)
+                                }
+                            }
+                        }
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "SAF video stream thumbnail failed for $path", e)
                     }
                 }
             }
@@ -136,6 +187,7 @@ object RestrictedThumbnailLoader {
                         pfd.use {
                             retriever.setDataSource(it.fileDescriptor)
                             val frame = retriever.getFrameAtTime(1000000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                                ?: retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                                 ?: retriever.frameAtTime
                             if (frame != null) {
                                 return scaleBitmap(frame, TARGET_SIZE, TARGET_SIZE)
@@ -150,13 +202,14 @@ object RestrictedThumbnailLoader {
                 val clean = ShizukuManager.normalize(path)
                 val escaped = ShizukuManager.shellEscape(clean)
                 tempFile = File.createTempFile("thumb_vid_", ".tmp", context.cacheDir)
-                val escapedTemp = ShizukuManager.shellEscape(tempFile.absolutePath)
+                val escapedTemp = ShizukuManager.shellEscape(tempFile!!.absolutePath)
                 val proc = ShizukuManager.newProcess(arrayOf("sh", "-c", "head -c 8388608 $escaped > $escapedTemp"), null, null)
                 proc.waitFor()
 
-                if (tempFile.exists() && tempFile.length() > 0) {
-                    retriever.setDataSource(tempFile.absolutePath)
+                if (tempFile!!.exists() && tempFile!!.length() > 0) {
+                    retriever.setDataSource(tempFile!!.absolutePath)
                     val frame = retriever.getFrameAtTime(1000000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                        ?: retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                         ?: retriever.frameAtTime
                     if (frame != null) {
                         return scaleBitmap(frame, TARGET_SIZE, TARGET_SIZE)

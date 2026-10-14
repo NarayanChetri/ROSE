@@ -2607,15 +2607,22 @@ fun Breadcrumbs(
     val isInternal = path == internalRootPath || path.startsWith("$internalRootPath/")
     val isRootBrowsing = !isInternal && (path == "/" || dev.narayan.rose.RootManager.isRootPath(path))
 
+    val isSaf = SafManager.isSafUri(path)
+    val knownTreeDevice = if (!isInternal && !isRootBrowsing) {
+        storageDevices.filterIsInstance<StorageDevice.DocumentTree>().firstOrNull { dev ->
+            path == dev.path || path.startsWith(dev.path)
+        }
+    } else null
+
     // Match physical device from storageDevices list (e.g. SD Card, USB OTG drive)
-    val knownPhysicalDevice = if (!isInternal && !isRootBrowsing) {
+    val knownPhysicalDevice = if (!isInternal && !isRootBrowsing && knownTreeDevice == null) {
         storageDevices.filterIsInstance<StorageDevice.Physical>().firstOrNull { dev ->
             dev.isSdCard && (path == dev.path || path.startsWith("${dev.path}/"))
         }
     } else null
 
     // Fallback: If storageDevices hasn't loaded yet or volume wasn't enumerated, detect /storage/<volume-id>
-    val storageVolumeRoot = if (!isInternal && !isRootBrowsing && knownPhysicalDevice == null && path.startsWith("/storage/")) {
+    val storageVolumeRoot = if (!isInternal && !isRootBrowsing && knownTreeDevice == null && knownPhysicalDevice == null && path.startsWith("/storage/")) {
         val segment = path.removePrefix("/storage/").substringBefore('/')
         if (segment.isNotEmpty() && segment != "emulated" && segment != "self") {
             "/storage/$segment"
@@ -2625,16 +2632,23 @@ fun Breadcrumbs(
     val (activeStorageRootPath, activeStorageLabel) = when {
         isInternal -> internalRootPath to internalStorageLabel
         isRootBrowsing -> "/" to rootLabel
+        knownTreeDevice != null -> knownTreeDevice.path to knownTreeDevice.name
         knownPhysicalDevice != null -> knownPhysicalDevice.path to knownPhysicalDevice.name
         storageVolumeRoot != null -> storageVolumeRoot to File(storageVolumeRoot).name
+        isSaf -> path to (Uri.parse(path).lastPathSegment ?: "Drive")
         else -> "" to ""
     }
 
     val relativePath = when {
         isInternal -> internalStorageLabel + path.removePrefix(internalRootPath)
         isRootBrowsing -> if (path == "/") rootLabel else "$rootLabel$path"
+        knownTreeDevice != null -> {
+            if (path == knownTreeDevice.path) knownTreeDevice.name
+            else "${knownTreeDevice.name}/${path.removePrefix(knownTreeDevice.path).trimStart('/')}"
+        }
         knownPhysicalDevice != null -> activeStorageLabel + path.removePrefix(knownPhysicalDevice.path)
         storageVolumeRoot != null -> activeStorageLabel + path.removePrefix(storageVolumeRoot)
+        isSaf -> activeStorageLabel
         else -> path
     }
 
@@ -2690,6 +2704,7 @@ fun Breadcrumbs(
                         storageDevices.forEachIndexed { devIndex, dev ->
                             val isCurrent = when (dev) {
                                 is StorageDevice.Root -> isRootBrowsing
+                                is StorageDevice.DocumentTree -> path == dev.path || path.startsWith(dev.path)
                                 is StorageDevice.Physical -> {
                                     if (dev.isSdCard) {
                                         path == dev.path || path.startsWith("${dev.path}/") ||
@@ -2701,15 +2716,26 @@ fun Breadcrumbs(
                             }
                             val isRootDev = dev is StorageDevice.Root
                             val isSd = dev is StorageDevice.Physical && dev.isSdCard
+                            val isUsb = dev is StorageDevice.Physical && dev.isUsb
+                            val isDocTree = dev is StorageDevice.DocumentTree
                             val devIcon = when {
                                 isRootDev -> Icons.Default.Tag
+                                isUsb -> Icons.Default.Usb
                                 isSd -> Icons.Default.SdCard
+                                isDocTree -> if (dev.isCloud) Icons.Default.Cloud else Icons.Default.Storage
                                 else -> Icons.Default.PhoneAndroid
                             }
-                            val devColor = if (isRootDev) Color(0xFFF59E0B) else MaterialTheme.colorScheme.primary
+                            val devColor = when {
+                                isRootDev -> Color(0xFFF59E0B)
+                                isUsb -> Color(0xFF0D9488)
+                                isSd -> Color(0xFF3B82F6)
+                                isDocTree -> if (dev.isCloud) Color(0xFF4285F4) else Color(0xFF8B5CF6)
+                                else -> MaterialTheme.colorScheme.primary
+                            }
                             val devDisplayName = when {
                                 isRootDev -> stringResource(R.string.storage_root)
-                                isSd -> dev.name
+                                isSd || isUsb -> dev.name
+                                isDocTree -> dev.name
                                 else -> stringResource(R.string.breadcrumbs_internal_storage)
                             }
 
@@ -3054,6 +3080,42 @@ fun SelectionBottomBar(
                                                     if (allFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                                                     null,
                                                     tint = Color(0xFFE11D48)
+                                                )
+                                            }
+                                        )
+                                    }
+                                    val savableOfflineFiles = fileOnlySelected.filter {
+                                        it.fileType == FileType.VIDEO ||
+                                                viewModel.isRemovableStorage(it.file.absolutePath) ||
+                                                SafManager.isSafUri(it.file.absolutePath) ||
+                                                (it.file.absolutePath.startsWith("/storage/") && !it.file.absolutePath.startsWith(Environment.getExternalStorageDirectory().absolutePath))
+                                    }
+                                    if (savableOfflineFiles.isNotEmpty() && viewModel.currentZipFile == null) {
+                                        val allOffline = savableOfflineFiles.all { viewModel.isFileOffline(it.file.absolutePath) }
+                                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    if (allOffline) stringResource(R.string.action_remove_offline)
+                                                    else stringResource(R.string.action_save_offline)
+                                                )
+                                            },
+                                            onClick = {
+                                                savableOfflineFiles.forEach { viewModel.toggleOfflineStatus(it) }
+                                                val msg = if (allOffline) {
+                                                    context.getString(R.string.toast_removed_from_offline)
+                                                } else {
+                                                    context.getString(R.string.toast_saving_offline)
+                                                }
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                viewModel.exitSelectionMode()
+                                                showMoreMenu = false
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    if (allOffline) Icons.Default.CloudDone else Icons.Default.Download,
+                                                    null,
+                                                    tint = if (allOffline) Color(0xFF10B981) else MaterialTheme.colorScheme.primary
                                                 )
                                             }
                                         )
@@ -3598,6 +3660,40 @@ fun FileListItem(
                                     }
                                 )
                             }
+                            val isVideo = fileItem.fileType == FileType.VIDEO
+                            val isExternal = viewModel?.isRemovableStorage(fileItem.file.absolutePath) == true ||
+                                    SafManager.isSafUri(fileItem.file.absolutePath) ||
+                                    (fileItem.file.absolutePath.startsWith("/storage/") && !fileItem.file.absolutePath.startsWith(Environment.getExternalStorageDirectory().absolutePath))
+                            val canSaveOffline = !isVirtual && !fileItem.isDirectory && viewModel?.currentZipFile == null && (isVideo || isExternal)
+                            if (canSaveOffline && viewModel != null) {
+                                val isOffline = viewModel.isFileOffline(fileItem.file.absolutePath)
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            if (isOffline) stringResource(R.string.action_remove_offline)
+                                            else stringResource(R.string.action_save_offline)
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        viewModel.toggleOfflineStatus(fileItem)
+                                        val msg = if (isOffline) {
+                                            context.getString(R.string.toast_removed_from_offline)
+                                        } else {
+                                            context.getString(R.string.toast_saving_offline)
+                                        }
+                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (isOffline) Icons.Default.CloudDone else Icons.Default.Download,
+                                            contentDescription = null,
+                                            tint = if (isOffline) Color(0xFF10B981) else MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                )
+                            }
                             if (!isVirtual) {
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                 DropdownMenuItem(
@@ -3835,7 +3931,7 @@ fun FileIcon(
                                 }
                             }
                             .crossfade(80)
-                            .videoFrameMillis(1000)
+                            .videoFrameMillis(0)
                             .build(),
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
@@ -3981,6 +4077,29 @@ fun FileIcon(
                     Icons.Default.Favorite,
                     contentDescription = null,
                     modifier = Modifier.size(heartSize),
+                    tint = Color.White
+                )
+            }
+        }
+
+        val isOffline = viewModel?.isFileOffline(fileItem.file.absolutePath) == true
+        if (isOffline) {
+            val offlineBadgeSize = (iconSize * 0.42f).coerceIn(14.dp, 20.dp)
+            val iconInnerSize = (iconSize * 0.24f).coerceIn(8.dp, 12.dp)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .offset(x = (-2).dp, y = 2.dp)
+                    .size(offlineBadgeSize)
+                    .background(MaterialTheme.colorScheme.surface, androidx.compose.foundation.shape.CircleShape)
+                    .padding(1.5.dp)
+                    .background(Color(0xFF10B981), androidx.compose.foundation.shape.CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = stringResource(R.string.status_offline_available),
+                    modifier = Modifier.size(iconInnerSize),
                     tint = Color.White
                 )
             }

@@ -18,6 +18,18 @@ sealed class StorageDevice {
         override val iconRes: Int? = null
     }
 
+    data class DocumentTree(
+        override val name: String,
+        override val path: String,
+        override val totalBytes: Long = 0L,
+        override val availableBytes: Long = 0L,
+        val uriString: String = path,
+        val isCloud: Boolean = false,
+        val providerName: String? = null
+    ) : StorageDevice() {
+        override val iconRes: Int? = null
+    }
+
     data class Root(
         override val name: String = "Root",
         override val path: String = "/",

@@ -1702,8 +1702,24 @@ private fun StorageSection(
 
     // Root device (if enabled in settings)
     val rootDevice = if (viewModel.useRoot) {
-        allDevices.firstOrNull { it is StorageDevice.Root } ?: StorageDevice.Root()
+        allDevices.firstOrNull { it is StorageDevice.Root }
     } else null
+
+    // User-added DocumentTree / Cloud / External storages
+    val treeDevices = allDevices.filterIsInstance<StorageDevice.DocumentTree>()
+
+    val hasAnyStorages = sdDevices.isNotEmpty() || usbDevices.isNotEmpty() || rootDevice != null || treeDevices.isNotEmpty()
+
+    var storagePendingRemoval by remember { mutableStateOf<StorageDevice.DocumentTree?>(null) }
+
+    val openDocumentTreeLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
+    ) { uri: android.net.Uri? ->
+        if (uri != null) {
+            viewModel.addCustomStorage(uri)
+            Toast.makeText(context, context.getString(R.string.toast_storage_added), Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Column {
         Row(
@@ -1732,7 +1748,7 @@ private fun StorageSection(
             }
             IconButton(
                 onClick = {
-                    Toast.makeText(context, context.getString(R.string.toast_storage_add_clicked), Toast.LENGTH_SHORT).show()
+                    openDocumentTreeLauncher.launch(null)
                 },
                 modifier = Modifier.size(32.dp)
             ) {
@@ -1768,9 +1784,48 @@ private fun StorageSection(
                 modifier = Modifier.fillMaxWidth().animateContentSize()
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    // 1. SD Card(s) - Physical detected SD card or placeholder preview
+                    // Empty state if no external devices or custom storages are present
+                    if (!hasAnyStorages) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 18.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(12.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Devices,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.storage_no_external_devices),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = stringResource(R.string.storage_no_external_devices_hint),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                )
+                            }
+                        }
+                    }
+
+                    // 1. SD Card(s) - Real detected physical SD card(s)
                     if (sdDevices.isNotEmpty()) {
-                        sdDevices.forEachIndexed { index, device ->
+                        sdDevices.forEach { device ->
                             val used = device.totalBytes - device.availableBytes
                             val subtitle = if (device.totalBytes > 0) {
                                 stringResource(R.string.storage_amount_used_of_total, formatFileSize(used), formatFileSize(device.totalBytes))
@@ -1790,26 +1845,11 @@ private fun StorageSection(
                                 StorageDivider()
                             }
                         }
-                    } else {
-                        StorageItemRow(
-                            title = stringResource(R.string.storage_sd_card),
-                            subtitle = "SanDisk Ultra • 48.6 GB used of 64 GB",
-                            icon = Icons.Default.SdCard,
-                            iconColor = Color(0xFF3B82F6),
-                            badgeText = stringResource(R.string.storage_badge_sd),
-                            badgeColor = Color(0xFF3B82F6),
-                            onClick = {
-                                Toast.makeText(context, context.getString(R.string.toast_sd_preview_clicked), Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                        if (viewModel.showListDividers) {
-                            StorageDivider()
-                        }
                     }
 
-                    // 2. USB / Pen Drive (OTG) - Physical detected USB or placeholder preview
+                    // 2. USB / Pen Drive (OTG) - Real detected physical USB volume(s)
                     if (usbDevices.isNotEmpty()) {
-                        usbDevices.forEachIndexed { index, device ->
+                        usbDevices.forEach { device ->
                             val used = device.totalBytes - device.availableBytes
                             val subtitle = if (device.totalBytes > 0) {
                                 stringResource(R.string.storage_amount_used_of_total, formatFileSize(used), formatFileSize(device.totalBytes))
@@ -1829,21 +1869,6 @@ private fun StorageSection(
                                 StorageDivider()
                             }
                         }
-                    } else {
-                        StorageItemRow(
-                            title = stringResource(R.string.storage_usb_drive),
-                            subtitle = stringResource(R.string.storage_usb_placeholder_desc),
-                            icon = Icons.Default.Usb,
-                            iconColor = Color(0xFF0D9488),
-                            badgeText = stringResource(R.string.storage_badge_otg),
-                            badgeColor = Color(0xFF0D9488),
-                            onClick = {
-                                Toast.makeText(context, context.getString(R.string.toast_usb_preview_clicked), Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                        if (viewModel.showListDividers) {
-                            StorageDivider()
-                        }
                     }
 
                     // 3. Root Storage (if enabled)
@@ -1862,18 +1887,66 @@ private fun StorageSection(
                         }
                     }
 
-                    // 4. Connected Cloud Account Placeholder (Google Drive / MEGA preview)
-                    StorageItemRow(
-                        title = stringResource(R.string.storage_google_drive),
-                        subtitle = stringResource(R.string.storage_cloud_placeholder_desc),
-                        icon = Icons.Default.Cloud,
-                        iconColor = Color(0xFF4285F4),
-                        badgeText = stringResource(R.string.storage_badge_cloud),
-                        badgeColor = Color(0xFF4285F4),
-                        onClick = {
-                            Toast.makeText(context, context.getString(R.string.toast_cloud_preview_clicked), Toast.LENGTH_SHORT).show()
+                    // 4. User-added DocumentTree / Cloud / External storages
+                    if (treeDevices.isNotEmpty()) {
+                        treeDevices.forEach { device ->
+                            val subtitle = device.providerName ?: if (device.isCloud) {
+                                stringResource(R.string.storage_cloud)
+                            } else {
+                                stringResource(R.string.storage_badge_custom)
+                            }
+                            var showItemMenu by remember { mutableStateOf(false) }
+                            StorageItemRow(
+                                title = device.name,
+                                subtitle = subtitle,
+                                icon = if (device.isCloud) Icons.Default.Cloud else Icons.Default.Storage,
+                                iconColor = if (device.isCloud) Color(0xFF4285F4) else Color(0xFF8B5CF6),
+                                badgeText = if (device.isCloud) stringResource(R.string.storage_badge_cloud) else stringResource(R.string.storage_badge_custom),
+                                badgeColor = if (device.isCloud) Color(0xFF4285F4) else Color(0xFF8B5CF6),
+                                onClick = { onOpenPath(device.path) },
+                                onLongClick = { storagePendingRemoval = device },
+                                trailingContent = {
+                                    Box {
+                                        IconButton(
+                                            onClick = { showItemMenu = true },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.MoreVert,
+                                                contentDescription = stringResource(R.string.content_desc_more_options),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                        DropdownMenu(
+                                            expanded = showItemMenu,
+                                            onDismissRequest = { showItemMenu = false },
+                                            shape = RoundedCornerShape(14.dp),
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                                        ) {
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.action_remove)) },
+                                                onClick = {
+                                                    showItemMenu = false
+                                                    storagePendingRemoval = device
+                                                },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        Icons.Default.Delete,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.error
+                                                    )
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            )
+                            if (viewModel.showListDividers) {
+                                StorageDivider()
+                            }
                         }
-                    )
+                    }
 
                     // Divider before bottom button
                     StorageDivider()
@@ -1883,7 +1956,7 @@ private fun StorageSection(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                Toast.makeText(context, context.getString(R.string.toast_storage_add_clicked), Toast.LENGTH_SHORT).show()
+                                openDocumentTreeLauncher.launch(null)
                             }
                             .padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -1920,6 +1993,38 @@ private fun StorageSection(
             }
         }
     }
+
+    storagePendingRemoval?.let { dev ->
+        AlertDialog(
+            onDismissRequest = { storagePendingRemoval = null },
+            icon = {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = { Text(stringResource(R.string.dialog_remove_storage_title)) },
+            text = { Text(stringResource(R.string.dialog_remove_storage_message, dev.name)) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.removeCustomStorage(dev.uriString)
+                        storagePendingRemoval = null
+                        Toast.makeText(context, context.getString(R.string.toast_storage_removed), Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text(stringResource(R.string.action_remove))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { storagePendingRemoval = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -1931,6 +2036,7 @@ private fun StorageDivider() {
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun StorageItemRow(
     title: String,
@@ -1939,12 +2045,14 @@ private fun StorageItemRow(
     iconColor: Color,
     badgeText: String? = null,
     badgeColor: Color = iconColor,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+    trailingContent: (@Composable () -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 16.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -2001,12 +2109,16 @@ private fun StorageItemRow(
             )
         }
 
-        Icon(
-            imageVector = Icons.Default.ChevronRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-            modifier = Modifier.size(20.dp)
-        )
+        if (trailingContent != null) {
+            trailingContent()
+        } else {
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }
 
