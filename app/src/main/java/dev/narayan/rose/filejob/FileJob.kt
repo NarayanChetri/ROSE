@@ -323,7 +323,7 @@ object FileOperationRunner {
                         val stats = calculateBatchStats(appContext, listOf(type.source.path))
                         job.totalBytes = stats?.first ?: 0L
                         job.processedBytes = 0L
-                        job.isIndeterminate = stats == null
+                        job.isIndeterminate = (stats?.first ?: 0L) <= 0L
                         job.currentFileName = type.source.displayName
                         onProgress(job)
                         JobManager.updateJob(job)
@@ -971,14 +971,14 @@ object FileOperationRunner {
         try {
             input.use { inp ->
                 output.use { out ->
-                    val buffer = ByteArray(8 * 1024 * 1024) // 8 MB buffer — 4x larger for better SAF fallback throughput
+                    val buffer = ByteArray(64 * 1024) // 64 KB buffer for smooth real-time progress and speed calculations
                     var bytesRead: Int
                     var fileBytesRead = 0L
                     var lastReportedFileBytes = 0L
                     var lastUpdate = 0L
 
                     fun reportDelta() {
-                        if (job == null || onProgress == null) return
+                        if (job == null) return
                         val delta = fileBytesRead - lastReportedFileBytes
                         if (delta <= 0) return
                         job.processedBytes += delta
@@ -986,7 +986,8 @@ object FileOperationRunner {
                         if (job.totalBytes > 0) {
                             job.progress = (job.processedBytes.toFloat() / job.totalBytes).coerceIn(0f, 1f)
                         }
-                        onProgress(job)
+                        onProgress?.invoke(job)
+                        JobManager.updateJob(job)
                     }
 
                     while (inp.read(buffer).also { bytesRead = it } != -1) {
@@ -1001,7 +1002,7 @@ object FileOperationRunner {
                         fileBytesRead += bytesRead
 
                         val now = System.currentTimeMillis()
-                        if (now - lastUpdate >= 100) {
+                        if (now - lastUpdate >= 100 || (totalSize > 0 && fileBytesRead >= totalSize)) {
                             reportDelta()
                             lastUpdate = now
                         }

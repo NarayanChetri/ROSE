@@ -477,10 +477,26 @@ private fun jobPaths(job: FileJob, context: Context): JobPaths = when (val type 
         from = sourceFolderPath(type.targets.map { it.toString() }, context),
         to = null
     )
-    is FileJobType.Download -> JobPaths(
-        from = java.io.File(type.source.path).parent ?: type.source.displayName,
-        to = type.targetFile.toString()
-    )
+    is FileJobType.Download -> {
+        val src = type.source.path
+        val fromLabel = when {
+            dev.narayan.rose.SafManager.isSafUri(src) -> {
+                val uri = try { android.net.Uri.parse(dev.narayan.rose.SafManager.normalizeSafPath(src)) } catch (e: Exception) { null }
+                val authority = uri?.authority ?: ""
+                when {
+                    authority.contains("docs", ignoreCase = true) -> "Google Drive"
+                    authority.contains("onedrive", ignoreCase = true) -> "OneDrive"
+                    authority.contains("dropbox", ignoreCase = true) -> "Dropbox"
+                    else -> context.getString(R.string.storage_cloud)
+                }
+            }
+            else -> java.io.File(src).parent ?: type.source.displayName
+        }
+        JobPaths(
+            from = fromLabel,
+            to = context.getString(R.string.status_offline_available)
+        )
+    }
     is FileJobType.Recycle -> JobPaths(
         from = sourceFolderPath(type.sources.map { it.path }, context),
         to = context.getString(R.string.home_section_recycle_bin)

@@ -315,14 +315,21 @@ class FileJobService : Service() {
             .build()
     }
 
+    private val lastNotifUpdateMap = java.util.concurrent.ConcurrentHashMap<Int, Long>()
+
     private fun updateNotification(notificationId: Int, job: FileJob, channelId: String = CHANNEL_ID) {
         if (!hasNotificationPermission()) return
+        val now = System.currentTimeMillis()
+        val lastUpdate = lastNotifUpdateMap[notificationId] ?: 0L
+        if (now - lastUpdate < 250 && job.progress < 1f && job.progress > 0f) return
+        lastNotifUpdateMap[notificationId] = now
         val notification = createNotification(job, channelId)
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.notify(notificationId, notification)
     }
 
     private fun showCompletionNotification(job: FileJob, success: Boolean) {
+        lastNotifUpdateMap.remove(notificationIdFor(job.id))
         if (!hasNotificationPermission()) return
 
         val label = when (job.type) {

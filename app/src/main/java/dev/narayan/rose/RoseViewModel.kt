@@ -1343,21 +1343,27 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 val targetFile = File(downloadType.targetFile.toString())
 
                 if (result.success) {
-                    if (!offlineFiles.contains(sourcePath)) {
-                        val updated = offlineFiles + sourcePath
+                    val normalizedSource = SafManager.normalizeSafPath(sourcePath)
+                    val updated = offlineFiles + sourcePath + normalizedSource
+                    withContext(Dispatchers.Main) {
                         offlineFiles = updated
                         settings.offlineFiles = updated
+                        files = files.toList()
                     }
                 } else {
                     // Download failed or was cancelled
                     if (targetFile.exists()) targetFile.delete()
-                    if (offlineFiles.contains(sourcePath)) {
-                        val updated = offlineFiles - sourcePath
+                    val normalizedSource = SafManager.normalizeSafPath(sourcePath)
+                    val updated = offlineFiles.filterNot {
+                        it == sourcePath || it == normalizedSource || SafManager.normalizeSafPath(it) == normalizedSource
+                    }.toSet()
+                    withContext(Dispatchers.Main) {
                         offlineFiles = updated
                         settings.offlineFiles = updated
-                    }
-                    if (result.error != null) {
-                        errorMessage = "Couldn't save ${downloadType.source.displayName} offline: ${result.error}"
+                        files = files.toList()
+                        if (result.error != null) {
+                            errorMessage = "Couldn't save ${downloadType.source.displayName} offline: ${result.error}"
+                        }
                     }
                 }
             }
@@ -3802,15 +3808,19 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val path = fileItem.file.absolutePath
             val fileName = offlineFileName(fileItem)
-            if (offlineFiles.contains(path)) {
+            if (isFileOffline(path)) {
                 // Remove from offline
                 val localFile = File(getApplication<Application>().getExternalFilesDir("offline"), fileName)
                 if (localFile.exists()) localFile.delete()
 
-                val updated = offlineFiles - path
+                val normalized = SafManager.normalizeSafPath(path)
+                val updated = offlineFiles.filterNot {
+                    it == path || it == normalized || SafManager.normalizeSafPath(it) == normalized
+                }.toSet()
                 withContext(Dispatchers.Main) {
                     offlineFiles = updated
                     settings.offlineFiles = updated
+                    files = files.toList()
                 }
             } else {
                 // Save as offline.
@@ -3835,7 +3845,14 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun isFileOffline(path: String): Boolean = offlineFiles.contains(path)
+    fun isFileOffline(path: String): Boolean {
+        if (offlineFiles.contains(path)) return true
+        val normalized = SafManager.normalizeSafPath(path)
+        if (offlineFiles.contains(normalized)) return true
+        if (path.startsWith("/") && offlineFiles.contains(path.removePrefix("/"))) return true
+        if (!path.startsWith("/") && offlineFiles.contains("/$path")) return true
+        return false
+    }
 
     fun getLocalOfflineFile(fileItem: FileItem): File? {
         if (!isFileOffline(fileItem.file.absolutePath)) return null
