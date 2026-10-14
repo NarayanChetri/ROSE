@@ -1053,10 +1053,23 @@ private fun CategoryGrid(
         androidx.compose.foundation.pager.HorizontalPager(
             state = categoryPagerState,
             userScrollEnabled = false,
+            pageSpacing = 20.dp,
             modifier = Modifier.fillMaxWidth()
         ) { page ->
             val pageCategories = if (page == 0) page1Categories else page2Categories
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        val pageOffset = ((categoryPagerState.currentPage - page) + categoryPagerState.currentPageOffsetFraction).let { kotlin.math.abs(it) }
+                        val clampedOffset = pageOffset.coerceIn(0f, 1f)
+                        val scale = 1f - (clampedOffset * 0.18f)
+                        scaleX = scale
+                        scaleY = scale
+                        alpha = 1f - (clampedOffset * 0.75f)
+                    },
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 // Row 1 (first 3 items)
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
