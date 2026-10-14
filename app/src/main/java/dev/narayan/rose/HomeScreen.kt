@@ -1747,19 +1747,6 @@ private fun StorageSection(
                 )
             }
             IconButton(
-                onClick = {
-                    openDocumentTreeLauncher.launch(null)
-                },
-                modifier = Modifier.size(32.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = stringResource(R.string.storage_add_cloud_or_network),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            IconButton(
                 onClick = { viewModel.setExternalStorageExpanded(!viewModel.externalStorageExpanded) },
                 modifier = Modifier.size(32.dp)
             ) {
