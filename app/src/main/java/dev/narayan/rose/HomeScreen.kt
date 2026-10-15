@@ -116,6 +116,7 @@ fun HomeScreen(
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onOpenPath: (String, FileItem?) -> Unit,
+    onOpenQuickAccess: ((String) -> Unit)? = null,
     onOpenCategory: (FileType, String) -> Unit,
     onOpenRecent: () -> Unit,
     onOpenFavourites: () -> Unit = {},
@@ -630,7 +631,16 @@ fun HomeScreen(
                         visible = visible,
                         enter = fadeIn(tween(300, delayMillis = 130)) + slideInVertically(tween(300, delayMillis = 130)) { it / 12 }
                     ) {
-                        QuickAccessSection(viewModel = viewModel, onOpenPath = { path -> onOpenPath(path, null) })
+                        QuickAccessSection(
+                            viewModel = viewModel,
+                            onOpenPath = { path ->
+                                if (onOpenQuickAccess != null) {
+                                    onOpenQuickAccess(path)
+                                } else {
+                                    onOpenPath(path, null)
+                                }
+                            }
+                        )
                     }
                 }
 

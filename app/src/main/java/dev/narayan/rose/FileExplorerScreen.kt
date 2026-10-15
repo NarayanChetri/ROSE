@@ -295,6 +295,7 @@ fun FileExplorerScreen(
     fromHome: Boolean = false,
     highlightFile: FileItem? = null, // New parameter
     isFromAllFiles: Boolean = false, // New parameter for seamless transition
+    isFromQuickAccess: Boolean = false,
     resumePath: String? = null,
     sharedTransitionScope: SharedTransitionScope? = null, // New parameter
     animatedVisibilityScope: AnimatedVisibilityScope? = null, // New parameter
@@ -726,8 +727,8 @@ fun FileExplorerScreen(
     // over this, but it only "usually" worked. The reliable fix is to not run that
     // per-item entrance animation for Recent at all - see hasAnimatedBefore
     // below - so there's nothing that can get stuck invisible in the first place.
-    // Category now uses it as requested by user, but Recent stays skipped.
-    val skipEntranceAnimation = true
+    val isAtQuickAccessRoot = isFromQuickAccess && (viewModel.currentPath == startPath || viewModel.currentPath.isEmpty())
+    val skipEntranceAnimation = currentView == "Recent" || isAtQuickAccessRoot
 
     // Live folder updates (silentRefresh from the FileObserver/poll in the
     // ViewModel) swap `files` in place without touching scrollResetKey, so
@@ -3590,6 +3591,22 @@ fun FileGridItem(
     isHighlighted: Boolean = false,
     viewModel: RoseViewModel? = null
 ) {
+    val animatedProgress = remember(scrollResetKey, fileItem.file.absolutePath) {
+        Animatable(if (hasAnimatedBefore) 1f else 0f)
+    }
+    val density = LocalDensity.current
+    LaunchedEffect(scrollResetKey, fileItem.file.absolutePath) {
+        if (!hasAnimatedBefore) {
+            onAnimationStart()
+            val delay = (index % 8 * 12).toLong()
+            kotlinx.coroutines.delay(delay)
+            animatedProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 200, easing = LinearOutSlowInEasing)
+            )
+        }
+    }
+
     val selectionColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
 
     val pulseAlpha by if (isHighlighted) {
@@ -3621,7 +3638,11 @@ fun FileGridItem(
     val itemAlpha = if (isHidden) 0.55f else 1f
 
     Column(
-        modifier = (if (itemAlpha < 1f) modifier.graphicsLayer { alpha = itemAlpha } else modifier)
+        modifier = modifier
+            .graphicsLayer {
+                alpha = animatedProgress.value * itemAlpha
+                translationY = with(density) { (1f - animatedProgress.value) * 40.dp.toPx() }
+            }
             .padding(8.dp)
             .clip(MaterialTheme.shapes.medium)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
@@ -3706,9 +3727,22 @@ fun FileListItem(
     dragSelectState: CheckboxDragSelectState? = null,
     isDividerVisible: Boolean = false
 ) {
-    // Material Files-style staggered entrance animation - plays once per item
-    // per folder session (see animatedItemKeys in FileExplorerScreen), not
-    // every time this row scrolls back into view.
+    val animatedProgress = remember(scrollResetKey, fileItem.file.absolutePath) {
+        Animatable(if (hasAnimatedBefore) 1f else 0f)
+    }
+    val density = LocalDensity.current
+    LaunchedEffect(scrollResetKey, fileItem.file.absolutePath) {
+        if (!hasAnimatedBefore) {
+            onAnimationStart()
+            val delay = (index % 8 * 12).toLong()
+            kotlinx.coroutines.delay(delay)
+            animatedProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 200, easing = LinearOutSlowInEasing)
+            )
+        }
+    }
+
     val context = LocalContext.current
 
     val selectionColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
@@ -3742,7 +3776,11 @@ fun FileListItem(
     val itemAlpha = if (isHidden) 0.55f else 1f
 
     Column(
-        modifier = if (itemAlpha < 1f) modifier.graphicsLayer { alpha = itemAlpha } else modifier
+        modifier = modifier
+            .graphicsLayer {
+                alpha = animatedProgress.value * itemAlpha
+                translationY = with(density) { (1f - animatedProgress.value) * 40.dp.toPx() }
+            }
     ) {
         ListItem(
             headlineContent = {

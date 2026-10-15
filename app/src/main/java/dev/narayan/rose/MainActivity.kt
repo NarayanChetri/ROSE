@@ -730,6 +730,15 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                                     isFromAllFiles = isFromAllFiles
                                                                 )
                                                             },
+                                                            onOpenQuickAccess = { path ->
+                                                                viewModel.resetFiles()
+                                                                viewModel.loadFiles(path, showLoading = false)
+                                                                screen = AppScreen.Files(
+                                                                    startPath = path,
+                                                                    fromHome = true,
+                                                                    isFromQuickAccess = true
+                                                                )
+                                                            },
                                                             onOpenCategory = { type, title ->
                                                                 viewModel.resetFiles()
                                                                 viewModel.browseCategory(type, title)
@@ -939,6 +948,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                             fromHome = currentScreen.fromHome,
                                             highlightFile = currentScreen.highlightFile,
                                             isFromAllFiles = currentScreen.isFromAllFiles,
+                                            isFromQuickAccess = currentScreen.isFromQuickAccess,
                                             resumePath = currentScreen.resumePath,
                                             sharedTransitionScope = this@SharedTransitionLayout,
                                             animatedVisibilityScope = this@AnimatedContent,
@@ -1862,6 +1872,7 @@ private sealed class AppScreen {
         val fromHome: Boolean = false,
         val highlightFile: FileItem? = null,
         val isFromAllFiles: Boolean = false,
+        val isFromQuickAccess: Boolean = false,
         val resumePath: String? = null
     ) : AppScreen()
     data class SaveAs(
