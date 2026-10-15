@@ -5324,6 +5324,8 @@ fun RestrictedFolderView(
                     lineHeight = 20.sp
                 )
 
+                Spacer(modifier = Modifier.height(24.dp))
+
                 val isSystemRestricted = path.contains("/Android/data") || path.contains("/Android/obb")
 
                 if (isSystemRestricted) {
