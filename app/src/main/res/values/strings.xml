@@ -172,7 +172,7 @@
     <string name="search_files_placeholder">Search files…</string>
     <string name="no_files_found">No files found</string>
     <string name="no_results_for_query">No results for \"%1$s\"</string>
-    <string name="breadcrumbs_internal_storage">Internal shared storage</string>
+    <string name="breadcrumbs_internal_storage">All files</string>
     <string name="selection_count">%1$d selected</string>
     <string name="total_items_in_total">%1$d items in total</string>
     <string name="total_items_count">%1$d items total</string>
@@ -269,7 +269,7 @@
     <string name="restricted_folder_default_desc">Android restricts access to this folder. To view and modify these files, ROSE needs permission.</string>
     <string name="restricted_system_folder_title">Restricted System Folder</string>
     <string name="drive_access_required_title">Drive Access Required</string>
-    <string name="restricted_system_folder_desc">Android 11+ restricts standard access to Android/data and Android/obb folders to protect app data. To view and modify these files, ROSE requires Shizuku permission.</string>
+    <string name="restricted_system_folder_desc">Android restricts access to this folder. Grant Shizuku permission to view and modify files.</string>
     <string name="drive_access_required_desc">This USB drive or SD card requires standard Android access permission to be read and modified. Please grant access.</string>
     <string name="action_grant_shizuku">Grant Shizuku Access</string>
     <string name="action_how_to_setup_shizuku">How to setup Shizuku?</string>

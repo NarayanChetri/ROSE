@@ -627,14 +627,12 @@ class MainActivity : ComponentActivity() {
 
                                             val homePagerFlingBehavior = androidx.compose.foundation.pager.PagerDefaults.flingBehavior(state = homePagerState)
 
-                                            Column(modifier = Modifier.fillMaxSize()) {
+                                            Box(modifier = Modifier.fillMaxSize()) {
                                                 androidx.compose.foundation.pager.HorizontalPager(
                                                     state = homePagerState,
                                                     userScrollEnabled = canSwipe,
                                                     flingBehavior = homePagerFlingBehavior,
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .fillMaxWidth()
+                                                    modifier = Modifier.fillMaxSize()
                                                 ) { pageIndex ->
                                                     if (pageIndex == 0) {
                                                         FileExplorerScreen(
@@ -745,10 +743,21 @@ class MainActivity : ComponentActivity() {
                                                     }
                                                 }
 
-                                                if (!isHomeSearching && !isRecentSearching && !viewModel.isSelectionMode) {
+                                                AnimatedVisibility(
+                                                    visible = !isHomeSearching && !isRecentSearching && !viewModel.isSelectionMode,
+                                                    enter = slideInVertically(
+                                                        animationSpec = tween(durationMillis = 300, delayMillis = 280, easing = FastOutSlowInEasing)
+                                                    ) { it },
+                                                    exit = slideOutVertically(
+                                                        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
+                                                    ) { it },
+                                                    modifier = Modifier.align(Alignment.BottomCenter)
+                                                ) {
                                                     Surface(
+                                                        shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
                                                         color = MaterialTheme.colorScheme.surfaceContainer,
                                                         tonalElevation = 2.dp,
+                                                        shadowElevation = 8.dp,
                                                         modifier = Modifier.fillMaxWidth()
                                                     ) {
                                                         Column(

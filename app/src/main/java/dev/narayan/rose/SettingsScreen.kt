@@ -205,14 +205,6 @@ fun SettingsScreen(
                         checked = viewModel.showRecentFiles,
                         onCheckedChange = { viewModel.setShowRecentFiles(it) }
                     )
-                    SettingsDivider()
-                    SettingsSwitchRow(
-                        icon = Icons.Default.Bolt,
-                        title = stringResource(R.string.settings_show_quick_access),
-                        subtitle = stringResource(R.string.settings_show_quick_access_subtitle),
-                        checked = viewModel.showQuickAccess,
-                        onCheckedChange = { viewModel.setShowQuickAccess(it) }
-                    )
                 }
             }
 

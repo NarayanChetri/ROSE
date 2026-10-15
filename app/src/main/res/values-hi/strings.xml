@@ -129,7 +129,7 @@
     <string name="search_files_placeholder">फ़ाइलें खोजें…</string>
     <string name="no_files_found">कोई फ़ाइल नहीं मिली</string>
     <string name="no_results_for_query">\"%1$s\" के लिए कोई परिणाम नहीं</string>
-    <string name="breadcrumbs_internal_storage">आंतरिक साझा स्टोरेज</string>
+    <string name="breadcrumbs_internal_storage">सभी फ़ाइलें</string>
     <string name="selection_count">%1$d चयनित</string>
     <string name="total_items_in_total">कुल %1$d आइटम</string>
     <string name="total_items_count">कुल %1$d आइटम</string>
@@ -210,7 +210,7 @@
     <string name="restricted_folder_default_desc">Android इस फ़ोल्डर तक पहुंच को प्रतिबंधित करता है। इन फ़ाइलों को देखने और संशोधित करने के लिए ROSE को अनुमति की आवश्यकता है।</string>
     <string name="restricted_system_folder_title">प्रतिबंधित सिस्टम फ़ोल्डर</string>
     <string name="drive_access_required_title">ड्राइव एक्सेस आवश्यक</string>
-    <string name="restricted_system_folder_desc">ऐप डेटा की सुरक्षा के लिए Android 11+ Android/data और Android/obb फ़ोल्डर की सामान्य पहुंच को प्रतिबंधित करता है। इन फ़ाइलों को देखने और संशोधित करने के लिए ROSE को Shizuku अनुमति की आवश्यकता है।</string>
+    <string name="restricted_system_folder_desc">Android इस फ़ोल्डर तक पहुँच को प्रतिबंधित करता है। फ़ाइलें देखने और बदलने के लिए Shizuku अनुमति दें।</string>
     <string name="drive_access_required_desc">इस USB ड्राइव या SD कार्ड को पढ़ने और संशोधित करने के लिए सामान्य Android एक्सेस अनुमति की आवश्यकता है। कृपया एक्सेस की अनुमति दें।</string>
     <string name="action_grant_shizuku">Shizuku एक्सेस दें</string>
     <string name="action_how_to_setup_shizuku">Shizuku कैसे सेटअप करें?</string>

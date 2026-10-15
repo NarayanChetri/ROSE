@@ -345,8 +345,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     private val _showRecentFiles = mutableStateOf(settings.showRecentFiles)
     val showRecentFiles: Boolean by _showRecentFiles
 
-    private val _showQuickAccess = mutableStateOf(settings.showQuickAccess)
-    val showQuickAccess: Boolean by _showQuickAccess
+    val showQuickAccess: Boolean = true
 
     private val _showExternalStorage = mutableStateOf(settings.showExternalStorage)
     val showExternalStorage: Boolean by _showExternalStorage
@@ -1496,8 +1495,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setShowQuickAccess(enabled: Boolean) {
-        _showQuickAccess.value = enabled
-        settings.showQuickAccess = enabled
+        settings.showQuickAccess = true
     }
 
     fun setShowExternalStorage(enabled: Boolean) {
