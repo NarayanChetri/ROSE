@@ -512,21 +512,19 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                 .togetherWith(slideOutHorizontally(animationSpec = tween(320, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(200)))
                                                 .using(SizeTransform(clip = false))
                                         } else if (initial is AppScreen.Home && target is AppScreen.Files && (target.category != null || target.favourites)) {
-                                            // Category scaling and opening: Expands smoothly from center
-                                            (scaleIn(initialScale = 0.85f, animationSpec = tween(280, easing = FastOutSlowInEasing)) +
-                                                    fadeIn(animationSpec = tween(240, easing = FastOutSlowInEasing)))
+                                            // Category container transform: Expands smoothly from the clicked card
+                                            (fadeIn(animationSpec = tween(300, easing = FastOutSlowInEasing)))
                                                 .togetherWith(
-                                                    scaleOut(targetScale = 0.95f, animationSpec = tween(220, easing = FastOutSlowInEasing)) +
-                                                            fadeOut(animationSpec = tween(180))
+                                                    fadeOut(animationSpec = tween(220, easing = FastOutSlowInEasing))
                                                 )
+                                                .using(SizeTransform(clip = false))
                                         } else if (initial is AppScreen.Files && (initial.category != null || initial.favourites) && target is AppScreen.Home) {
-                                            // Return from Category to Home: Scales down back into place
-                                            (scaleIn(initialScale = 0.95f, animationSpec = tween(240, easing = FastOutSlowInEasing)) +
-                                                    fadeIn(animationSpec = tween(200)))
+                                            // Return from Category to Home: Minimizes back into the category card
+                                            (fadeIn(animationSpec = tween(220, easing = FastOutSlowInEasing)))
                                                 .togetherWith(
-                                                    scaleOut(targetScale = 0.85f, animationSpec = tween(220, easing = FastOutSlowInEasing)) +
-                                                            fadeOut(animationSpec = tween(180))
+                                                    fadeOut(animationSpec = tween(280, easing = FastOutSlowInEasing))
                                                 )
+                                                .using(SizeTransform(clip = false))
                                         } else if (initial is AppScreen.Home && (
                                                 (target is AppScreen.Files && target.category == null && !target.favourites) ||
                                                 target is AppScreen.RecycleBin ||

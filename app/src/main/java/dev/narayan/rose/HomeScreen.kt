@@ -594,7 +594,9 @@ fun HomeScreen(
                             onOpenRecent = onOpenRecent,
                             canSwipeToRecent = canSwipeToRecent,
                             categoryPageIndex = viewModel.categoryPageIndex,
-                            onCategoryPageChange = { viewModel.categoryPageIndex = it }
+                            onCategoryPageChange = { viewModel.categoryPageIndex = it },
+                            sharedTransitionScope = sharedTransitionScope,
+                            animatedVisibilityScope = animatedVisibilityScope
                         )
                     }
                 }
@@ -1022,6 +1024,7 @@ private fun StorageCapsule(
     }
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun CategoryGrid(
     counts: Map<FileType, Int>,
@@ -1033,7 +1036,9 @@ private fun CategoryGrid(
     onOpenRecent: () -> Unit,
     canSwipeToRecent: Boolean = true,
     categoryPageIndex: Int = 0,
-    onCategoryPageChange: (Int) -> Unit = {}
+    onCategoryPageChange: (Int) -> Unit = {},
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null
 ) {
     var animationStarted by remember(hasRunCountAnimation) { mutableStateOf(hasRunCountAnimation) }
 
@@ -1194,7 +1199,9 @@ private fun CategoryGrid(
                             hasRunCountAnimation = hasRunCountAnimation,
                             index = colIndex,
                             modifier = Modifier.weight(1f),
-                            onClick = { onCategoryClick(category) }
+                            onClick = { onCategoryClick(category) },
+                            sharedTransitionScope = sharedTransitionScope,
+                            animatedVisibilityScope = animatedVisibilityScope
                         )
                     }
                     repeat(3 - row1.size) {
@@ -1218,7 +1225,9 @@ private fun CategoryGrid(
                                 hasRunCountAnimation = hasRunCountAnimation,
                                 index = 3 + colIndex,
                                 modifier = Modifier.weight(1f),
-                                onClick = { onCategoryClick(category) }
+                                onClick = { onCategoryClick(category) },
+                                sharedTransitionScope = sharedTransitionScope,
+                                animatedVisibilityScope = animatedVisibilityScope
                             )
                         }
                         repeat(3 - row2.size) {
@@ -1234,13 +1243,11 @@ private fun CategoryGrid(
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
         // Dot indicator
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 2.dp),
+                .padding(top = 10.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -1258,7 +1265,10 @@ private fun CategoryGrid(
                 )
                 Box(
                     modifier = Modifier
-                        .size(width = 32.dp, height = 24.dp)
+                        .padding(horizontal = 4.dp, vertical = 6.dp)
+                        .size(width = width, height = 5.dp)
+                        .clip(CircleShape)
+                        .background(color)
                         .clickable(
                             interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                             indication = null
@@ -1272,21 +1282,14 @@ private fun CategoryGrid(
                                     )
                                 }
                             }
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(width = width, height = 4.dp)
-                            .clip(CircleShape)
-                            .background(color)
-                    )
-                }
+                        }
+                )
             }
         }
     }
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun CategoryCard(
     category: HomeCategory,
@@ -1295,7 +1298,9 @@ private fun CategoryCard(
     hasRunCountAnimation: Boolean,
     index: Int = 0,
     modifier: Modifier = Modifier,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null
 ) {
     val actualCount = count ?: 0
     val targetCount = if (animationStarted || hasRunCountAnimation) actualCount else 0
@@ -1304,6 +1309,24 @@ private fun CategoryCard(
         animationSpec = tween(durationMillis = 1200, easing = FastOutSlowInEasing),
         label = "CategoryCountAnimation"
     )
+
+    val categoryKey = when {
+        category.isFavourites -> "category_card_FAVOURITES"
+        category.type != null -> "category_card_${category.type.name}"
+        else -> null
+    }
+
+    val cardSharedBounds = if (categoryKey != null && sharedTransitionScope != null && animatedVisibilityScope != null) {
+        with(sharedTransitionScope) {
+            Modifier.sharedBounds(
+                rememberSharedContentState(key = categoryKey),
+                animatedVisibilityScope = animatedVisibilityScope,
+                enter = fadeIn(tween(220)),
+                exit = fadeOut(tween(260)),
+                resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds()
+            )
+        }
+    } else Modifier
 
     // Staggered entrance animation, plays once when the card first enters
     // composition. Uses a plain Animatable + graphicsLayer (NOT
@@ -1325,6 +1348,7 @@ private fun CategoryCard(
         modifier = modifier
             .padding(1.dp)
             .aspectRatio(1f)
+            .then(cardSharedBounds)
             .graphicsLayer {
                 alpha = animatedProgress.value
                 translationY = (1f - animatedProgress.value) * with(density) { 24.dp.toPx() }

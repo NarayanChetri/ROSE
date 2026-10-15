@@ -2045,6 +2045,15 @@ private fun getSystemScreenBrightness(context: Context): Float {
     }
 }
 
+private fun Context.findActivity(): Activity? {
+    var ctx = this
+    while (ctx is android.content.ContextWrapper) {
+        if (ctx is Activity) return ctx
+        ctx = ctx.baseContext
+    }
+    return null
+}
+
 private fun setVaultScreenBrightness(view: View, context: Context, brightness: Float) {
     var parent = view.parent
     var dialogWin: Window? = null
@@ -2055,7 +2064,7 @@ private fun setVaultScreenBrightness(view: View, context: Context, brightness: F
         }
         parent = (parent as? View)?.parent
     }
-    val actWin = (context as? Activity)?.window
+    val actWin = context.findActivity()?.window
 
     dialogWin?.let { w ->
         val lp = w.attributes
@@ -2086,13 +2095,21 @@ private fun VaultMediaViewerDialog(
     onShare: () -> Unit
 ) {
     val context = LocalContext.current
-    val activity = context as? Activity
+    val activity = remember(context) { context.findActivity() }
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val vaultFile = remember(item.id) { PrivateVaultManager.getVaultFile(context, item) }
     var isPlaying by remember { mutableStateOf(false) }
     var showControls by remember { mutableStateOf(true) }
     var showVideoExitOptions by remember { mutableStateOf(false) }
+    var videoThumbnail by remember(vaultFile) { mutableStateOf<Bitmap?>(null) }
+
+    LaunchedEffect(vaultFile, item.fileType) {
+        if (item.fileType == FileType.VIDEO && vaultFile != null) {
+            videoThumbnail = VaultThumbnailLoader.loadVideoFrame(vaultFile)
+                ?: VaultThumbnailLoader.loadThumbnail(vaultFile, FileType.VIDEO)
+        }
+    }
 
     // Auto-hide controls after 3.5 seconds if media is playing
     LaunchedEffect(showControls, isPlaying) {
@@ -2134,72 +2151,53 @@ private fun VaultMediaViewerDialog(
             Box(
                 modifier = Modifier.fillMaxSize()
             ) {
-                // If video exit overview is requested
+                // If video exit overview is requested: Show thumbnail of video with play button
                 if (item.fileType == FileType.VIDEO && showVideoExitOptions) {
-                    Column(
+                    Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = 24.dp)
-                            .padding(bottom = 90.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                            .clickable {
+                                showVideoExitOptions = false
+                                isPlaying = true
+                                showControls = true
+                            },
+                        contentAlignment = Alignment.Center
                     ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                            modifier = Modifier.size(96.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.Videocam,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(48.dp)
-                                )
-                            }
+                        if (videoThumbnail != null) {
+                            Image(
+                                bitmap = videoThumbnail!!.asImageBitmap(),
+                                contentDescription = null,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            // Dark tint overlay so controls and play button are crisp
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.35f))
+                            )
                         }
 
-                        Spacer(modifier = Modifier.height(20.dp))
-
-                        Text(
-                            text = item.originalName,
-                            color = Color.White,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            textAlign = TextAlign.Center,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Text(
-                            text = "${formatFileSize(item.size)} • ${item.mimeType ?: "Video"}",
-                            color = Color.White.copy(alpha = 0.65f),
-                            style = MaterialTheme.typography.bodySmall
-                        )
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        Button(
+                        // Prominent centered circular Play button
+                        Surface(
                             onClick = {
                                 showVideoExitOptions = false
                                 isPlaying = true
                                 showControls = true
                             },
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary
-                            ),
-                            modifier = Modifier.height(48.dp)
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary,
+                            shadowElevation = 8.dp,
+                            modifier = Modifier.size(68.dp)
                         ) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Resume Video",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = "Play",
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(38.dp)
+                                )
+                            }
                         }
                     }
                 } else {
@@ -2541,7 +2539,7 @@ private fun VaultVideoPlayer(
 ) {
     val context = LocalContext.current
     val view = LocalView.current
-    val activity = context as? Activity
+    val activity = remember(context) { context.findActivity() }
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 

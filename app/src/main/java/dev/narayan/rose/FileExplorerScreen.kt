@@ -787,7 +787,33 @@ fun FileExplorerScreen(
         }
     }
 
-    Crossfade(targetState = activeScreen, label = "ScreenTransition") { screen ->
+    val isCategoryOrFavourites = (startCategory != null || startFavourites) && fromHome
+    val categoryTransitionKey = remember(startCategory, startFavourites) {
+        when {
+            startCategory != null -> "category_card_${startCategory.first.name}"
+            startFavourites -> "category_card_FAVOURITES"
+            else -> null
+        }
+    }
+    val categoryBoundsModifier = if (isCategoryOrFavourites && categoryTransitionKey != null && sharedTransitionScope != null && animatedVisibilityScope != null) {
+        with(sharedTransitionScope) {
+            Modifier.sharedBounds(
+                rememberSharedContentState(key = categoryTransitionKey),
+                animatedVisibilityScope = animatedVisibilityScope,
+                enter = fadeIn(tween(260)),
+                exit = fadeOut(tween(220)),
+                resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds()
+            )
+        }
+    } else Modifier
+
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .then(categoryBoundsModifier),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Crossfade(targetState = activeScreen, label = "ScreenTransition") { screen ->
         when (screen) {
             "Settings" -> {
                 SettingsScreen(
@@ -2124,6 +2150,7 @@ fun FileExplorerScreen(
             }
         }
     }
+}
 
     if (showCreateFileDialog) {
         CreateFileDialog(

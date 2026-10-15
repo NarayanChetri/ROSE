@@ -45,6 +45,34 @@ object VaultThumbnailLoader {
         bitmap
     }
 
+    suspend fun loadVideoFrame(file: File, maxDim: Int = 1280): Bitmap? = withContext(Dispatchers.IO) {
+        val cacheKey = "frame_${file.absolutePath}_${file.lastModified()}"
+        val cached = memoryCache.get(cacheKey)
+        if (cached != null && !cached.isRecycled) {
+            return@withContext cached
+        }
+        if (!file.exists()) return@withContext null
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(file.absolutePath)
+            val frame = retriever.getFrameAtTime(1000000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: retriever.frameAtTime
+            if (frame != null) {
+                val scaled = if (frame.width > maxDim || frame.height > maxDim) {
+                    val scale = maxDim.toFloat() / maxOf(frame.width, frame.height)
+                    Bitmap.createScaledBitmap(frame, (frame.width * scale).toInt(), (frame.height * scale).toInt(), true)
+                } else frame
+                memoryCache.put(cacheKey, scaled)
+                scaled
+            } else null
+        } catch (_: Throwable) {
+            null
+        } finally {
+            try { retriever.release() } catch (_: Throwable) {}
+        }
+    }
+
     suspend fun decodeFullImage(file: File, maxDim: Int = 2560): Bitmap? = withContext(Dispatchers.IO) {
         if (!file.exists() || file.length() == 0L) return@withContext null
         try {
