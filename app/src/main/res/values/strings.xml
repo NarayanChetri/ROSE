@@ -172,7 +172,7 @@
     <string name="search_files_placeholder">Search files…</string>
     <string name="no_files_found">No files found</string>
     <string name="no_results_for_query">No results for \"%1$s\"</string>
-    <string name="breadcrumbs_internal_storage">Internal shared storage</string>
+    <string name="breadcrumbs_internal_storage">All files</string>
     <string name="selection_count">%1$d selected</string>
     <string name="total_items_in_total">%1$d items in total</string>
     <string name="total_items_count">%1$d items total</string>

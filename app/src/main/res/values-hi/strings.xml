@@ -129,7 +129,7 @@
     <string name="search_files_placeholder">फ़ाइलें खोजें…</string>
     <string name="no_files_found">कोई फ़ाइल नहीं मिली</string>
     <string name="no_results_for_query">\"%1$s\" के लिए कोई परिणाम नहीं</string>
-    <string name="breadcrumbs_internal_storage">आंतरिक साझा स्टोरेज</string>
+    <string name="breadcrumbs_internal_storage">सभी फ़ाइलें</string>
     <string name="selection_count">%1$d चयनित</string>
     <string name="total_items_in_total">कुल %1$d आइटम</string>
     <string name="total_items_count">कुल %1$d आइटम</string>

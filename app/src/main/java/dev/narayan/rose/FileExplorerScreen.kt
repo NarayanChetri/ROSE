@@ -802,6 +802,12 @@ fun FileExplorerScreen(
                 )
             }
             else -> {
+                val homeBottomPadding = if (fromHome && !viewModel.isSelectionMode) {
+                    68.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                } else {
+                    0.dp
+                }
+
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     contentWindowInsets = contentWindowInsets,
@@ -992,10 +998,19 @@ fun FileExplorerScreen(
                         }
                     },
                     bottomBar = {
+                        val isInsideHomePager = fromHome && startRecent
                         AnimatedVisibility(
                             visible = viewModel.isSelectionMode,
-                            enter = slideInVertically(animationSpec = tween(400, easing = FastOutSlowInEasing)) { it },
-                            exit = slideOutVertically(animationSpec = tween(400, easing = FastOutSlowInEasing)) { it }
+                            enter = slideInVertically(
+                                animationSpec = tween(
+                                    durationMillis = 350,
+                                    delayMillis = if (isInsideHomePager) 140 else 0,
+                                    easing = FastOutSlowInEasing
+                                )
+                            ) { it },
+                            exit = slideOutVertically(
+                                animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)
+                            ) { it }
                         ) {
                             SelectionBottomBar(
                                 viewModel = viewModel,
@@ -1486,12 +1501,12 @@ fun FileExplorerScreen(
                                                             )
                                                         }
                                                     }
-                                                } else if (viewModel.isCategoryGridView) {
+                                                 } else if (viewModel.isCategoryGridView) {
                                                     LazyVerticalGrid(
                                                         columns = GridCells.Adaptive(minSize = viewModel.gridItemSize.cellMinSize),
                                                         state = pageGridState,
                                                         modifier = Modifier.fillMaxSize(),
-                                                        contentPadding = PaddingValues(8.dp)
+                                                        contentPadding = PaddingValues(start = 8.dp, top = 2.dp, end = 8.dp, bottom = 8.dp + homeBottomPadding)
                                                     ) {
                                                         items(pageFiles, key = { it.file.absolutePath }, contentType = { "grid_item" }) { fileItem ->
                                                             val index = pageFiles.indexOf(fileItem)
@@ -1535,7 +1550,7 @@ fun FileExplorerScreen(
                                                     LazyColumn(
                                                         modifier = Modifier.fillMaxSize(),
                                                         state = pageListState,
-                                                        contentPadding = PaddingValues(vertical = 8.dp)
+                                                        contentPadding = PaddingValues(top = 2.dp, bottom = 8.dp + homeBottomPadding)
                                                     ) {
                                                         itemsIndexed(pageFiles, key = { _, item -> item.file.absolutePath }, contentType = { _, _ -> "list_item" }) { index, fileItem ->
                                                             val isSelected = viewModel.selectedFiles.contains(fileItem)
@@ -1618,7 +1633,7 @@ fun FileExplorerScreen(
                                                 columns = GridCells.Adaptive(minSize = viewModel.gridItemSize.cellMinSize),
                                                 state = gridState,
                                                 modifier = Modifier.fillMaxSize(),
-                                                contentPadding = PaddingValues(8.dp)
+                                                contentPadding = PaddingValues(start = 8.dp, top = 2.dp, end = 8.dp, bottom = 8.dp + homeBottomPadding)
                                             ) {
                                                 if (shouldGroup) {
                                                     items(
@@ -1778,7 +1793,7 @@ fun FileExplorerScreen(
                                             LazyColumn(
                                                 modifier = Modifier.fillMaxSize(),
                                                 state = listState,
-                                                contentPadding = PaddingValues(vertical = 8.dp)
+                                                contentPadding = PaddingValues(top = 2.dp, bottom = 8.dp + homeBottomPadding)
                                             ) {
                                                 if (shouldGroup) {
                                                     items(
@@ -2635,6 +2650,7 @@ fun MainTopBar(
                                     leadingIcon = { Icon(Icons.AutoMirrored.Filled.NoteAdd, null) },
                                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                                 )
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.action_new_folder), modifier = Modifier.padding(vertical = 4.dp)) },
                                     onClick = { onNewFolderClick(); showMoreMenu = false },
@@ -2757,7 +2773,7 @@ fun Breadcrumbs(
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(scrollState)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         parts.forEachIndexed { index, part ->
@@ -3027,6 +3043,7 @@ fun SelectionBottomBar(
     val context = LocalContext.current
 
     Surface(
+        shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 3.dp,
         shadowElevation = 16.dp
@@ -3652,7 +3669,7 @@ fun FileListItem(
                     if (fileItem.isDirectory || viewModel?.isCloudStorage(fileItem.file.absolutePath) == true) false else viewModel?.isFileInFavourites(fileItem.file.absolutePath) == true
                 }
                 Box(contentAlignment = Alignment.Center) {
-                    FileIcon(fileItem, isVirtual = isVirtual, viewModel = viewModel, showFavouriteBadge = isFav)
+                    FileIcon(fileItem, iconSize = 44.dp, isVirtual = isVirtual, viewModel = viewModel, showFavouriteBadge = isFav)
                 }
             },
             trailingContent = {
@@ -3692,8 +3709,8 @@ fun FileListItem(
                     Icon(
                         Icons.Default.ChevronRight,
                         contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                     )
                 } else {
                     var showMenu by remember { mutableStateOf(false) }
@@ -3812,29 +3829,41 @@ fun FileListItem(
             },
             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             modifier = Modifier
-                .padding(horizontal = 8.dp, vertical = 2.dp)
-                .clip(RoundedCornerShape(16.dp))
+                .padding(horizontal = 4.dp, vertical = 0.dp)
+                .clip(RoundedCornerShape(12.dp))
                 .combinedClickable(onClick = onClick, onLongClick = onLongClick)
                 .background(backgroundColor)
         )
-        // The divider now lives inside the same animated Column as its item
-        // (sharing animatedProgress via the Column's graphicsLayer above) instead
-        // of being drawn separately by the caller. Dividers have no animation of
-        // their own, so when they used to render outside this fade/slide wrapper
-        // they'd appear instantly while the item above/below was still fading in
-        // from Category's async data load - showing as a "blank list, dividers
-        // only" flash. Tying it to the same layer makes that permanently
-        // impossible: the divider can only ever be as visible as its item.
         if (isDividerVisible) {
             HorizontalDivider(
-                modifier = Modifier.padding(start = 68.dp, end = 12.dp),
-                thickness = 0.6.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp),
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
             )
         }
     }
 }
 
+
+fun getFolderSpecialSymbol(name: String, path: String? = null): ImageVector? {
+    val cleanName = name.trim().lowercase()
+    val cleanPath = path?.trimEnd('/', '\\')?.lowercase() ?: ""
+    return when {
+        cleanName == "download" || cleanName == "downloads" || cleanPath.endsWith("/download") || cleanPath.endsWith("/downloads") ->
+            Icons.Default.Download
+        cleanName == "documents" || cleanName == "document" || cleanName == "doc" || cleanName == "docs" || cleanPath.endsWith("/documents") ->
+            Icons.Default.Description
+        cleanName == "dcim" || cleanName == "camera" || cleanPath.endsWith("/dcim") || cleanPath.endsWith("/dcim/camera") || cleanPath.endsWith("/camera") ->
+            Icons.Default.CameraAlt
+        cleanName == "pictures" || cleanName == "photos" || cleanName == "screenshots" || cleanPath.endsWith("/pictures") ->
+            Icons.Default.Image
+        cleanName == "music" || cleanName == "audio" || cleanPath.endsWith("/music") ->
+            Icons.Default.MusicNote
+        cleanName == "movies" || cleanName == "videos" || cleanName == "video" || cleanPath.endsWith("/movies") || cleanPath.endsWith("/video") ->
+            Icons.Default.Movie
+        else -> null
+    }
+}
 
 @Composable
 fun FileIcon(
@@ -4100,12 +4129,25 @@ fun FileIcon(
                                 .background(Color.Black.copy(alpha = 0.1f))
                         )
                     } else {
-                        Icon(
-                            Icons.Default.Folder,
-                            null,
-                            modifier = Modifier.fillMaxSize(),
-                            tint = folderTint
-                        )
+                        val specialSymbol = getFolderSpecialSymbol(fileItem.name, fileItem.file.absolutePath)
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Default.Folder,
+                                null,
+                                modifier = Modifier.fillMaxSize(),
+                                tint = folderTint
+                            )
+                            if (specialSymbol != null) {
+                                Icon(
+                                    specialSymbol,
+                                    contentDescription = null,
+                                    tint = Color(0xFF1976D2).copy(alpha = 0.85f),
+                                    modifier = Modifier
+                                        .size(iconSize * 0.42f)
+                                        .offset(y = iconSize * 0.06f)
+                                )
+                            }
+                        }
                     }
 
                     if (appIcon != null) {
@@ -4629,19 +4671,63 @@ fun CreateFolderDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.CreateNewFolder, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(stringResource(R.string.create_folder_dialog_title))
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(54.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                        shape = RoundedCornerShape(18.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CreateNewFolder,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
             }
         },
+        title = {
+            Text(
+                text = stringResource(R.string.create_folder_dialog_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
         text = {
-            TextField(
+            OutlinedTextField(
                 value = folderName,
                 onValueChange = { folderName = it },
-                label = { Text(stringResource(R.string.create_folder_name_label)) },
+                placeholder = { 
+                    Text(
+                        stringResource(R.string.create_folder_name_label),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    ) 
+                },
                 singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
+                ),
+                trailingIcon = {
+                    if (folderName.isNotEmpty()) {
+                        IconButton(onClick = { folderName = "" }, modifier = Modifier.size(28.dp)) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Clear",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                },
                 keyboardOptions = KeyboardOptions(
                     imeAction = ImeAction.Done,
                     capitalization = KeyboardCapitalization.Words
@@ -4659,19 +4745,38 @@ fun CreateFolderDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
         confirmButton = {
             Button(
                 onClick = { if (folderName.isNotBlank()) onCreate(folderName.trim()) },
-                shape = RoundedCornerShape(12.dp)
-            ) { Text(stringResource(R.string.action_create)) }
+                enabled = folderName.isNotBlank(),
+                shape = RoundedCornerShape(14.dp)
+            ) { 
+                Text(stringResource(R.string.action_create), fontWeight = FontWeight.SemiBold) 
+            }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+            TextButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(14.dp)
+            ) { 
+                Text(stringResource(R.string.action_cancel)) 
+            }
         },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = RoundedCornerShape(28.dp)
     )
 }
 
 @Composable
 fun CreateFileDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
-    var fileName by remember { mutableStateOf("New text file.txt") }
+    val defaultName = "New text file.txt"
+    val dotIndex = defaultName.lastIndexOf('.')
+    val selectionEnd = if (dotIndex > 0) dotIndex else defaultName.length
+    var textFieldValue by remember {
+        mutableStateOf(
+            androidx.compose.ui.text.input.TextFieldValue(
+                text = defaultName,
+                selection = androidx.compose.ui.text.TextRange(0, selectionEnd)
+            )
+        )
+    }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -4683,26 +4788,70 @@ fun CreateFileDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.AutoMirrored.Filled.NoteAdd, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(stringResource(R.string.create_file_dialog_title))
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(54.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                        shape = RoundedCornerShape(18.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.NoteAdd,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
             }
         },
+        title = {
+            Text(
+                text = stringResource(R.string.create_file_dialog_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
         text = {
-            TextField(
-                value = fileName,
-                onValueChange = { fileName = it },
-                label = { Text(stringResource(R.string.create_file_name_label)) },
+            OutlinedTextField(
+                value = textFieldValue,
+                onValueChange = { textFieldValue = it },
+                placeholder = { 
+                    Text(
+                        stringResource(R.string.create_file_name_label),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    ) 
+                },
                 singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
+                ),
+                trailingIcon = {
+                    if (textFieldValue.text.isNotEmpty()) {
+                        IconButton(onClick = { textFieldValue = androidx.compose.ui.text.input.TextFieldValue("") }, modifier = Modifier.size(28.dp)) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Clear",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                },
                 keyboardOptions = KeyboardOptions(
                     imeAction = ImeAction.Done,
                     capitalization = KeyboardCapitalization.Sentences
                 ),
                 keyboardActions = KeyboardActions(
                     onDone = {
-                        if (fileName.isNotBlank()) onCreate(fileName.trim())
+                        if (textFieldValue.text.isNotBlank()) onCreate(textFieldValue.text.trim())
                     }
                 ),
                 modifier = Modifier
@@ -4712,13 +4861,22 @@ fun CreateFileDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
         },
         confirmButton = {
             Button(
-                onClick = { if (fileName.isNotBlank()) onCreate(fileName.trim()) },
-                shape = RoundedCornerShape(12.dp)
-            ) { Text(stringResource(R.string.action_create)) }
+                onClick = { if (textFieldValue.text.isNotBlank()) onCreate(textFieldValue.text.trim()) },
+                enabled = textFieldValue.text.isNotBlank(),
+                shape = RoundedCornerShape(14.dp)
+            ) { 
+                Text(stringResource(R.string.action_create), fontWeight = FontWeight.SemiBold) 
+            }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+            TextButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(14.dp)
+            ) { 
+                Text(stringResource(R.string.action_cancel)) 
+            }
         },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = RoundedCornerShape(28.dp)
     )
 }
@@ -4801,26 +4959,70 @@ fun RenameDialog(initialName: String, onDismiss: () -> Unit, onRename: (String) 
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(stringResource(R.string.rename_dialog_title))
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(54.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                        shape = RoundedCornerShape(18.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
             }
         },
+        title = {
+            Text(
+                text = stringResource(R.string.rename_dialog_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
         text = {
-            TextField(
+            OutlinedTextField(
                 value = textFieldValue,
                 onValueChange = { textFieldValue = it },
-                label = { Text(stringResource(R.string.rename_new_name_label)) },
+                placeholder = { 
+                    Text(
+                        stringResource(R.string.rename_new_name_label),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    ) 
+                },
                 singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
+                ),
+                trailingIcon = {
+                    if (textFieldValue.text.isNotEmpty()) {
+                        IconButton(onClick = { textFieldValue = androidx.compose.ui.text.input.TextFieldValue("") }, modifier = Modifier.size(28.dp)) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Clear",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                },
                 keyboardOptions = KeyboardOptions(
                     imeAction = ImeAction.Done,
                     capitalization = KeyboardCapitalization.Words
                 ),
                 keyboardActions = KeyboardActions(
                     onDone = {
-                        if (textFieldValue.text.isNotBlank()) onRename(textFieldValue.text)
+                        if (textFieldValue.text.isNotBlank()) onRename(textFieldValue.text.trim())
                     }
                 ),
                 modifier = Modifier
@@ -4830,13 +5032,22 @@ fun RenameDialog(initialName: String, onDismiss: () -> Unit, onRename: (String) 
         },
         confirmButton = {
             Button(
-                onClick = { if (textFieldValue.text.isNotBlank()) onRename(textFieldValue.text) },
-                shape = RoundedCornerShape(12.dp)
-            ) { Text(stringResource(R.string.action_rename)) }
+                onClick = { if (textFieldValue.text.isNotBlank()) onRename(textFieldValue.text.trim()) },
+                enabled = textFieldValue.text.isNotBlank(),
+                shape = RoundedCornerShape(14.dp)
+            ) { 
+                Text(stringResource(R.string.action_rename), fontWeight = FontWeight.SemiBold) 
+            }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+            TextButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(14.dp)
+            ) { 
+                Text(stringResource(R.string.action_cancel)) 
+            }
         },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = RoundedCornerShape(28.dp)
     )
 }

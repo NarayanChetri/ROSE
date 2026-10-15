@@ -41,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.annotation.StringRes
@@ -464,7 +465,7 @@ fun HomeScreen(
                 .padding(horizontal = 14.dp),
             state = listState,
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(bottom = 16.dp)
+            contentPadding = PaddingValues(bottom = if (isSearching) 16.dp else (68.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()))
         ) {
             if (isSearching && searchQuery.isNotEmpty()) {
                 val currentSearchResults = viewModel.filteredSearchResults
@@ -1638,8 +1639,58 @@ private val defaultQuickAccessFolders = listOf(
 private val defaultQuickAccessIcons: Map<String, ImageVector> = mapOf(
     "downloads" to Icons.Default.Download,
     "camera" to Icons.Default.CameraAlt,
-    "documents" to Icons.Default.Folder
+    "documents" to Icons.Default.Description
 )
+
+private fun getQuickAccessFolderType(item: QuickItem): String? {
+    if (item.id == "downloads" || item.id == "camera" || item.id == "documents") {
+        return item.id
+    }
+    val path = item.path.trimEnd('/', '\\')
+    val downloadsPath = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).absolutePath.trimEnd('/', '\\')
+    val dcimPath = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM).absolutePath.trimEnd('/', '\\')
+    val documentsPath = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS).absolutePath.trimEnd('/', '\\')
+    val name = File(item.path).name
+
+    return when {
+        path.equals(downloadsPath, ignoreCase = true) || name.equals("Download", ignoreCase = true) || name.equals("Downloads", ignoreCase = true) -> "downloads"
+        path.equals(dcimPath, ignoreCase = true) || path.endsWith("/DCIM/Camera", ignoreCase = true) || name.equals("Camera", ignoreCase = true) -> "camera"
+        path.equals(documentsPath, ignoreCase = true) || name.equals("Documents", ignoreCase = true) -> "documents"
+        else -> null
+    }
+}
+
+@Composable
+private fun QuickAccessItemIcon(item: QuickItem) {
+    val folderType = getQuickAccessFolderType(item)
+    val symbol = when (folderType) {
+        "downloads" -> Icons.Default.Download
+        "camera" -> Icons.Default.CameraAlt
+        "documents" -> Icons.Default.Description
+        else -> null
+    }
+    Box(
+        modifier = Modifier.size(38.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.Folder,
+            contentDescription = null,
+            tint = folderIconFallbackColor,
+            modifier = Modifier.fillMaxSize()
+        )
+        if (symbol != null) {
+            Icon(
+                imageVector = symbol,
+                contentDescription = null,
+                tint = Color(0xFF1976D2).copy(alpha = 0.85f),
+                modifier = Modifier
+                    .size(38.dp * 0.42f)
+                    .offset(y = 38.dp * 0.06f)
+            )
+        }
+    }
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -1736,7 +1787,7 @@ private fun QuickAccessSection(viewModel: RoseViewModel, onOpenPath: (String) ->
                                 .padding(horizontal = 16.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            FileIcon(fileItem = FileItem(File(item.path)), iconSize = 24.dp, folderTint = MaterialTheme.colorScheme.primary, viewModel = viewModel)
+                            QuickAccessItemIcon(item = item)
                             Spacer(modifier = Modifier.width(16.dp))
                             Text(item.labelRes?.let { stringResource(it) } ?: item.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                         }
@@ -1757,12 +1808,17 @@ private fun QuickAccessSection(viewModel: RoseViewModel, onOpenPath: (String) ->
                                 .padding(horizontal = 16.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                Icons.Default.AddCircleOutline,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
-                            )
+                            Box(
+                                modifier = Modifier.size(38.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.AddCircleOutline,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                             Spacer(modifier = Modifier.width(16.dp))
                             Text(stringResource(R.string.action_add_folders), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                             Icon(
