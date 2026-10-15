@@ -4,11 +4,11 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.webkit.MimeTypeMap
-import android.widget.MediaController
 import android.widget.Toast
 import android.widget.VideoView
 import androidx.activity.compose.BackHandler
@@ -18,6 +18,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.CircleShape
@@ -78,11 +79,11 @@ fun PrivateVaultScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val isPinConfigured = remember { mutableStateOf(PrivateVaultManager.isPinSet(context)) }
+    var isPinConfigured by remember { mutableStateOf(PrivateVaultManager.isPinSet(context)) }
 
     // Auto-authenticate with biometric if available and configured
-    LaunchedEffect(isPinConfigured.value, viewModel.isVaultUnlocked) {
-        if (isPinConfigured.value && !viewModel.isVaultUnlocked && viewModel.vaultBiometricEnabled) {
+    LaunchedEffect(isPinConfigured, viewModel.isVaultUnlocked) {
+        if (isPinConfigured && !viewModel.isVaultUnlocked && viewModel.vaultBiometricEnabled) {
             val activity = context as? FragmentActivity
             if (activity != null && VaultSecurityManager.isBiometricAvailable(context)) {
                 VaultSecurityManager.authenticate(
@@ -102,13 +103,16 @@ fun PrivateVaultScreen(
 
     if (!viewModel.isVaultUnlocked) {
         VaultLockView(
-            isPinConfigured = isPinConfigured.value,
+            isPinConfigured = isPinConfigured,
             onPinVerified = {
                 viewModel.unlockVault()
             },
             onPinSetupComplete = {
-                isPinConfigured.value = true
+                isPinConfigured = true
                 viewModel.unlockVault()
+            },
+            onPinSavedRequireUnlock = {
+                isPinConfigured = true
             },
             onBiometricRequested = {
                 val activity = context as? FragmentActivity
@@ -126,7 +130,7 @@ fun PrivateVaultScreen(
                     )
                 }
             },
-            isBiometricAvailable = VaultSecurityManager.isBiometricAvailable(context) && viewModel.vaultBiometricEnabled,
+            isBiometricAvailable = VaultSecurityManager.isBiometricAvailable(context),
             onBack = onBack
         )
     } else {
@@ -147,6 +151,7 @@ private fun VaultLockView(
     isPinConfigured: Boolean,
     onPinVerified: () -> Unit,
     onPinSetupComplete: () -> Unit,
+    onPinSavedRequireUnlock: () -> Unit,
     onBiometricRequested: () -> Unit,
     isBiometricAvailable: Boolean,
     onBack: () -> Unit
@@ -162,6 +167,27 @@ private fun VaultLockView(
     var errorMessage by remember { mutableStateOf("") }
 
     val coroutineScope = rememberCoroutineScope()
+    val shakeOffset = remember { Animatable(0f) }
+
+    LaunchedEffect(isError) {
+        if (isError) {
+            shakeOffset.snapTo(0f)
+            shakeOffset.animateTo(
+                targetValue = 0f,
+                animationSpec = keyframes {
+                    durationMillis = 400
+                    0f at 0
+                    (-16f) at 50
+                    16f at 100
+                    (-12f) at 150
+                    12f at 200
+                    (-6f) at 250
+                    6f at 300
+                    0f at 400
+                }
+            )
+        }
+    }
 
     fun handlePinInput(digit: String) {
         if (enteredPin.length < 4) {
@@ -185,7 +211,34 @@ private fun VaultLockView(
                         if (newPin == setupPinInitial) {
                             val ok = PrivateVaultManager.setupPin(context, newPin)
                             if (ok) {
-                                onPinSetupComplete()
+                                val activity = context as? FragmentActivity
+                                if (isBiometricAvailable && activity != null) {
+                                    // Prompt biometric authentication right after PIN setup
+                                    VaultSecurityManager.authenticate(
+                                        activity = activity,
+                                        title = context.getString(R.string.vault_biometric_prompt_title),
+                                        subtitle = "Verify fingerprint to authenticate and unlock",
+                                        onSuccess = {
+                                            onPinSetupComplete()
+                                        },
+                                        onError = {
+                                            onPinSavedRequireUnlock()
+                                            enteredPin = ""
+                                            setupPinInitial = ""
+                                            pinSetupStep = 0
+                                            isError = true
+                                            errorMessage = "Fingerprint not verified. Enter PIN to unlock."
+                                        },
+                                        onCancel = {
+                                            onPinSavedRequireUnlock()
+                                            enteredPin = ""
+                                            setupPinInitial = ""
+                                            pinSetupStep = 0
+                                        }
+                                    )
+                                } else {
+                                    onPinSetupComplete()
+                                }
                             } else {
                                 isError = true
                                 errorMessage = "Failed to save PIN"
@@ -249,24 +302,29 @@ private fun VaultLockView(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Title & Instruction
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(
                     modifier = Modifier
-                        .size(68.dp)
+                        .size(76.dp)
                         .background(
-                            color = MaterialTheme.colorScheme.primaryContainer,
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f),
+                            shape = CircleShape
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
                             shape = CircleShape
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Lock,
+                        imageVector = if (!isPinConfigured) Icons.Default.LockReset else Icons.Default.Lock,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(36.dp)
                     )
                 }
 
@@ -301,9 +359,10 @@ private fun VaultLockView(
 
                 Spacer(modifier = Modifier.height(28.dp))
 
-                // PIN Dots
+                // PIN Dots with Shake
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.offset(x = shakeOffset.value.dp),
+                    horizontalArrangement = Arrangement.spacedBy(20.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     repeat(4) { index ->
@@ -312,22 +371,35 @@ private fun VaultLockView(
                             targetValue = when {
                                 isError -> MaterialTheme.colorScheme.error
                                 isFilled -> MaterialTheme.colorScheme.primary
-                                else -> MaterialTheme.colorScheme.surfaceVariant
+                                else -> Color.Transparent
                             },
                             animationSpec = tween(durationMillis = 180),
                             label = "DotColor"
                         )
+                        val dotBorderColor by animateColorAsState(
+                            targetValue = when {
+                                isError -> MaterialTheme.colorScheme.error
+                                isFilled -> MaterialTheme.colorScheme.primary
+                                else -> MaterialTheme.colorScheme.outlineVariant
+                            },
+                            animationSpec = tween(durationMillis = 180),
+                            label = "DotBorder"
+                        )
                         val dotScale by animateFloatAsState(
                             targetValue = if (isFilled) 1.25f else 1f,
-                            animationSpec = tween(durationMillis = 180),
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                stiffness = Spring.StiffnessLow
+                            ),
                             label = "DotScale"
                         )
 
                         Box(
                             modifier = Modifier
-                                .size(18.dp)
+                                .size(16.dp)
                                 .graphicsLayer(scaleX = dotScale, scaleY = dotScale)
                                 .background(dotColor, CircleShape)
+                                .border(1.5.dp, dotBorderColor, CircleShape)
                         )
                     }
                 }
@@ -358,6 +430,19 @@ private fun VaultLockView(
                     listOf("BIO", "0", "DEL")
                 )
 
+                val subLabels = mapOf(
+                    "1" to "",
+                    "2" to "A B C",
+                    "3" to "D E F",
+                    "4" to "G H I",
+                    "5" to "J K L",
+                    "6" to "M N O",
+                    "7" to "P Q R S",
+                    "8" to "T U V",
+                    "9" to "W X Y Z",
+                    "0" to "+"
+                )
+
                 rows.forEach { row ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -369,17 +454,18 @@ private fun VaultLockView(
                                     if (isBiometricAvailable && isPinConfigured) {
                                         KeypadButton(
                                             onClick = onBiometricRequested,
+                                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
                                             content = {
                                                 Icon(
                                                     Icons.Default.Fingerprint,
                                                     contentDescription = "Biometric",
                                                     tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(28.dp)
+                                                    modifier = Modifier.size(30.dp)
                                                 )
                                             }
                                         )
                                     } else {
-                                        Spacer(modifier = Modifier.size(72.dp))
+                                        Spacer(modifier = Modifier.size(76.dp))
                                     }
                                 }
                                 "DEL" -> {
@@ -399,12 +485,27 @@ private fun VaultLockView(
                                     KeypadButton(
                                         onClick = { handlePinInput(key) },
                                         content = {
-                                            Text(
-                                                text = key,
-                                                style = MaterialTheme.typography.titleLarge,
-                                                fontWeight = FontWeight.SemiBold,
-                                                fontSize = 26.sp
-                                            )
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                verticalArrangement = Arrangement.Center
+                                            ) {
+                                                Text(
+                                                    text = key,
+                                                    style = MaterialTheme.typography.titleLarge,
+                                                    fontWeight = FontWeight.Medium,
+                                                    fontSize = 24.sp
+                                                )
+                                                val sub = subLabels[key] ?: ""
+                                                if (sub.isNotEmpty()) {
+                                                    Text(
+                                                        text = sub,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontSize = 9.sp,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                                                        letterSpacing = 1.sp
+                                                    )
+                                                }
+                                            }
                                         }
                                     )
                                 }
@@ -420,13 +521,15 @@ private fun VaultLockView(
 @Composable
 private fun KeypadButton(
     onClick: () -> Unit,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
     content: @Composable () -> Unit
 ) {
     Surface(
         onClick = onClick,
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier.size(72.dp)
+        color = containerColor,
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)),
+        modifier = Modifier.size(76.dp)
     ) {
         Box(contentAlignment = Alignment.Center) {
             content()
@@ -1506,6 +1609,16 @@ private fun VaultMediaViewerDialog(
 ) {
     val context = LocalContext.current
     val vaultFile = remember(item.id) { PrivateVaultManager.getVaultFile(context, item) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var showControls by remember { mutableStateOf(true) }
+
+    // Auto-hide controls after 3 seconds if media is playing
+    LaunchedEffect(showControls, isPlaying) {
+        if (showControls && isPlaying) {
+            delay(3000)
+            showControls = false
+        }
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -1515,14 +1628,40 @@ private fun VaultMediaViewerDialog(
             modifier = Modifier.fillMaxSize(),
             color = Color.Black
         ) {
-            Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { showControls = !showControls }
+                    )
+            ) {
                 // Media Content
                 when (item.fileType) {
                     FileType.IMAGE -> {
-                        ZoomableVaultImage(file = vaultFile, altName = item.originalName)
+                        ZoomableVaultImage(
+                            file = vaultFile,
+                            altName = item.originalName,
+                            onToggleControls = { showControls = !showControls }
+                        )
                     }
                     FileType.VIDEO -> {
-                        VaultVideoPlayer(file = vaultFile)
+                        VaultVideoPlayer(
+                            file = vaultFile,
+                            isPlaying = isPlaying,
+                            onPlayingChanged = { isPlaying = it },
+                            showControls = showControls,
+                            onToggleControls = { showControls = !showControls }
+                        )
+                    }
+                    FileType.AUDIO -> {
+                        VaultAudioPlayer(
+                            file = vaultFile,
+                            altName = item.originalName,
+                            isPlaying = isPlaying,
+                            onPlayingChanged = { isPlaying = it }
+                        )
                     }
                     else -> {
                         // Generic File info card
@@ -1555,59 +1694,74 @@ private fun VaultMediaViewerDialog(
                     }
                 }
 
-                // Top Bar
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 8.dp, vertical = 6.dp)
-                        .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
-                        .align(Alignment.TopCenter),
-                    verticalAlignment = Alignment.CenterVertically
+                // Top Bar (Auto-hides when controls are hidden)
+                AnimatedVisibility(
+                    visible = showControls,
+                    enter = fadeIn() + slideInVertically { -it },
+                    exit = fadeOut() + slideOutVertically { -it },
+                    modifier = Modifier.align(Alignment.TopCenter)
                 ) {
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                            .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(16.dp)),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            item.originalName,
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        item.originalName,
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
                 }
 
-                // Bottom Action Bar
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                        .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(20.dp))
-                        .align(Alignment.BottomCenter),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
+                // Bottom Action Bar (Restore, Share, Delete) - HIDDEN while video is playing or controls hidden!
+                AnimatedVisibility(
+                    visible = showControls,
+                    enter = fadeIn() + slideInVertically { it },
+                    exit = fadeOut() + slideOutVertically { it },
+                    modifier = Modifier.align(Alignment.BottomCenter)
                 ) {
-                    TextButton(onClick = onRestore) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Default.Restore, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-                            Text(stringResource(R.string.action_restore), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 20.dp, vertical = 12.dp)
+                            .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(22.dp)),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = onRestore) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.Restore, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(stringResource(R.string.action_restore), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                            }
                         }
-                    }
 
-                    TextButton(onClick = onShare) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Default.Share, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-                            Text(stringResource(R.string.action_share), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        TextButton(onClick = onShare) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.Share, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(stringResource(R.string.action_share), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                            }
                         }
-                    }
 
-                    TextButton(onClick = onDelete) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Default.DeleteForever, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
-                            Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+                        TextButton(onClick = onDelete) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.DeleteForever, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
                 }
@@ -1617,25 +1771,39 @@ private fun VaultMediaViewerDialog(
 }
 
 @Composable
-private fun ZoomableVaultImage(file: File, altName: String) {
+private fun ZoomableVaultImage(
+    file: File,
+    altName: String,
+    onToggleControls: () -> Unit
+) {
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
 
     LaunchedEffect(file.absolutePath) {
-        withContext(Dispatchers.IO) {
-            try {
-                bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
-            } catch (e: Exception) {}
-        }
+        isLoading = true
+        bitmap = VaultThumbnailLoader.decodeFullImage(file)
+        isLoading = false
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .pointerInput(Unit) {
+                detectTapGestures(
+                    onDoubleTap = {
+                        scale = if (scale > 1f) 1f else 2.5f
+                        offset = Offset.Zero
+                    },
+                    onTap = {
+                        onToggleControls()
+                    }
+                )
+            }
+            .pointerInput(Unit) {
                 detectTransformGestures { _, pan, zoom, _ ->
-                    scale = (scale * zoom).coerceIn(1f, 4f)
+                    scale = (scale * zoom).coerceIn(1f, 5f)
                     if (scale > 1f) {
                         offset += pan
                     } else {
@@ -1659,38 +1827,365 @@ private fun ZoomableVaultImage(file: File, altName: String) {
                         translationY = offset.y
                     )
             )
+        } else if (isLoading) {
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
         } else {
-            CircularProgressIndicator(color = Color.White)
+            // Friendly error card when image cannot be decoded
+            Column(
+                modifier = Modifier.padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    Icons.Default.BrokenImage,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.7f),
+                    modifier = Modifier.size(64.dp)
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = altName,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Unable to load preview. File may be corrupted or unsupported.",
+                    color = Color.White.copy(alpha = 0.6f),
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun VaultVideoPlayer(file: File) {
-    val context = LocalContext.current
-    var isPlaying by remember { mutableStateOf(false) }
+private fun VaultVideoPlayer(
+    file: File,
+    isPlaying: Boolean,
+    onPlayingChanged: (Boolean) -> Unit,
+    showControls: Boolean,
+    onToggleControls: () -> Unit
+) {
+    var videoViewRef by remember { mutableStateOf<VideoView?>(null) }
+    var durationMs by remember { mutableIntStateOf(0) }
+    var currentPosMs by remember { mutableIntStateOf(0) }
+    var isReady by remember { mutableStateOf(false) }
+    var hasError by remember { mutableStateOf(false) }
 
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    LaunchedEffect(isPlaying) {
+        while (isPlaying) {
+            videoViewRef?.let { vv ->
+                if (vv.isPlaying) {
+                    currentPosMs = vv.currentPosition
+                }
+            }
+            delay(250)
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onToggleControls
+            ),
+        contentAlignment = Alignment.Center
+    ) {
         AndroidView(
             factory = { ctx ->
                 VideoView(ctx).apply {
-                    val mediaController = MediaController(ctx)
-                    mediaController.setAnchorView(this)
-                    setMediaController(mediaController)
                     setVideoPath(file.absolutePath)
                     setOnPreparedListener { mp ->
                         mp.isLooping = false
+                        durationMs = duration
+                        isReady = true
                         start()
-                        isPlaying = true
+                        onPlayingChanged(true)
                     }
                     setOnCompletionListener {
-                        isPlaying = false
+                        onPlayingChanged(false)
+                        currentPosMs = durationMs
                     }
+                    setOnErrorListener { _, _, _ ->
+                        hasError = true
+                        onPlayingChanged(false)
+                        true
+                    }
+                    videoViewRef = this
                 }
             },
             modifier = Modifier.fillMaxSize()
         )
+
+        if (hasError) {
+            Column(
+                modifier = Modifier
+                    .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(16.dp))
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    Icons.Default.ErrorOutline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(48.dp)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    "Unable to play video directly",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "You can restore or share it to open with an external player.",
+                    color = Color.White.copy(alpha = 0.65f),
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center
+                )
+            }
+        } else if (!isReady) {
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        } else {
+            // Center Play / Pause button (visible only when controls are shown)
+            AnimatedVisibility(
+                visible = showControls,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                Surface(
+                    onClick = {
+                        videoViewRef?.let { vv ->
+                            if (vv.isPlaying) {
+                                vv.pause()
+                                onPlayingChanged(false)
+                            } else {
+                                if (currentPosMs >= durationMs && durationMs > 0) {
+                                    vv.seekTo(0)
+                                    currentPosMs = 0
+                                }
+                                vv.start()
+                                onPlayingChanged(true)
+                            }
+                        }
+                    },
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.65f),
+                    modifier = Modifier.size(68.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = when {
+                                currentPosMs >= durationMs && durationMs > 0 -> Icons.Default.Replay
+                                isPlaying -> Icons.Default.Pause
+                                else -> Icons.Default.PlayArrow
+                            },
+                            contentDescription = if (isPlaying) "Pause" else "Play",
+                            tint = Color.White,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+                }
+            }
+
+            // Bottom Scrubber Bar (visible only when controls are shown)
+            AnimatedVisibility(
+                visible = showControls,
+                enter = fadeIn() + slideInVertically { it },
+                exit = fadeOut() + slideOutVertically { it },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 80.dp)
+                    .padding(horizontal = 20.dp)
+            ) {
+                Surface(
+                    color = Color.Black.copy(alpha = 0.7f),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = formatTimeMs(currentPosMs),
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Slider(
+                            value = currentPosMs.toFloat().coerceIn(0f, maxOf(durationMs.toFloat(), 1f)),
+                            onValueChange = { currentPosMs = it.toInt() },
+                            onValueChangeFinished = {
+                                videoViewRef?.seekTo(currentPosMs)
+                            },
+                            valueRange = 0f..maxOf(durationMs.toFloat(), 1f),
+                            modifier = Modifier.weight(1f),
+                            colors = SliderDefaults.colors(
+                                thumbColor = MaterialTheme.colorScheme.primary,
+                                activeTrackColor = MaterialTheme.colorScheme.primary,
+                                inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                            )
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = formatTimeMs(durationMs),
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                }
+            }
+        }
     }
+}
+
+@Composable
+private fun VaultAudioPlayer(
+    file: File,
+    altName: String,
+    isPlaying: Boolean,
+    onPlayingChanged: (Boolean) -> Unit
+) {
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    var durationMs by remember { mutableIntStateOf(0) }
+    var currentPosMs by remember { mutableIntStateOf(0) }
+
+    DisposableEffect(file.absolutePath) {
+        val player = MediaPlayer().apply {
+            try {
+                setDataSource(file.absolutePath)
+                prepare()
+                durationMs = duration
+                setOnCompletionListener {
+                    onPlayingChanged(false)
+                    currentPosMs = duration
+                }
+            } catch (e: Exception) {}
+        }
+        mediaPlayer = player
+
+        onDispose {
+            try {
+                player.stop()
+                player.release()
+            } catch (e: Exception) {}
+        }
+    }
+
+    LaunchedEffect(isPlaying) {
+        while (isPlaying) {
+            mediaPlayer?.let { mp ->
+                if (mp.isPlaying) {
+                    currentPosMs = mp.currentPosition
+                }
+            }
+            delay(250)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(120.dp)
+                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f), CircleShape)
+                .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.MusicNote,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(56.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = altName,
+            color = Color.White,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Slider(
+            value = currentPosMs.toFloat().coerceIn(0f, maxOf(durationMs.toFloat(), 1f)),
+            onValueChange = { currentPosMs = it.toInt() },
+            onValueChangeFinished = {
+                mediaPlayer?.seekTo(currentPosMs)
+            },
+            valueRange = 0f..maxOf(durationMs.toFloat(), 1f),
+            modifier = Modifier.fillMaxWidth(),
+            colors = SliderDefaults.colors(
+                thumbColor = MaterialTheme.colorScheme.primary,
+                activeTrackColor = MaterialTheme.colorScheme.primary,
+                inactiveTrackColor = Color.White.copy(alpha = 0.25f)
+            )
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(text = formatTimeMs(currentPosMs), color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
+            Text(text = formatTimeMs(durationMs), color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Surface(
+            onClick = {
+                mediaPlayer?.let { mp ->
+                    if (mp.isPlaying) {
+                        mp.pause()
+                        onPlayingChanged(false)
+                    } else {
+                        if (currentPosMs >= durationMs && durationMs > 0) {
+                            mp.seekTo(0)
+                            currentPosMs = 0
+                        }
+                        mp.start()
+                        onPlayingChanged(true)
+                    }
+                }
+            },
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(64.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        }
+    }
+}
+
+private fun formatTimeMs(ms: Int): String {
+    val totalSeconds = (ms / 1000).coerceAtLeast(0)
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return String.format("%02d:%02d", minutes, seconds)
 }
 
 // -----------------------------------------------------------------------------

@@ -3,6 +3,8 @@ package dev.narayan.rose
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.media.MediaMetadataRetriever
 import android.util.LruCache
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +45,45 @@ object VaultThumbnailLoader {
         bitmap
     }
 
+    suspend fun decodeFullImage(file: File, maxDim: Int = 2560): Bitmap? = withContext(Dispatchers.IO) {
+        if (!file.exists() || file.length() == 0L) return@withContext null
+        try {
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeFile(file.absolutePath, options)
+            val origW = options.outWidth
+            val origH = options.outHeight
+            if (origW <= 0 || origH <= 0) return@withContext null
+
+            var inSampleSize = 1
+            val maxOriginal = maxOf(origW, origH)
+            while ((maxOriginal / inSampleSize) > maxDim) {
+                inSampleSize *= 2
+            }
+
+            options.inJustDecodeBounds = false
+            options.inSampleSize = inSampleSize
+            options.inPreferredConfig = Bitmap.Config.ARGB_8888
+
+            val decoded = BitmapFactory.decodeFile(file.absolutePath, options) ?: return@withContext null
+            rotateBitmapIfRequired(file, decoded)
+        } catch (oom: OutOfMemoryError) {
+            try {
+                val fallbackOpts = BitmapFactory.Options().apply {
+                    inSampleSize = 4
+                    inPreferredConfig = Bitmap.Config.RGB_565
+                }
+                val decoded = BitmapFactory.decodeFile(file.absolutePath, fallbackOpts) ?: return@withContext null
+                rotateBitmapIfRequired(file, decoded)
+            } catch (_: Throwable) {
+                null
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     private fun decodeImageThumbnail(file: File): Bitmap? {
         return try {
             val options = BitmapFactory.Options().apply {
@@ -55,9 +96,38 @@ object VaultThumbnailLoader {
             options.inPreferredConfig = Bitmap.Config.RGB_565
 
             val decoded = BitmapFactory.decodeFile(file.absolutePath, options) ?: return null
-            scaleBitmap(decoded, TARGET_SIZE, TARGET_SIZE)
+            val rotated = rotateBitmapIfRequired(file, decoded)
+            scaleBitmap(rotated, TARGET_SIZE, TARGET_SIZE)
         } catch (e: Throwable) {
             null
+        }
+    }
+
+    private fun rotateBitmapIfRequired(file: File, bitmap: Bitmap): Bitmap {
+        return try {
+            val exif = ExifInterface(file.absolutePath)
+            val orientation = exif.getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL
+            )
+            val matrix = Matrix()
+            when (orientation) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+                ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+                ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+                ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+            }
+            if (!matrix.isIdentity) {
+                val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                if (rotated != bitmap) {
+                    bitmap.recycle()
+                    return rotated
+                }
+            }
+            bitmap
+        } catch (_: Throwable) {
+            bitmap
         }
     }
 

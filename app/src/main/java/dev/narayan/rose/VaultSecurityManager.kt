@@ -23,7 +23,8 @@ object VaultSecurityManager {
         title: String,
         subtitle: String,
         onSuccess: () -> Unit,
-        onError: (String) -> Unit
+        onError: (String) -> Unit = {},
+        onCancel: () -> Unit = {}
     ) {
         try {
             val executor = ContextCompat.getMainExecutor(activity)
@@ -43,7 +44,9 @@ object VaultSecurityManager {
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
-                    if (errorCode != BiometricPrompt.ERROR_USER_CANCELED && errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
+                    if (errorCode == BiometricPrompt.ERROR_USER_CANCELED || errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
+                        onCancel()
+                    } else {
                         onError(errString.toString())
                     }
                 }
