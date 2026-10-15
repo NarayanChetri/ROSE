@@ -282,22 +282,19 @@ private fun VaultLockView(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .statusBarsPadding()
-                .navigationBarsPadding(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+                .padding(paddingValues),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Top Row: Circular Back Button (matches image exactly)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
-                        .size(42.dp)
+                        .size(40.dp)
                         .clip(CircleShape)
                         .background(Color(0xFF25293A))
                         .clickable { onBack() },
@@ -312,6 +309,8 @@ private fun VaultLockView(
                 }
             }
 
+            Spacer(modifier = Modifier.weight(0.5f))
+
             // Header Section: Rounded Lock Card, Title, Subtitle, Dots
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -320,8 +319,8 @@ private fun VaultLockView(
                 // Centered Lock Icon in Rounded Card
                 Box(
                     modifier = Modifier
-                        .size(76.dp)
-                        .clip(RoundedCornerShape(22.dp))
+                        .size(62.dp)
+                        .clip(RoundedCornerShape(20.dp))
                         .background(Color(0xFF1E2333)),
                     contentAlignment = Alignment.Center
                 ) {
@@ -329,11 +328,11 @@ private fun VaultLockView(
                         imageVector = Icons.Default.Lock,
                         contentDescription = null,
                         tint = Color(0xFFA5B4FC),
-                        modifier = Modifier.size(34.dp)
+                        modifier = Modifier.size(28.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 val titleText = when {
                     !isPinConfigured && pinSetupStep == 0 -> "Set PIN"
@@ -348,27 +347,27 @@ private fun VaultLockView(
 
                 Text(
                     text = titleText,
-                    fontSize = 26.sp,
+                    fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
                     textAlign = TextAlign.Center
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 Text(
                     text = descText,
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     color = Color(0xFF94A3B8),
                     textAlign = TextAlign.Center
                 )
 
-                Spacer(modifier = Modifier.height(28.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
                 // 4 PIN Dots (matches image exactly)
                 Row(
                     modifier = Modifier.offset(x = shakeOffset.value.dp),
-                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     repeat(4) { index ->
@@ -384,7 +383,7 @@ private fun VaultLockView(
                         )
                         Box(
                             modifier = Modifier
-                                .size(14.dp)
+                                .size(12.dp)
                                 .clip(CircleShape)
                                 .background(dotColor)
                         )
@@ -393,10 +392,10 @@ private fun VaultLockView(
 
                 // Error Message
                 if (errorMessage.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text = errorMessage,
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         color = Color(0xFFEF4444),
                         fontWeight = FontWeight.Medium,
                         textAlign = TextAlign.Center
@@ -404,12 +403,14 @@ private fun VaultLockView(
                 }
             }
 
+            Spacer(modifier = Modifier.weight(1f))
+
             // Keypad (matches image layout: 3 columns, rounded rectangle tiles)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 36.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                    .padding(horizontal = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 val numRows = listOf(
                     listOf("1", "2", "3"),
@@ -420,7 +421,7 @@ private fun VaultLockView(
                 numRows.forEach { row ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         row.forEach { digit ->
                             VaultKeypadTile(
@@ -429,7 +430,7 @@ private fun VaultLockView(
                             ) {
                                 Text(
                                     text = digit,
-                                    fontSize = 26.sp,
+                                    fontSize = 24.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = Color.White
                                 )
@@ -441,7 +442,7 @@ private fun VaultLockView(
                 // Row 4: Empty space | 0 | Backspace
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Spacer(modifier = Modifier.weight(1f))
 
@@ -451,7 +452,7 @@ private fun VaultLockView(
                     ) {
                         Text(
                             text = "0",
-                            fontSize = 26.sp,
+                            fontSize = 24.sp,
                             fontWeight = FontWeight.Medium,
                             color = Color.White
                         )
@@ -465,17 +466,19 @@ private fun VaultLockView(
                             imageVector = Icons.Default.Backspace,
                             contentDescription = "Delete",
                             tint = Color(0xFFCBD5E1),
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
             }
 
+            Spacer(modifier = Modifier.weight(0.7f))
+
             // Bottom Section: "Unlock with biometrics" & "Forgot PIN?"
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 28.dp),
+                    .padding(bottom = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 if (isPinConfigured && isBiometricAvailable) {
@@ -483,7 +486,7 @@ private fun VaultLockView(
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
                             .clickable { onBiometricRequested() }
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
@@ -491,12 +494,12 @@ private fun VaultLockView(
                             imageVector = Icons.Default.Fingerprint,
                             contentDescription = "Biometric",
                             tint = Color(0xFFA5B4FC),
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Unlock with biometrics",
-                            fontSize = 15.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
                             color = Color(0xFFA5B4FC)
                         )
@@ -504,7 +507,6 @@ private fun VaultLockView(
                 }
 
                 if (isPinConfigured) {
-                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Forgot PIN?",
                         fontSize = 12.sp,
@@ -529,10 +531,10 @@ private fun VaultLockView(
                                     showResetConfirmDialog = true
                                 }
                             }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
                     )
                 } else {
-                    Spacer(modifier = Modifier.height(28.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
                 }
             }
         }
@@ -575,8 +577,8 @@ private fun VaultKeypadTile(
 ) {
     Box(
         modifier = modifier
-            .height(66.dp)
-            .clip(RoundedCornerShape(18.dp))
+            .height(54.dp)
+            .clip(RoundedCornerShape(16.dp))
             .background(Color(0xFF1E2333))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
@@ -676,7 +678,6 @@ private fun VaultContentView(
             isSelectionMode = false
             selectedVaultItems.clear()
         } else {
-            viewModel.lockVault()
             onBack()
         }
     }
@@ -753,10 +754,7 @@ private fun VaultContentView(
                             }
                         },
                         navigationIcon = {
-                            IconButton(onClick = {
-                                viewModel.lockVault()
-                                onBack()
-                            }) {
+                            IconButton(onClick = onBack) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                             }
                         },
