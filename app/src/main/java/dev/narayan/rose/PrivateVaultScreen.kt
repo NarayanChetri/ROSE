@@ -20,17 +20,24 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.lazy.grid.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -62,6 +69,9 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 enum class VaultSortBy {
     NAME, DATE, SIZE
@@ -80,6 +90,13 @@ fun PrivateVaultScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var isPinConfigured by remember { mutableStateOf(PrivateVaultManager.isPinSet(context)) }
+
+    // Instant autolock when exiting private safe
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.lockVault()
+        }
+    }
 
     // Auto-authenticate with biometric if available and configured
     LaunchedEffect(isPinConfigured, viewModel.isVaultUnlocked) {
@@ -109,6 +126,7 @@ fun PrivateVaultScreen(
             },
             onPinSetupComplete = {
                 isPinConfigured = true
+                viewModel.setVaultBiometricEnabled(true)
                 viewModel.unlockVault()
             },
             onPinSavedRequireUnlock = {
@@ -541,7 +559,7 @@ private fun KeypadButton(
 // Vault Content Screen (Unlocked Mode)
 // -----------------------------------------------------------------------------
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun VaultContentView(
     viewModel: RoseViewModel,
@@ -557,6 +575,7 @@ private fun VaultContentView(
     var isSelectionMode by remember { mutableStateOf(false) }
     val selectedVaultItems = remember { mutableStateListOf<VaultItem>() }
 
+    var isGridView by remember { mutableStateOf(true) }
     var sortBy by remember { mutableStateOf(VaultSortBy.DATE) }
     var sortAscending by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
@@ -570,40 +589,20 @@ private fun VaultContentView(
     // In-Vault Media Viewer
     var activeViewerItem by remember { mutableStateOf<VaultItem?>(null) }
 
-    // File Import Picker (Add files to safe)
-    val importLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris ->
-        if (uris.isNotEmpty()) {
-            coroutineScope.launch(Dispatchers.IO) {
-                var addedCount = 0
-                for (uri in uris) {
-                    try {
-                        val displayName = getFileNameFromUri(context, uri) ?: "file_${System.currentTimeMillis()}"
-                        val tempFile = File(context.cacheDir, displayName)
-                        context.contentResolver.openInputStream(uri)?.use { input ->
-                            FileOutputStream(tempFile).use { output ->
-                                input.copyTo(output)
-                            }
-                        }
-                        if (tempFile.exists() && tempFile.length() > 0) {
-                            val ok = PrivateVaultManager.moveToVault(context, tempFile)
-                            if (ok) addedCount++
-                        }
-                    } catch (e: Exception) {}
-                }
-                withContext(Dispatchers.Main) {
-                    if (addedCount > 0) {
-                        viewModel.loadVaultItems()
-                        Toast.makeText(context, context.getString(R.string.toast_moved_to_safe), Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-        }
+    var showCustomFilePicker by remember { mutableStateOf(false) }
+
+    val categories = remember {
+        listOf(
+            VaultCategory.ALL,
+            VaultCategory.PHOTOS,
+            VaultCategory.VIDEOS,
+            VaultCategory.MUSIC,
+            VaultCategory.DOCUMENTS,
+            VaultCategory.OTHER
+        )
     }
 
-    var selectedCategory by remember { mutableStateOf(VaultCategory.ALL) }
-    var showCustomFilePicker by remember { mutableStateOf(false) }
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { categories.size })
 
     val categoryCounts = remember(viewModel.vaultItems) {
         val counts = mutableMapOf<VaultCategory, Int>()
@@ -622,27 +621,22 @@ private fun VaultContentView(
         counts
     }
 
-    val items = remember(viewModel.vaultItems, selectedCategory, sortBy, sortAscending) {
-        val filtered = when (selectedCategory) {
-            VaultCategory.ALL -> viewModel.vaultItems
-            VaultCategory.PHOTOS -> viewModel.vaultItems.filter { it.fileType == FileType.IMAGE }
-            VaultCategory.VIDEOS -> viewModel.vaultItems.filter { it.fileType == FileType.VIDEO }
-            VaultCategory.MUSIC -> viewModel.vaultItems.filter { it.fileType == FileType.AUDIO }
-            VaultCategory.DOCUMENTS -> viewModel.vaultItems.filter { it.fileType == FileType.DOCUMENT || it.fileType == FileType.PDF }
-            VaultCategory.OTHER -> viewModel.vaultItems.filter {
-                it.fileType != FileType.IMAGE &&
-                it.fileType != FileType.VIDEO &&
-                it.fileType != FileType.AUDIO &&
-                it.fileType != FileType.DOCUMENT &&
-                it.fileType != FileType.PDF
+    val gridStates = remember { categories.indices.map { LazyGridState() } }
+    val listStates = remember { categories.indices.map { androidx.compose.foundation.lazy.LazyListState() } }
+
+    fun scrollToTop() {
+        coroutineScope.launch {
+            val curr = pagerState.currentPage
+            if (isGridView) {
+                gridStates.getOrNull(curr)?.scrollToItem(0)
+            } else {
+                listStates.getOrNull(curr)?.scrollToItem(0)
             }
         }
-        val sorted = when (sortBy) {
-            VaultSortBy.NAME -> filtered.sortedBy { it.originalName.lowercase() }
-            VaultSortBy.DATE -> filtered.sortedBy { it.dateAdded }
-            VaultSortBy.SIZE -> filtered.sortedBy { it.size }
-        }
-        if (sortAscending) sorted else sorted.reversed()
+    }
+
+    LaunchedEffect(sortBy, sortAscending, isGridView) {
+        scrollToTop()
     }
 
     BackHandler {
@@ -652,6 +646,7 @@ private fun VaultContentView(
             isSelectionMode = false
             selectedVaultItems.clear()
         } else {
+            viewModel.lockVault()
             onBack()
         }
     }
@@ -677,16 +672,34 @@ private fun VaultContentView(
                             }
                         },
                         actions = {
+                            val activeCat = categories[pagerState.currentPage]
+                            val activeCatItems = viewModel.vaultItems.filter { item ->
+                                when (activeCat) {
+                                    VaultCategory.ALL -> true
+                                    VaultCategory.PHOTOS -> item.fileType == FileType.IMAGE
+                                    VaultCategory.VIDEOS -> item.fileType == FileType.VIDEO
+                                    VaultCategory.MUSIC -> item.fileType == FileType.AUDIO
+                                    VaultCategory.DOCUMENTS -> item.fileType == FileType.DOCUMENT || item.fileType == FileType.PDF
+                                    VaultCategory.OTHER -> item.fileType != FileType.IMAGE &&
+                                            item.fileType != FileType.VIDEO &&
+                                            item.fileType != FileType.AUDIO &&
+                                            item.fileType != FileType.DOCUMENT &&
+                                            item.fileType != FileType.PDF
+                                }
+                            }
+                            val allInPageSelected = activeCatItems.isNotEmpty() && activeCatItems.all { selectedVaultItems.contains(it) }
                             IconButton(onClick = {
-                                if (selectedVaultItems.size == items.size) {
-                                    selectedVaultItems.clear()
+                                if (allInPageSelected) {
+                                    selectedVaultItems.removeAll(activeCatItems)
+                                    if (selectedVaultItems.isEmpty()) isSelectionMode = false
                                 } else {
-                                    selectedVaultItems.clear()
-                                    selectedVaultItems.addAll(items)
+                                    activeCatItems.forEach {
+                                        if (!selectedVaultItems.contains(it)) selectedVaultItems.add(it)
+                                    }
                                 }
                             }) {
                                 Icon(
-                                    if (selectedVaultItems.size == items.size) Icons.Default.Deselect else Icons.Default.SelectAll,
+                                    if (allInPageSelected) Icons.Default.Deselect else Icons.Default.SelectAll,
                                     contentDescription = "Select All"
                                 )
                             }
@@ -700,16 +713,20 @@ private fun VaultContentView(
                         title = {
                             Column {
                                 Text(stringResource(R.string.vault_title), fontWeight = FontWeight.SemiBold)
-                                val totalSize = items.sumOf { it.size }
+                                val currentCat = categories[pagerState.currentPage]
+                                val totalCount = categoryCounts[currentCat] ?: 0
                                 Text(
-                                    "${items.size} file${if (items.size != 1) "s" else ""} • ${formatFileSize(totalSize)}",
+                                    "$totalCount file${if (totalCount != 1) "s" else ""}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         },
                         navigationIcon = {
-                            IconButton(onClick = onBack) {
+                            IconButton(onClick = {
+                                viewModel.lockVault()
+                                onBack()
+                            }) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                             }
                         },
@@ -717,23 +734,32 @@ private fun VaultContentView(
                             // Sort action
                             Box {
                                 IconButton(onClick = { showSortMenu = true }) {
-                                    Icon(Icons.Default.Sort, contentDescription = "Sort")
+                                    Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort")
                                 }
                                 DropdownMenu(
                                     expanded = showSortMenu,
                                     onDismissRequest = { showSortMenu = false },
-                                    shape = RoundedCornerShape(16.dp)
+                                    shape = RoundedCornerShape(16.dp),
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                                 ) {
                                     DropdownMenuItem(
-                                        text = { Text("Date added") },
+                                        text = { Text("Date modified") },
                                         onClick = {
                                             if (sortBy == VaultSortBy.DATE) sortAscending = !sortAscending
                                             else { sortBy = VaultSortBy.DATE; sortAscending = false }
                                             showSortMenu = false
+                                            scrollToTop()
                                         },
                                         leadingIcon = {
+                                            Icon(Icons.Default.Schedule, contentDescription = null)
+                                        },
+                                        trailingIcon = {
                                             if (sortBy == VaultSortBy.DATE) {
-                                                Icon(if (sortAscending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward, null)
+                                                Icon(
+                                                    if (sortAscending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                                                    null,
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
                                             }
                                         }
                                     )
@@ -743,10 +769,18 @@ private fun VaultContentView(
                                             if (sortBy == VaultSortBy.NAME) sortAscending = !sortAscending
                                             else { sortBy = VaultSortBy.NAME; sortAscending = true }
                                             showSortMenu = false
+                                            scrollToTop()
                                         },
                                         leadingIcon = {
+                                            Icon(Icons.Default.SortByAlpha, contentDescription = null)
+                                        },
+                                        trailingIcon = {
                                             if (sortBy == VaultSortBy.NAME) {
-                                                Icon(if (sortAscending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward, null)
+                                                Icon(
+                                                    if (sortAscending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                                                    null,
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
                                             }
                                         }
                                     )
@@ -756,22 +790,39 @@ private fun VaultContentView(
                                             if (sortBy == VaultSortBy.SIZE) sortAscending = !sortAscending
                                             else { sortBy = VaultSortBy.SIZE; sortAscending = false }
                                             showSortMenu = false
+                                            scrollToTop()
                                         },
                                         leadingIcon = {
+                                            Icon(Icons.Default.DataUsage, contentDescription = null)
+                                        },
+                                        trailingIcon = {
                                             if (sortBy == VaultSortBy.SIZE) {
-                                                Icon(if (sortAscending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward, null)
+                                                Icon(
+                                                    if (sortAscending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                                                    null,
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
                                             }
                                         }
                                     )
-                                }
-                            }
 
-                            // Lock action
-                            IconButton(onClick = {
-                                viewModel.lockVault()
-                                Toast.makeText(context, context.getString(R.string.toast_vault_locked), Toast.LENGTH_SHORT).show()
-                            }) {
-                                Icon(Icons.Default.Lock, contentDescription = stringResource(R.string.vault_lock_now))
+                                    HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp).alpha(0.3f))
+
+                                    DropdownMenuItem(
+                                        text = { Text(if (isGridView) stringResource(R.string.view_list) else stringResource(R.string.view_grid)) },
+                                        onClick = {
+                                            isGridView = !isGridView
+                                            showSortMenu = false
+                                            scrollToTop()
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                if (isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.ViewModule,
+                                                contentDescription = null
+                                            )
+                                        }
+                                    )
+                                }
                             }
 
                             // More options
@@ -816,12 +867,13 @@ private fun VaultContentView(
 
                 // Category Filter Tabs Row
                 VaultCategoryFilterRow(
-                    selectedCategory = selectedCategory,
-                    onCategorySelected = {
-                        selectedCategory = it
-                        if (isSelectionMode) {
-                            isSelectionMode = false
-                            selectedVaultItems.clear()
+                    selectedCategory = categories[pagerState.currentPage],
+                    onCategorySelected = { cat ->
+                        val index = categories.indexOf(cat)
+                        if (index >= 0) {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(index)
+                            }
                         }
                     },
                     counts = categoryCounts
@@ -896,13 +948,51 @@ private fun VaultContentView(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { paddingValues ->
-        Box(
+        HorizontalPager(
+            state = pagerState,
             modifier = Modifier
                 .padding(paddingValues)
                 .fillMaxSize()
-        ) {
-            if (items.isEmpty()) {
-                // Empty Vault State
+        ) { pageIndex ->
+            val pageCat = categories[pageIndex]
+            val pageItems = remember(viewModel.vaultItems, pageCat, sortBy, sortAscending) {
+                val filtered = when (pageCat) {
+                    VaultCategory.ALL -> viewModel.vaultItems
+                    VaultCategory.PHOTOS -> viewModel.vaultItems.filter { it.fileType == FileType.IMAGE }
+                    VaultCategory.VIDEOS -> viewModel.vaultItems.filter { it.fileType == FileType.VIDEO }
+                    VaultCategory.MUSIC -> viewModel.vaultItems.filter { it.fileType == FileType.AUDIO }
+                    VaultCategory.DOCUMENTS -> viewModel.vaultItems.filter { it.fileType == FileType.DOCUMENT || it.fileType == FileType.PDF }
+                    VaultCategory.OTHER -> viewModel.vaultItems.filter {
+                        it.fileType != FileType.IMAGE &&
+                        it.fileType != FileType.VIDEO &&
+                        it.fileType != FileType.AUDIO &&
+                        it.fileType != FileType.DOCUMENT &&
+                        it.fileType != FileType.PDF
+                    }
+                }
+                val sorted = when (sortBy) {
+                    VaultSortBy.NAME -> filtered.sortedBy { it.originalName.lowercase() }
+                    VaultSortBy.DATE -> filtered.sortedBy { if (it.originalLastModified > 0L) it.originalLastModified else it.dateAdded }
+                    VaultSortBy.SIZE -> filtered.sortedBy { it.size }
+                }
+                if (sortAscending) sorted else sorted.reversed()
+            }
+
+            // Group by date made when sorted by date
+            val groupedByDate = remember(pageItems, sortBy) {
+                if (sortBy == VaultSortBy.DATE) {
+                    val map = LinkedHashMap<String, MutableList<VaultItem>>()
+                    pageItems.forEach { item ->
+                        val ts = if (item.originalLastModified > 0L) item.originalLastModified else item.dateAdded
+                        val header = formatVaultDateHeader(context, ts)
+                        map.getOrPut(header) { mutableListOf() }.add(item)
+                    }
+                    map
+                } else null
+            }
+
+            if (pageItems.isEmpty()) {
+                // Empty Category State
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -926,7 +1016,7 @@ private fun VaultContentView(
                     Spacer(modifier = Modifier.height(20.dp))
                     Text(
                         if (viewModel.vaultItems.isEmpty()) stringResource(R.string.vault_empty_title)
-                        else "No ${selectedCategory.name.lowercase()} found in Safe",
+                        else "No ${pageCat.name.lowercase()} found in Safe",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -947,36 +1037,132 @@ private fun VaultContentView(
                         Text(stringResource(R.string.vault_add_files))
                     }
                 }
-            } else {
+            } else if (isGridView) {
+                val gridState = gridStates[pageIndex]
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 108.dp),
+                    state = gridState,
                     contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 88.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(items, key = { it.id }) { item ->
-                        val isSelected = selectedVaultItems.contains(item)
-                        VaultGridItem(
-                            item = item,
-                            isSelected = isSelected,
-                            isSelectionMode = isSelectionMode,
-                            onClick = {
-                                if (isSelectionMode) {
-                                    if (isSelected) selectedVaultItems.remove(item)
-                                    else selectedVaultItems.add(item)
-                                    if (selectedVaultItems.isEmpty()) isSelectionMode = false
-                                } else {
-                                    activeViewerItem = item
-                                }
-                            },
-                            onLongClick = {
-                                if (!isSelectionMode) {
-                                    isSelectionMode = true
-                                    selectedVaultItems.add(item)
-                                }
+                    if (groupedByDate != null) {
+                        groupedByDate.forEach { (header, itemsInDate) ->
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                DateSectionHeader(title = header, count = itemsInDate.size)
                             }
-                        )
+                            items(itemsInDate, key = { it.id }) { item ->
+                                val isSelected = selectedVaultItems.contains(item)
+                                VaultGridItem(
+                                    item = item,
+                                    isSelected = isSelected,
+                                    isSelectionMode = isSelectionMode,
+                                    onClick = {
+                                        if (isSelectionMode) {
+                                            if (isSelected) selectedVaultItems.remove(item)
+                                            else selectedVaultItems.add(item)
+                                            if (selectedVaultItems.isEmpty()) isSelectionMode = false
+                                        } else {
+                                            activeViewerItem = item
+                                        }
+                                    },
+                                    onLongClick = {
+                                        if (!isSelectionMode) {
+                                            isSelectionMode = true
+                                            selectedVaultItems.add(item)
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    } else {
+                        items(pageItems, key = { it.id }) { item ->
+                            val isSelected = selectedVaultItems.contains(item)
+                            VaultGridItem(
+                                item = item,
+                                isSelected = isSelected,
+                                isSelectionMode = isSelectionMode,
+                                onClick = {
+                                    if (isSelectionMode) {
+                                        if (isSelected) selectedVaultItems.remove(item)
+                                        else selectedVaultItems.add(item)
+                                        if (selectedVaultItems.isEmpty()) isSelectionMode = false
+                                    } else {
+                                        activeViewerItem = item
+                                    }
+                                },
+                                onLongClick = {
+                                    if (!isSelectionMode) {
+                                        isSelectionMode = true
+                                        selectedVaultItems.add(item)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            } else {
+                // List View
+                val listState = listStates[pageIndex]
+                LazyColumn(
+                    state = listState,
+                    contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    if (groupedByDate != null) {
+                        groupedByDate.forEach { (header, itemsInDate) ->
+                            item {
+                                DateSectionHeader(title = header, count = itemsInDate.size)
+                            }
+                            items(itemsInDate, key = { it.id }) { item ->
+                                val isSelected = selectedVaultItems.contains(item)
+                                VaultListItem(
+                                    item = item,
+                                    isSelected = isSelected,
+                                    isSelectionMode = isSelectionMode,
+                                    onClick = {
+                                        if (isSelectionMode) {
+                                            if (isSelected) selectedVaultItems.remove(item)
+                                            else selectedVaultItems.add(item)
+                                            if (selectedVaultItems.isEmpty()) isSelectionMode = false
+                                        } else {
+                                            activeViewerItem = item
+                                        }
+                                    },
+                                    onLongClick = {
+                                        if (!isSelectionMode) {
+                                            isSelectionMode = true
+                                            selectedVaultItems.add(item)
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    } else {
+                        items(pageItems, key = { it.id }) { item ->
+                            val isSelected = selectedVaultItems.contains(item)
+                            VaultListItem(
+                                item = item,
+                                isSelected = isSelected,
+                                isSelectionMode = isSelectionMode,
+                                onClick = {
+                                    if (isSelectionMode) {
+                                        if (isSelected) selectedVaultItems.remove(item)
+                                        else selectedVaultItems.add(item)
+                                        if (selectedVaultItems.isEmpty()) isSelectionMode = false
+                                    } else {
+                                        activeViewerItem = item
+                                    }
+                                },
+                                onLongClick = {
+                                    if (!isSelectionMode) {
+                                        isSelectionMode = true
+                                        selectedVaultItems.add(item)
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -1121,6 +1307,18 @@ private fun VaultCategoryFilterRow(
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
+
+    LaunchedEffect(selectedCategory) {
+        val allCats = VaultCategory.entries
+        val selectedIndex = allCats.indexOf(selectedCategory)
+        if (selectedIndex >= 0 && allCats.size > 1) {
+            val maxScroll = scrollState.maxValue
+            if (maxScroll > 0) {
+                val targetScroll = (maxScroll * (selectedIndex.toFloat() / (allCats.size - 1))).toInt()
+                scrollState.animateScrollTo(targetScroll)
+            }
+        }
+    }
 
     Row(
         modifier = modifier
@@ -1311,9 +1509,24 @@ private fun VaultCustomFilePickerDialog(
                         }
                     },
                     actions = {
-                        if (currentDir != rootDir) {
-                            IconButton(onClick = { currentDir = rootDir }) {
-                                Icon(Icons.Default.Home, contentDescription = stringResource(R.string.content_desc_go_to_root))
+                        val selectableFilesInCurrentDir = directoryContents.filter { !it.isDirectory }
+                        if (selectableFilesInCurrentDir.isNotEmpty()) {
+                            val areAllSelected = selectableFilesInCurrentDir.all { selectedFiles.contains(it) }
+                            IconButton(onClick = {
+                                if (areAllSelected) {
+                                    selectedFiles.removeAll(selectableFilesInCurrentDir)
+                                } else {
+                                    selectableFilesInCurrentDir.forEach { file ->
+                                        if (!selectedFiles.contains(file)) {
+                                            selectedFiles.add(file)
+                                        }
+                                    }
+                                }
+                            }) {
+                                Icon(
+                                    imageVector = if (areAllSelected) Icons.Default.Deselect else Icons.Default.SelectAll,
+                                    contentDescription = if (areAllSelected) "Deselect All" else "Select All"
+                                )
                             }
                         }
                     },
@@ -1592,6 +1805,177 @@ private fun VaultGridItem(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun DateSectionHeader(title: String, count: Int) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = "$count file${if (count != 1) "s" else ""}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun VaultListItem(
+    item: VaultItem,
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
+    val context = LocalContext.current
+    var thumbnail by remember { mutableStateOf<Bitmap?>(null) }
+
+    LaunchedEffect(item.id) {
+        val file = PrivateVaultManager.getVaultFile(context, item)
+        if (item.fileType == FileType.IMAGE || item.fileType == FileType.VIDEO) {
+            thumbnail = VaultThumbnailLoader.loadThumbnail(file, item.fileType)
+        }
+    }
+
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f) else Color.Transparent,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Thumbnail / Icon
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (thumbnail != null) {
+                    Image(
+                        bitmap = thumbnail!!.asImageBitmap(),
+                        contentDescription = item.originalName,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    val icon = when (item.fileType) {
+                        FileType.VIDEO -> Icons.Default.Videocam
+                        FileType.IMAGE -> Icons.Default.Image
+                        FileType.AUDIO -> Icons.Default.MusicNote
+                        FileType.DOCUMENT, FileType.PDF -> Icons.AutoMirrored.Filled.InsertDriveFile
+                        FileType.APK -> Icons.Default.Android
+                        FileType.ZIP -> Icons.Default.Archive
+                        else -> Icons.AutoMirrored.Filled.InsertDriveFile
+                    }
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                if (item.fileType == FileType.VIDEO) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .size(22.dp)
+                            .background(Color.Black.copy(alpha = 0.55f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            // File Name and Details
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.originalName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                val dateStr = remember(item.originalLastModified) {
+                    val ts = if (item.originalLastModified > 0L) item.originalLastModified else item.dateAdded
+                    SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date(ts))
+                }
+                Text(
+                    text = "${formatFileSize(item.size)} • $dateStr",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // Selection indicator
+            if (isSelectionMode) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onClick() }
+                )
+            }
+        }
+    }
+}
+
+private fun formatVaultDateHeader(context: Context, timestamp: Long): String {
+    if (timestamp <= 0L) return "Unknown Date"
+    val nowCalendar = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    val itemCalendar = Calendar.getInstance().apply {
+        timeInMillis = timestamp
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+
+    val actualDiffDays = ((nowCalendar.timeInMillis - itemCalendar.timeInMillis) / (24 * 60 * 60 * 1000)).toInt()
+
+    return when {
+        actualDiffDays == 0 -> context.getString(R.string.date_today)
+        actualDiffDays == 1 -> context.getString(R.string.date_yesterday)
+        actualDiffDays in 2..7 -> context.getString(R.string.date_days_ago, actualDiffDays)
+        else -> SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(timestamp))
     }
 }
 
@@ -2198,7 +2582,8 @@ private fun ChangePinDialog(
     onSuccess: () -> Unit
 ) {
     val context = LocalContext.current
-    var step by remember { mutableIntStateOf(0) } // 0: current, 1: new, 2: confirm
+    val hasPin = remember { PrivateVaultManager.isPinSet(context) }
+    var step by remember { mutableIntStateOf(if (hasPin) 0 else 1) } // 0: current, 1: new, 2: confirm
     var currentPin by remember { mutableStateOf("") }
     var newPin by remember { mutableStateOf("") }
     var confirmPin by remember { mutableStateOf("") }
@@ -2261,7 +2646,11 @@ private fun ChangePinDialog(
                         }
                         2 -> {
                             if (confirmPin == newPin) {
-                                val ok = PrivateVaultManager.changePin(context, currentPin, newPin)
+                                val ok = if (hasPin) {
+                                    PrivateVaultManager.changePin(context, currentPin, newPin)
+                                } else {
+                                    PrivateVaultManager.setupPin(context, newPin)
+                                }
                                 if (ok) {
                                     onSuccess()
                                 } else {
