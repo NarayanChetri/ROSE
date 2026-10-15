@@ -511,21 +511,51 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                             (slideInHorizontally(animationSpec = tween(320, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(250)))
                                                 .togetherWith(slideOutHorizontally(animationSpec = tween(320, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(200)))
                                                 .using(SizeTransform(clip = false))
+                                        } else if (initial is AppScreen.Home && target is AppScreen.Files && (target.category != null || target.favourites)) {
+                                            // Option A: Material Shared Axis Y (Vertical Slide-Up + Subtle Scale) for Categories
+                                            (slideInVertically(animationSpec = tween(320, easing = FastOutSlowInEasing)) { (it * 0.14f).toInt() } +
+                                                    scaleIn(initialScale = 0.94f, animationSpec = tween(320, easing = FastOutSlowInEasing)) +
+                                                    fadeIn(tween(260)))
+                                                .togetherWith(slideOutVertically(animationSpec = tween(280, easing = FastOutSlowInEasing)) { -(it * 0.08f).toInt() } + fadeOut(tween(180)))
+                                                .using(SizeTransform(clip = false))
+                                        } else if (initial is AppScreen.Files && (initial.category != null || initial.favourites) && target is AppScreen.Home) {
+                                            // Return from Category to Home: Slide back down with subtle scale
+                                            (slideInVertically(animationSpec = tween(300, easing = FastOutSlowInEasing)) { -(it * 0.08f).toInt() } + fadeIn(tween(220)))
+                                                .togetherWith(slideOutVertically(animationSpec = tween(280, easing = FastOutSlowInEasing)) { (it * 0.14f).toInt() } +
+                                                        scaleOut(targetScale = 0.94f, animationSpec = tween(280, easing = FastOutSlowInEasing)) +
+                                                        fadeOut(tween(200)))
+                                                .using(SizeTransform(clip = false))
+                                        } else if (initial is AppScreen.Home && (
+                                                (target is AppScreen.Files && target.category == null && !target.favourites) ||
+                                                target is AppScreen.RecycleBin ||
+                                                target is AppScreen.PrivateSafe ||
+                                                target is AppScreen.FtpServer ||
+                                                target is AppScreen.Settings ||
+                                                target is AppScreen.About
+                                        )) {
+                                            // Smooth forward slide animation when opening Quick Access folders, All Files, Recycle Bin, Safe, etc.
+                                            (slideInHorizontally(animationSpec = tween(320, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(240)))
+                                                .togetherWith(slideOutHorizontally(animationSpec = tween(320, easing = FastOutSlowInEasing)) { -it / 4 } + fadeOut(tween(200)))
+                                                .using(SizeTransform(clip = false))
+                                        } else if (target is AppScreen.Home && (
+                                                (initial is AppScreen.Files && initial.category == null && !initial.recent && !initial.favourites) ||
+                                                initial is AppScreen.RecycleBin ||
+                                                initial is AppScreen.PrivateSafe ||
+                                                initial is AppScreen.FtpServer ||
+                                                initial is AppScreen.Settings ||
+                                                initial is AppScreen.About
+                                        )) {
+                                            // Smooth backward slide animation when returning to Home
+                                            (slideInHorizontally(animationSpec = tween(300, easing = FastOutSlowInEasing)) { -it / 4 } + fadeIn(tween(240)))
+                                                .togetherWith(slideOutHorizontally(animationSpec = tween(300, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(200)))
+                                                .using(SizeTransform(clip = false))
                                         } else {
                                             when (target) {
                                                 is AppScreen.Files -> {
-                                                    if (target.isFromAllFiles) {
-                                                        // Snappier transition for All Files
-                                                        (fadeIn(tween(250, easing = FastOutSlowInEasing)) +
-                                                                slideInVertically(tween(250, easing = FastOutSlowInEasing)) { it / 20 })
-                                                            .togetherWith(fadeOut(tween(150, easing = FastOutSlowInEasing)))
-                                                            .using(SizeTransform(clip = false))
-                                                    } else {
-                                                        (fadeIn(tween(200, easing = FastOutSlowInEasing)) +
-                                                                scaleIn(initialScale = 0.96f, animationSpec = tween(200, easing = FastOutSlowInEasing)))
-                                                            .togetherWith(fadeOut(tween(100, easing = FastOutSlowInEasing)))
-                                                            .using(SizeTransform(clip = false))
-                                                    }
+                                                    (fadeIn(tween(200, easing = FastOutSlowInEasing)) +
+                                                            scaleIn(initialScale = 0.96f, animationSpec = tween(200, easing = FastOutSlowInEasing)))
+                                                        .togetherWith(fadeOut(tween(100, easing = FastOutSlowInEasing)))
+                                                        .using(SizeTransform(clip = false))
                                                 }
                                                 is AppScreen.Home, is AppScreen.RecycleBin, is AppScreen.PrivateSafe -> {
                                                     (fadeIn(tween(160, easing = FastOutSlowInEasing)) +

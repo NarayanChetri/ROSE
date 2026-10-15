@@ -11,6 +11,8 @@ import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.view.View
+import android.view.Window
 import android.view.WindowManager
 import android.webkit.MimeTypeMap
 import android.widget.Toast
@@ -54,6 +56,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import kotlin.math.abs
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -63,6 +66,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.content.FileProvider
 import androidx.fragment.app.FragmentActivity
 import kotlinx.coroutines.Dispatchers
@@ -2027,6 +2031,49 @@ private fun formatVaultDateHeader(context: Context, timestamp: Long): String {
 }
 
 // -----------------------------------------------------------------------------
+// Screen Brightness Helpers for Vault Viewers (Supports Dialog & Activity Windows)
+// -----------------------------------------------------------------------------
+
+private fun getSystemScreenBrightness(context: Context): Float {
+    return try {
+        android.provider.Settings.System.getInt(
+            context.contentResolver,
+            android.provider.Settings.System.SCREEN_BRIGHTNESS
+        ) / 255f
+    } catch (_: Exception) {
+        0.5f
+    }
+}
+
+private fun setVaultScreenBrightness(view: View, context: Context, brightness: Float) {
+    var parent = view.parent
+    var dialogWin: Window? = null
+    while (parent != null) {
+        if (parent is DialogWindowProvider) {
+            dialogWin = parent.window
+            break
+        }
+        parent = (parent as? View)?.parent
+    }
+    val actWin = (context as? Activity)?.window
+
+    dialogWin?.let { w ->
+        val lp = w.attributes
+        lp.screenBrightness = brightness
+        w.attributes = lp
+    }
+    actWin?.let { w ->
+        val lp = w.attributes
+        lp.screenBrightness = brightness
+        w.attributes = lp
+    }
+}
+
+private fun restoreVaultBrightness(view: View, context: Context) {
+    setVaultScreenBrightness(view, context, WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE)
+}
+
+// -----------------------------------------------------------------------------
 // In-Vault Media Viewer Dialog (Images, Videos, and Files)
 // -----------------------------------------------------------------------------
 
@@ -2039,6 +2086,9 @@ private fun VaultMediaViewerDialog(
     onShare: () -> Unit
 ) {
     val context = LocalContext.current
+    val activity = context as? Activity
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val vaultFile = remember(item.id) { PrivateVaultManager.getVaultFile(context, item) }
     var isPlaying by remember { mutableStateOf(false) }
     var showControls by remember { mutableStateOf(true) }
@@ -2067,6 +2117,16 @@ private fun VaultMediaViewerDialog(
         onDismissRequest = handleBack,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
+        val view = LocalView.current
+
+        // Restore orientation and screen brightness when media viewer is disposed
+        DisposableEffect(view, context) {
+            onDispose {
+                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                restoreVaultBrightness(view, context)
+            }
+        }
+
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = Color.Black
@@ -2233,6 +2293,26 @@ private fun VaultMediaViewerDialog(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
+                        if (item.fileType == FileType.IMAGE) {
+                            IconButton(
+                                onClick = {
+                                    activity?.let { act ->
+                                        act.requestedOrientation = if (isLandscape) {
+                                            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                        } else {
+                                            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                        }
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ScreenRotation,
+                                    contentDescription = "Rotate",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -2301,6 +2381,20 @@ private fun ZoomableVaultImage(
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
 
+    val context = LocalContext.current
+    val view = LocalView.current
+    val initialBrightness = remember { getSystemScreenBrightness(context) }
+    var currentBrightness by remember { mutableFloatStateOf(initialBrightness.coerceIn(0.01f, 1f)) }
+    var showBrightnessIndicator by remember { mutableStateOf(false) }
+    var gestureTriggerTime by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(gestureTriggerTime) {
+        if (gestureTriggerTime > 0L) {
+            delay(1200)
+            showBrightnessIndicator = false
+        }
+    }
+
     LaunchedEffect(file.absolutePath) {
         isLoading = true
         bitmap = VaultThumbnailLoader.decodeFullImage(file)
@@ -2310,6 +2404,50 @@ private fun ZoomableVaultImage(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .pointerInput(scale) {
+                if (scale <= 1.05f) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val isLeft = down.position.x < (size.width / 2f)
+                        var hasDragged = false
+                        val touchSlop = viewConfiguration.touchSlop
+                        val initialY = down.position.y
+
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            if (event.changes.size > 1) {
+                                break
+                            }
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+
+                            if (!change.pressed) {
+                                if (hasDragged) {
+                                    gestureTriggerTime = System.currentTimeMillis()
+                                }
+                                break
+                            }
+
+                            val totalDragY = change.position.y - initialY
+                            if (!hasDragged && abs(totalDragY) > touchSlop && isLeft) {
+                                hasDragged = true
+                                showBrightnessIndicator = true
+                            }
+
+                            if (hasDragged && isLeft) {
+                                val dragDelta = change.previousPosition.y - change.position.y
+                                val heightFactor = size.height * 0.75f
+                                val delta = dragDelta / heightFactor
+
+                                currentBrightness = (currentBrightness + delta).coerceIn(0.01f, 1.0f)
+                                setVaultScreenBrightness(view, context, currentBrightness)
+                                showBrightnessIndicator = true
+                                gestureTriggerTime = System.currentTimeMillis()
+                                change.consume()
+                            }
+                        }
+                    }
+                }
+            }
             .pointerInput(Unit) {
                 detectTapGestures(
                     onDoubleTap = {
@@ -2376,6 +2514,22 @@ private fun ZoomableVaultImage(
                     textAlign = TextAlign.Center
                 )
             }
+        }
+
+        // Brightness Popup on Left
+        AnimatedVisibility(
+            visible = showBrightnessIndicator,
+            enter = fadeIn() + scaleIn(initialScale = 0.85f),
+            exit = fadeOut() + scaleOut(targetScale = 0.85f),
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = 28.dp)
+        ) {
+            QuickGestureIndicator(
+                icon = Icons.Default.WbSunny,
+                label = "${(currentBrightness * 100).toInt()}%",
+                percent = currentBrightness
+            )
         }
     }
 }
@@ -2460,8 +2614,8 @@ private fun VaultVideoPlayer(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     val activity = context as? Activity
-    val window = activity?.window
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
@@ -2484,16 +2638,7 @@ private fun VaultVideoPlayer(
         mutableFloatStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVolume)
     }
 
-    val initialBrightness = remember {
-        try {
-            android.provider.Settings.System.getInt(
-                context.contentResolver,
-                android.provider.Settings.System.SCREEN_BRIGHTNESS
-            ) / 255f
-        } catch (_: Exception) {
-            0.5f
-        }
-    }
+    val initialBrightness = remember { getSystemScreenBrightness(context) }
     var currentBrightness by remember { mutableFloatStateOf(initialBrightness.coerceIn(0.01f, 1f)) }
 
     var activeGesture by remember { mutableStateOf<VideoGestureType?>(null) }
@@ -2508,14 +2653,10 @@ private fun VaultVideoPlayer(
     }
 
     // Restore orientation and screen brightness when video player is disposed
-    DisposableEffect(Unit) {
+    DisposableEffect(view, context) {
         onDispose {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-            window?.let { w ->
-                val lp = w.attributes
-                lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-                w.attributes = lp
-            }
+            restoreVaultBrightness(view, context)
         }
     }
 
@@ -2612,11 +2753,7 @@ private fun VaultVideoPlayer(
 
                                 if (isLeft) {
                                     currentBrightness = (currentBrightness + delta).coerceIn(0.01f, 1.0f)
-                                    window?.let { w ->
-                                        val lp = w.attributes
-                                        lp.screenBrightness = currentBrightness
-                                        w.attributes = lp
-                                    }
+                                    setVaultScreenBrightness(view, context, currentBrightness)
                                     activeGesture = VideoGestureType.BRIGHTNESS
                                 } else {
                                     volumeFraction = (volumeFraction + delta).coerceIn(0f, 1.0f)
