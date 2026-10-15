@@ -512,19 +512,21 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                 .togetherWith(slideOutHorizontally(animationSpec = tween(320, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(200)))
                                                 .using(SizeTransform(clip = false))
                                         } else if (initial is AppScreen.Home && target is AppScreen.Files && (target.category != null || target.favourites)) {
-                                            // Option A: Material Shared Axis Y (Vertical Slide-Up + Subtle Scale) for Categories
-                                            (slideInVertically(animationSpec = tween(320, easing = FastOutSlowInEasing)) { (it * 0.14f).toInt() } +
-                                                    scaleIn(initialScale = 0.94f, animationSpec = tween(320, easing = FastOutSlowInEasing)) +
-                                                    fadeIn(tween(260)))
-                                                .togetherWith(slideOutVertically(animationSpec = tween(280, easing = FastOutSlowInEasing)) { -(it * 0.08f).toInt() } + fadeOut(tween(180)))
-                                                .using(SizeTransform(clip = false))
+                                            // Category scaling and opening: Expands smoothly from center
+                                            (scaleIn(initialScale = 0.85f, animationSpec = tween(280, easing = FastOutSlowInEasing)) +
+                                                    fadeIn(animationSpec = tween(240, easing = FastOutSlowInEasing)))
+                                                .togetherWith(
+                                                    scaleOut(targetScale = 0.95f, animationSpec = tween(220, easing = FastOutSlowInEasing)) +
+                                                            fadeOut(animationSpec = tween(180))
+                                                )
                                         } else if (initial is AppScreen.Files && (initial.category != null || initial.favourites) && target is AppScreen.Home) {
-                                            // Return from Category to Home: Slide back down with subtle scale
-                                            (slideInVertically(animationSpec = tween(300, easing = FastOutSlowInEasing)) { -(it * 0.08f).toInt() } + fadeIn(tween(220)))
-                                                .togetherWith(slideOutVertically(animationSpec = tween(280, easing = FastOutSlowInEasing)) { (it * 0.14f).toInt() } +
-                                                        scaleOut(targetScale = 0.94f, animationSpec = tween(280, easing = FastOutSlowInEasing)) +
-                                                        fadeOut(tween(200)))
-                                                .using(SizeTransform(clip = false))
+                                            // Return from Category to Home: Scales down back into place
+                                            (scaleIn(initialScale = 0.95f, animationSpec = tween(240, easing = FastOutSlowInEasing)) +
+                                                    fadeIn(animationSpec = tween(200)))
+                                                .togetherWith(
+                                                    scaleOut(targetScale = 0.85f, animationSpec = tween(220, easing = FastOutSlowInEasing)) +
+                                                            fadeOut(animationSpec = tween(180))
+                                                )
                                         } else if (initial is AppScreen.Home && (
                                                 (target is AppScreen.Files && target.category == null && !target.favourites) ||
                                                 target is AppScreen.RecycleBin ||
@@ -534,9 +536,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                 target is AppScreen.About
                                         )) {
                                             // Smooth forward slide animation when opening Quick Access folders, All Files, Recycle Bin, Safe, etc.
-                                            (slideInHorizontally(animationSpec = tween(320, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(240)))
-                                                .togetherWith(slideOutHorizontally(animationSpec = tween(320, easing = FastOutSlowInEasing)) { -it / 4 } + fadeOut(tween(200)))
-                                                .using(SizeTransform(clip = false))
+                                            (slideInHorizontally(animationSpec = tween(300, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(220)))
+                                                .togetherWith(slideOutHorizontally(animationSpec = tween(300, easing = FastOutSlowInEasing)) { -it / 4 } + fadeOut(tween(180)))
                                         } else if (target is AppScreen.Home && (
                                                 (initial is AppScreen.Files && initial.category == null && !initial.recent && !initial.favourites) ||
                                                 initial is AppScreen.RecycleBin ||
@@ -546,9 +547,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                 initial is AppScreen.About
                                         )) {
                                             // Smooth backward slide animation when returning to Home
-                                            (slideInHorizontally(animationSpec = tween(300, easing = FastOutSlowInEasing)) { -it / 4 } + fadeIn(tween(240)))
-                                                .togetherWith(slideOutHorizontally(animationSpec = tween(300, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(200)))
-                                                .using(SizeTransform(clip = false))
+                                            (slideInHorizontally(animationSpec = tween(280, easing = FastOutSlowInEasing)) { -it / 4 } + fadeIn(tween(220)))
+                                                .togetherWith(slideOutHorizontally(animationSpec = tween(280, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(180)))
                                         } else {
                                             when (target) {
                                                 is AppScreen.Files -> {
@@ -724,6 +724,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                             onOpenPath = { path, fileToHighlight ->
                                                                 val isFromAllFiles = path == Environment.getExternalStorageDirectory().absolutePath && fileToHighlight == null
                                                                 viewModel.resetFiles()
+                                                                viewModel.loadFiles(path, showLoading = false)
                                                                 screen = AppScreen.Files(
                                                                     startPath = path,
                                                                     fromHome = true,
