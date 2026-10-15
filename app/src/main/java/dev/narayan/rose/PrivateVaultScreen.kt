@@ -3,11 +3,15 @@ package dev.narayan.rose
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.view.WindowManager
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import android.widget.VideoView
@@ -40,11 +44,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import kotlin.math.abs
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -2029,17 +2037,29 @@ private fun VaultMediaViewerDialog(
     val vaultFile = remember(item.id) { PrivateVaultManager.getVaultFile(context, item) }
     var isPlaying by remember { mutableStateOf(false) }
     var showControls by remember { mutableStateOf(true) }
+    var showVideoExitOptions by remember { mutableStateOf(false) }
 
-    // Auto-hide controls after 3 seconds if media is playing
+    // Auto-hide controls after 3.5 seconds if media is playing
     LaunchedEffect(showControls, isPlaying) {
         if (showControls && isPlaying) {
-            delay(3000)
+            delay(3500)
             showControls = false
         }
     }
 
+    val handleBack: () -> Unit = {
+        if (item.fileType == FileType.VIDEO && !showVideoExitOptions) {
+            isPlaying = false
+            showVideoExitOptions = true
+        } else {
+            onDismiss()
+        }
+    }
+
+    BackHandler(onBack = handleBack)
+
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = handleBack,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
@@ -2047,74 +2067,143 @@ private fun VaultMediaViewerDialog(
             color = Color.Black
         ) {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { showControls = !showControls }
-                    )
+                modifier = Modifier.fillMaxSize()
             ) {
-                // Media Content
-                when (item.fileType) {
-                    FileType.IMAGE -> {
-                        ZoomableVaultImage(
-                            file = vaultFile,
-                            altName = item.originalName,
-                            onToggleControls = { showControls = !showControls }
-                        )
-                    }
-                    FileType.VIDEO -> {
-                        VaultVideoPlayer(
-                            file = vaultFile,
-                            isPlaying = isPlaying,
-                            onPlayingChanged = { isPlaying = it },
-                            showControls = showControls,
-                            onToggleControls = { showControls = !showControls }
-                        )
-                    }
-                    FileType.AUDIO -> {
-                        VaultAudioPlayer(
-                            file = vaultFile,
-                            altName = item.originalName,
-                            isPlaying = isPlaying,
-                            onPlayingChanged = { isPlaying = it }
-                        )
-                    }
-                    else -> {
-                        // Generic File info card
-                        Column(
-                            modifier = Modifier
-                                .align(Alignment.Center)
-                                .padding(32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                // If video exit overview is requested
+                if (item.fileType == FileType.VIDEO && showVideoExitOptions) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 24.dp)
+                            .padding(bottom = 90.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                            modifier = Modifier.size(96.dp)
                         ) {
-                            Icon(
-                                Icons.Default.InsertDriveFile,
-                                contentDescription = null,
-                                tint = Color.White.copy(alpha = 0.8f),
-                                modifier = Modifier.size(64.dp)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Videocam,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        Text(
+                            text = item.originalName,
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "${formatFileSize(item.size)} • ${item.mimeType ?: "Video"}",
+                            color = Color.White.copy(alpha = 0.65f),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        Button(
+                            onClick = {
+                                showVideoExitOptions = false
+                                isPlaying = true
+                                showControls = true
+                            },
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            ),
+                            modifier = Modifier.height(48.dp)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                item.originalName,
-                                color = Color.White,
-                                style = MaterialTheme.typography.titleMedium,
-                                textAlign = TextAlign.Center
+                                text = "Resume Video",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                "${formatFileSize(item.size)} • ${item.mimeType ?: "Unknown type"}",
-                                color = Color.White.copy(alpha = 0.6f),
-                                style = MaterialTheme.typography.bodySmall
+                        }
+                    }
+                } else {
+                    // Media Content
+                    when (item.fileType) {
+                        FileType.IMAGE -> {
+                            ZoomableVaultImage(
+                                file = vaultFile,
+                                altName = item.originalName,
+                                onToggleControls = { showControls = !showControls }
                             )
+                        }
+                        FileType.VIDEO -> {
+                            VaultVideoPlayer(
+                                file = vaultFile,
+                                title = item.originalName,
+                                isPlaying = isPlaying,
+                                onPlayingChanged = { isPlaying = it },
+                                showControls = showControls,
+                                onToggleControls = { showControls = !showControls },
+                                onBack = handleBack
+                            )
+                        }
+                        FileType.AUDIO -> {
+                            VaultAudioPlayer(
+                                file = vaultFile,
+                                altName = item.originalName,
+                                isPlaying = isPlaying,
+                                onPlayingChanged = { isPlaying = it }
+                            )
+                        }
+                        else -> {
+                            // Generic File info card
+                            Column(
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .padding(32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    Icons.Default.InsertDriveFile,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.8f),
+                                    modifier = Modifier.size(64.dp)
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    item.originalName,
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    "${formatFileSize(item.size)} • ${item.mimeType ?: "Unknown type"}",
+                                    color = Color.White.copy(alpha = 0.6f),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
                         }
                     }
                 }
 
-                // Top Bar (Auto-hides when controls are hidden)
+                // Top Bar (Shown for non-videos or when video exit options are active)
+                val showDialogTopBar = (item.fileType != FileType.VIDEO && showControls) ||
+                        (item.fileType == FileType.VIDEO && showVideoExitOptions)
+
                 AnimatedVisibility(
-                    visible = showControls,
+                    visible = showDialogTopBar,
                     enter = fadeIn() + slideInVertically { -it },
                     exit = fadeOut() + slideOutVertically { -it },
                     modifier = Modifier.align(Alignment.TopCenter)
@@ -2142,9 +2231,17 @@ private fun VaultMediaViewerDialog(
                     }
                 }
 
-                // Bottom Action Bar (Restore, Share, Delete) - HIDDEN while video is playing or controls hidden!
+                // Bottom Action Bar (Restore, Share, Delete)
+                // FOR VIDEO: ONLY appears when user clicked back and exit options are active!
+                // FOR OTHER TYPES: appears when showControls is true.
+                val showBottomActions = if (item.fileType == FileType.VIDEO) {
+                    showVideoExitOptions
+                } else {
+                    showControls
+                }
+
                 AnimatedVisibility(
-                    visible = showControls,
+                    visible = showBottomActions,
                     enter = fadeIn() + slideInVertically { it },
                     exit = fadeOut() + slideOutVertically { it },
                     modifier = Modifier.align(Alignment.BottomCenter)
@@ -2278,19 +2375,144 @@ private fun ZoomableVaultImage(
     }
 }
 
+enum class VideoFitMode(val label: String, val scale: Float) {
+    FIT("Fit", 1.0f),
+    FILL("Fill", 1.35f),
+    ZOOM("125%", 1.6f);
+
+    fun next(): VideoFitMode = when (this) {
+        FIT -> FILL
+        FILL -> ZOOM
+        ZOOM -> FIT
+    }
+}
+
+private enum class VideoGestureType {
+    BRIGHTNESS, VOLUME
+}
+
+@Composable
+private fun QuickGestureIndicator(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    percent: Float,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        color = Color.Black.copy(alpha = 0.8f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(24.dp)
+            )
+
+            // Vertical indicator track
+            Box(
+                modifier = Modifier
+                    .width(6.dp)
+                    .height(96.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(Color.White.copy(alpha = 0.25f)),
+                contentAlignment = Alignment.BottomCenter
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight(percent.coerceIn(0f, 1f))
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(MaterialTheme.colorScheme.primary)
+                )
+            }
+
+            Text(
+                text = label,
+                color = Color.White,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
 @Composable
 private fun VaultVideoPlayer(
     file: File,
+    title: String,
     isPlaying: Boolean,
     onPlayingChanged: (Boolean) -> Unit,
     showControls: Boolean,
-    onToggleControls: () -> Unit
+    onToggleControls: () -> Unit,
+    onBack: () -> Unit
 ) {
+    val context = LocalContext.current
+    val activity = context as? Activity
+    val window = activity?.window
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     var videoViewRef by remember { mutableStateOf<VideoView?>(null) }
+    var mediaPlayerRef by remember { mutableStateOf<MediaPlayer?>(null) }
     var durationMs by remember { mutableIntStateOf(0) }
     var currentPosMs by remember { mutableIntStateOf(0) }
     var isReady by remember { mutableStateOf(false) }
     var hasError by remember { mutableStateOf(false) }
+
+    var fitMode by remember { mutableStateOf(VideoFitMode.FIT) }
+    var isMuted by remember { mutableStateOf(false) }
+
+    val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1) }
+    var currentVolume by remember {
+        mutableIntStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC))
+    }
+    var volumeFraction by remember {
+        mutableFloatStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVolume)
+    }
+
+    val initialBrightness = remember {
+        try {
+            android.provider.Settings.System.getInt(
+                context.contentResolver,
+                android.provider.Settings.System.SCREEN_BRIGHTNESS
+            ) / 255f
+        } catch (_: Exception) {
+            0.5f
+        }
+    }
+    var currentBrightness by remember { mutableFloatStateOf(initialBrightness.coerceIn(0.01f, 1f)) }
+
+    var activeGesture by remember { mutableStateOf<VideoGestureType?>(null) }
+    var gestureTriggerTime by remember { mutableLongStateOf(0L) }
+
+    // Auto-dismiss gesture popup after 1.2s
+    LaunchedEffect(gestureTriggerTime) {
+        if (gestureTriggerTime > 0L) {
+            delay(1200)
+            activeGesture = null
+        }
+    }
+
+    // Restore orientation and screen brightness when video player is disposed
+    DisposableEffect(Unit) {
+        onDispose {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            window?.let { w ->
+                val lp = w.attributes
+                lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                w.attributes = lp
+            }
+        }
+    }
 
     LaunchedEffect(isPlaying) {
         while (isPlaying) {
@@ -2304,40 +2526,140 @@ private fun VaultVideoPlayer(
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onToggleControls
-            ),
+        modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        AndroidView(
-            factory = { ctx ->
-                VideoView(ctx).apply {
-                    setVideoPath(file.absolutePath)
-                    setOnPreparedListener { mp ->
-                        mp.isLooping = false
-                        durationMs = duration
-                        isReady = true
-                        start()
-                        onPlayingChanged(true)
+        // Video View with scale/fit applied
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer(scaleX = fitMode.scale, scaleY = fitMode.scale),
+            contentAlignment = Alignment.Center
+        ) {
+            AndroidView(
+                factory = { ctx ->
+                    VideoView(ctx).apply {
+                        setVideoPath(file.absolutePath)
+                        setOnPreparedListener { mp ->
+                            mediaPlayerRef = mp
+                            mp.isLooping = false
+                            if (isMuted) {
+                                mp.setVolume(0f, 0f)
+                            } else {
+                                mp.setVolume(1f, 1f)
+                            }
+                            durationMs = duration
+                            isReady = true
+                            start()
+                            onPlayingChanged(true)
+                        }
+                        setOnCompletionListener {
+                            onPlayingChanged(false)
+                            currentPosMs = durationMs
+                        }
+                        setOnErrorListener { _, _, _ ->
+                            hasError = true
+                            onPlayingChanged(false)
+                            true
+                        }
+                        videoViewRef = this
                     }
-                    setOnCompletionListener {
-                        onPlayingChanged(false)
-                        currentPosMs = durationMs
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        // Gesture Detection Overlay (Taps toggle controls; vertical drag adjusts brightness on left, volume on right)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val isLeft = down.position.x < (size.width / 2f)
+                        var hasDragged = false
+                        val touchSlop = viewConfiguration.touchSlop
+                        val initialY = down.position.y
+
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+
+                            if (!change.pressed) {
+                                if (!hasDragged) {
+                                    onToggleControls()
+                                } else {
+                                    gestureTriggerTime = System.currentTimeMillis()
+                                }
+                                break
+                            }
+
+                            val totalDragY = change.position.y - initialY
+                            if (!hasDragged && abs(totalDragY) > touchSlop) {
+                                hasDragged = true
+                                activeGesture = if (isLeft) VideoGestureType.BRIGHTNESS else VideoGestureType.VOLUME
+                            }
+
+                            if (hasDragged) {
+                                val dragDelta = change.previousPosition.y - change.position.y
+                                val heightFactor = size.height * 0.75f
+                                val delta = dragDelta / heightFactor
+
+                                if (isLeft) {
+                                    currentBrightness = (currentBrightness + delta).coerceIn(0.01f, 1.0f)
+                                    window?.let { w ->
+                                        val lp = w.attributes
+                                        lp.screenBrightness = currentBrightness
+                                        w.attributes = lp
+                                    }
+                                    activeGesture = VideoGestureType.BRIGHTNESS
+                                } else {
+                                    volumeFraction = (volumeFraction + delta).coerceIn(0f, 1.0f)
+                                    val newVol = (volumeFraction * maxVolume).toInt().coerceIn(0, maxVolume)
+                                    if (newVol != currentVolume) {
+                                        currentVolume = newVol
+                                        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVol, 0)
+                                    }
+                                    activeGesture = VideoGestureType.VOLUME
+                                }
+                                gestureTriggerTime = System.currentTimeMillis()
+                                change.consume()
+                            }
+                        }
                     }
-                    setOnErrorListener { _, _, _ ->
-                        hasError = true
-                        onPlayingChanged(false)
-                        true
-                    }
-                    videoViewRef = this
                 }
-            },
-            modifier = Modifier.fillMaxSize()
         )
+
+        // Gesture Popups (Brightness on Left, Volume on Right)
+        AnimatedVisibility(
+            visible = activeGesture == VideoGestureType.BRIGHTNESS,
+            enter = fadeIn() + scaleIn(initialScale = 0.85f),
+            exit = fadeOut() + scaleOut(targetScale = 0.85f),
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = 28.dp)
+        ) {
+            QuickGestureIndicator(
+                icon = Icons.Default.WbSunny,
+                label = "${(currentBrightness * 100).toInt()}%",
+                percent = currentBrightness
+            )
+        }
+
+        AnimatedVisibility(
+            visible = activeGesture == VideoGestureType.VOLUME,
+            enter = fadeIn() + scaleIn(initialScale = 0.85f),
+            exit = fadeOut() + scaleOut(targetScale = 0.85f),
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 28.dp)
+        ) {
+            QuickGestureIndicator(
+                icon = if (currentVolume == 0) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                label = "${(volumeFraction * 100).toInt()}%",
+                percent = volumeFraction
+            )
+        }
 
         if (hasError) {
             Column(
@@ -2369,7 +2691,116 @@ private fun VaultVideoPlayer(
         } else if (!isReady) {
             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
         } else {
-            // Center Play / Pause button (visible only when controls are shown)
+            // Top Controls Bar (Back, Title, Rotate, Fit Mode, Mute)
+            AnimatedVisibility(
+                visible = showControls,
+                enter = fadeIn() + slideInVertically { -it },
+                exit = fadeOut() + slideOutVertically { -it },
+                modifier = Modifier.align(Alignment.TopCenter)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(16.dp)),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = Color.White
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    Text(
+                        text = title,
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    // Rotate toggle button
+                    IconButton(
+                        onClick = {
+                            activity?.let { act ->
+                                act.requestedOrientation = if (isLandscape) {
+                                    ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                } else {
+                                    ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                }
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ScreenRotation,
+                            contentDescription = "Rotate",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // Fit Mode button
+                    Surface(
+                        onClick = { fitMode = fitMode.next() },
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.White.copy(alpha = 0.15f),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AspectRatio,
+                                contentDescription = "Fit Mode",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = fitMode.label,
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    // Mute toggle button
+                    IconButton(
+                        onClick = {
+                            isMuted = !isMuted
+                            mediaPlayerRef?.let { mp ->
+                                if (isMuted) {
+                                    mp.setVolume(0f, 0f)
+                                } else {
+                                    mp.setVolume(1f, 1f)
+                                }
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                            contentDescription = if (isMuted) "Unmute" else "Mute",
+                            tint = if (isMuted) MaterialTheme.colorScheme.primary else Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            // Center Play / Pause button
             AnimatedVisibility(
                 visible = showControls,
                 enter = fadeIn(),
@@ -2410,33 +2841,34 @@ private fun VaultVideoPlayer(
                 }
             }
 
-            // Bottom Scrubber Bar (visible only when controls are shown)
+            // Simple Bottom Progress Bar
             AnimatedVisibility(
                 visible = showControls,
                 enter = fadeIn() + slideInVertically { it },
                 exit = fadeOut() + slideOutVertically { it },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 80.dp)
-                    .padding(horizontal = 20.dp)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 14.dp)
             ) {
                 Surface(
-                    color = Color.Black.copy(alpha = 0.7f),
-                    shape = RoundedCornerShape(16.dp),
+                    color = Color.Black.copy(alpha = 0.65f),
+                    shape = RoundedCornerShape(20.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = formatTimeMs(currentPosMs),
                             color = Color.White,
-                            style = MaterialTheme.typography.labelMedium
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
                         Slider(
                             value = currentPosMs.toFloat().coerceIn(0f, maxOf(durationMs.toFloat(), 1f)),
                             onValueChange = { currentPosMs = it.toInt() },
@@ -2448,14 +2880,15 @@ private fun VaultVideoPlayer(
                             colors = SliderDefaults.colors(
                                 thumbColor = MaterialTheme.colorScheme.primary,
                                 activeTrackColor = MaterialTheme.colorScheme.primary,
-                                inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                                inactiveTrackColor = Color.White.copy(alpha = 0.25f)
                             )
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
                         Text(
                             text = formatTimeMs(durationMs),
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelMedium
+                            color = Color.White.copy(alpha = 0.85f),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium
                         )
                     }
                 }
