@@ -2584,6 +2584,7 @@ fun MainTopBar(
     onNavigate: (File) -> Unit,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
     var showSortMenu by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
 
@@ -2643,6 +2644,53 @@ fun MainTopBar(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                             offset = androidx.compose.ui.unit.DpOffset(x = (-8).dp, y = 0.dp)
                         ) {
+                            val currentCustomStorage = viewModel.storageDevices.filterIsInstance<StorageDevice.DocumentTree>().firstOrNull { dev ->
+                                path != null && (path == dev.path || path.startsWith(dev.path) || path.replace("://", ":/").startsWith(dev.path.replace("://", ":/")))
+                            }
+                            if (currentCustomStorage != null) {
+                                val isCurrentStorageLocked = viewModel.isStorageLocked(currentCustomStorage.path) || currentCustomStorage.isLocked
+                                DropdownMenuItem(
+                                    text = { Text(if (isCurrentStorageLocked) "Remove Fingerprint Lock" else "Lock This Folder", modifier = Modifier.padding(vertical = 4.dp)) },
+                                    onClick = {
+                                        showMoreMenu = false
+                                        val activity = context as? androidx.fragment.app.FragmentActivity
+                                        if (activity != null && VaultSecurityManager.isBiometricAvailable(context)) {
+                                            VaultSecurityManager.authenticate(
+                                                activity = activity,
+                                                title = if (isCurrentStorageLocked) "Unlock ${currentCustomStorage.name}" else "Lock ${currentCustomStorage.name}",
+                                                subtitle = "Authenticate fingerprint to confirm",
+                                                onSuccess = {
+                                                    viewModel.setStorageLocked(currentCustomStorage.path, !isCurrentStorageLocked)
+                                                    Toast.makeText(
+                                                        context,
+                                                        if (isCurrentStorageLocked) "Fingerprint lock removed" else "Folder locked with fingerprint",
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                },
+                                                onError = { err ->
+                                                    Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                                                }
+                                            )
+                                        } else {
+                                            viewModel.setStorageLocked(currentCustomStorage.path, !isCurrentStorageLocked)
+                                            Toast.makeText(
+                                                context,
+                                                if (isCurrentStorageLocked) "Lock removed" else "Folder locked",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (isCurrentStorageLocked) Icons.Default.LockOpen else Icons.Default.Fingerprint,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                                )
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                            }
                             if (currentView != "Category" && viewModel.currentZipFile == null) {
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.action_new_file), modifier = Modifier.padding(vertical = 4.dp)) },
@@ -2690,6 +2738,7 @@ fun MainTopBar(
             Breadcrumbs(
                 path = breadcrumbPath,
                 storageDevices = viewModel.storageDevices,
+                viewModel = viewModel,
                 onNavigate = onNavigate
             )
         }
@@ -2701,6 +2750,7 @@ fun MainTopBar(
 fun Breadcrumbs(
     path: String,
     storageDevices: List<StorageDevice> = emptyList(),
+    viewModel: RoseViewModel? = null,
     onNavigate: (File) -> Unit
 ) {
     val context = LocalContext.current
@@ -2793,6 +2843,16 @@ fun Breadcrumbs(
                             fontWeight = if (parts.size == 1) FontWeight.SemiBold else FontWeight.Medium,
                             color = if (parts.size == 1) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary
                         )
+                        val isCurrentTreeLocked = knownTreeDevice != null && ((viewModel?.isStorageLocked(knownTreeDevice.path) == true) || knownTreeDevice.isLocked)
+                        if (isCurrentTreeLocked) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Locked with fingerprint",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
                         Spacer(modifier = Modifier.width(2.dp))
                         Icon(
                             Icons.Default.ArrowDropDown,
@@ -2825,6 +2885,7 @@ fun Breadcrumbs(
                                     }
                                 }
                             }
+                            val isDevLocked = (viewModel?.isStorageLocked(dev.path) == true) || dev.isLocked
                             val isRootDev = dev is StorageDevice.Root
                             val isSd = dev is StorageDevice.Physical && dev.isSdCard
                             val isUsb = dev is StorageDevice.Physical && dev.isUsb
@@ -2870,6 +2931,15 @@ fun Breadcrumbs(
                                                 fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
                                                 color = if (isCurrent) devColor else MaterialTheme.colorScheme.onSurface
                                             )
+                                            if (isDevLocked) {
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Icon(
+                                                    imageVector = Icons.Default.Lock,
+                                                    contentDescription = "Locked with fingerprint",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(15.dp)
+                                                )
+                                            }
                                             if (isRootDev) {
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Surface(
@@ -2921,7 +2991,26 @@ fun Breadcrumbs(
                                 onClick = {
                                     showStorageDropdown = false
                                     if (!isCurrent) {
-                                        onNavigate(File(dev.path))
+                                        if (isDevLocked) {
+                                            val activity = context as? androidx.fragment.app.FragmentActivity
+                                            if (activity != null && VaultSecurityManager.isBiometricAvailable(context)) {
+                                                VaultSecurityManager.authenticate(
+                                                    activity = activity,
+                                                    title = "Unlock $devDisplayName",
+                                                    subtitle = "Touch fingerprint sensor to open folder",
+                                                    onSuccess = {
+                                                        onNavigate(File(dev.path))
+                                                    },
+                                                    onError = { err ->
+                                                        Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                                                    }
+                                                )
+                                            } else {
+                                                onNavigate(File(dev.path))
+                                            }
+                                        } else {
+                                            onNavigate(File(dev.path))
+                                        }
                                     }
                                 },
                                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
@@ -3199,6 +3288,29 @@ fun SelectionBottomBar(
                                                     if (allFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                                                     null,
                                                     tint = Color(0xFFE11D48)
+                                                )
+                                            }
+                                        )
+                                    }
+                                    if (fileOnlySelected.isNotEmpty() && viewModel.currentZipFile == null) {
+                                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.action_move_to_safe)) },
+                                            onClick = {
+                                                val toMove = fileOnlySelected.toList()
+                                                viewModel.exitSelectionMode()
+                                                showMoreMenu = false
+                                                viewModel.moveToVault(toMove) { count ->
+                                                    if (count > 0) {
+                                                        Toast.makeText(context, context.getString(R.string.toast_moved_to_safe), Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    Icons.Default.Lock,
+                                                    null,
+                                                    tint = MaterialTheme.colorScheme.primary
                                                 )
                                             }
                                         )
@@ -3497,10 +3609,13 @@ fun FileGridItem(
         label = "GridItemSelection"
     )
 
+    val isHidden = fileItem.name.startsWith(".")
+    val itemAlpha = if (isHidden) 0.55f else 1f
+
     Column(
         modifier = modifier
             .graphicsLayer {
-                alpha = animatedProgress.value
+                alpha = animatedProgress.value * itemAlpha
                 translationY = with(density) { (1f - animatedProgress.value) * 40.dp.toPx() } // Slide up from 40dp
             }
             .padding(8.dp)
@@ -3635,10 +3750,13 @@ fun FileListItem(
         label = "ItemHighlight"
     )
 
+    val isHidden = fileItem.name.startsWith(".")
+    val itemAlpha = if (isHidden) 0.55f else 1f
+
     Column(
         modifier = modifier
             .graphicsLayer {
-                alpha = animatedProgress.value
+                alpha = animatedProgress.value * itemAlpha
                 translationY = with(density) { (1f - animatedProgress.value) * 40.dp.toPx() }
             }
     ) {
@@ -3803,6 +3921,27 @@ fun FileListItem(
                                             if (isOffline) Icons.Default.CloudDone else Icons.Default.Download,
                                             contentDescription = null,
                                             tint = if (isOffline) Color(0xFF10B981) else MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                )
+                            }
+                            if (!isVirtual && !fileItem.isDirectory && !isCloud && viewModel?.currentZipFile == null && viewModel != null) {
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.action_move_to_safe)) },
+                                    onClick = {
+                                        showMenu = false
+                                        viewModel.moveToVault(listOf(fileItem)) { count ->
+                                            if (count > 0) {
+                                                Toast.makeText(context, context.getString(R.string.toast_moved_to_safe), Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.Lock,
+                                            null,
+                                            tint = MaterialTheme.colorScheme.primary
                                         )
                                     }
                                 )

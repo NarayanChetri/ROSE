@@ -244,6 +244,10 @@ class SettingsManager(context: Context) {
         get() = prefs.getStringSet(KEY_ADDED_STORAGE_URIS, emptySet()) ?: emptySet()
         set(value) = prefs.edit { putStringSet(KEY_ADDED_STORAGE_URIS, value) }
 
+    var lockedStoragePaths: Set<String>
+        get() = prefs.getStringSet(KEY_LOCKED_STORAGE_PATHS, emptySet()) ?: emptySet()
+        set(value) = prefs.edit { putStringSet(KEY_LOCKED_STORAGE_PATHS, value) }
+
     var ftpServerAnonymousLogin: Boolean
         get() = prefs.getBoolean(KEY_FTP_SERVER_ANONYMOUS_LOGIN, true)
         set(value) = prefs.edit { putBoolean(KEY_FTP_SERVER_ANONYMOUS_LOGIN, value) }
@@ -269,9 +273,20 @@ class SettingsManager(context: Context) {
         get() = prefs.getBoolean(KEY_FTP_SERVER_WRITABLE, true)
         set(value) = prefs.edit { putBoolean(KEY_FTP_SERVER_WRITABLE, value) }
 
+    var showSafeInBottomBar: Boolean
+        get() = prefs.getBoolean(KEY_SHOW_SAFE_IN_BOTTOM_BAR, false)
+        set(value) = prefs.edit { putBoolean(KEY_SHOW_SAFE_IN_BOTTOM_BAR, value) }
+
+    var vaultBiometricEnabled: Boolean
+        get() = prefs.getBoolean(KEY_VAULT_BIOMETRIC_ENABLED, true)
+        set(value) = prefs.edit { putBoolean(KEY_VAULT_BIOMETRIC_ENABLED, value) }
+
     companion object {
         private const val PREFS_NAME = "rose_prefs"
+        private const val KEY_SHOW_SAFE_IN_BOTTOM_BAR = "show_safe_in_bottom_bar"
+        private const val KEY_VAULT_BIOMETRIC_ENABLED = "vault_biometric_enabled"
         private const val KEY_ADDED_STORAGE_URIS = "added_storage_uris"
+        private const val KEY_LOCKED_STORAGE_PATHS = "locked_storage_paths"
         private const val KEY_AUTO_CHECK_UPDATES = "auto_check_updates"
         private const val KEY_SKIPPED_UPDATE_VERSION = "skipped_update_version"
         private const val KEY_THEME_MODE = "theme_mode"

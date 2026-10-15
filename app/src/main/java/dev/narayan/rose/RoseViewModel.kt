@@ -661,6 +661,113 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Private Safe / Vault
+    // -------------------------------------------------------------------------
+
+    var vaultItems by mutableStateOf(listOf<VaultItem>())
+        private set
+
+    var isVaultUnlocked by mutableStateOf(PrivateVaultManager.isUnlocked)
+        private set
+
+    private val _showSafeInBottomBar = mutableStateOf(settings.showSafeInBottomBar)
+    val showSafeInBottomBar: Boolean by _showSafeInBottomBar
+
+    fun setShowSafeInBottomBar(enabled: Boolean) {
+        _showSafeInBottomBar.value = enabled
+        settings.showSafeInBottomBar = enabled
+    }
+
+    private val _vaultBiometricEnabled = mutableStateOf(settings.vaultBiometricEnabled)
+    val vaultBiometricEnabled: Boolean by _vaultBiometricEnabled
+
+    fun setVaultBiometricEnabled(enabled: Boolean) {
+        _vaultBiometricEnabled.value = enabled
+        settings.vaultBiometricEnabled = enabled
+    }
+
+    var isVaultLoading by mutableStateOf(false)
+        private set
+
+    fun loadVaultItems() {
+        viewModelScope.launch(Dispatchers.IO) {
+            isVaultLoading = true
+            val items = PrivateVaultManager.listItems(getApplication())
+            withContext(Dispatchers.Main) {
+                vaultItems = items
+                isVaultLoading = false
+            }
+        }
+    }
+
+    fun lockVault() {
+        PrivateVaultManager.lock()
+        isVaultUnlocked = false
+    }
+
+    fun unlockVault() {
+        PrivateVaultManager.isUnlocked = true
+        isVaultUnlocked = true
+        loadVaultItems()
+    }
+
+    fun moveToVault(files: List<FileItem>, onComplete: ((Int) -> Unit)? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            var count = 0
+            for (item in files) {
+                val ok = PrivateVaultManager.moveToVault(getApplication(), item.file)
+                if (ok) count++
+            }
+            withContext(Dispatchers.Main) {
+                if (count > 0) {
+                    loadCategoryCounts(force = true)
+                    loadRecentFiles()
+                    if (isVaultUnlocked) {
+                        loadVaultItems()
+                    }
+                    invalidateDirectoryCache(currentPath)
+                    loadFiles(currentPath, isManualRefresh = true, showLoading = false)
+                }
+                onComplete?.invoke(count)
+            }
+        }
+    }
+
+    fun restoreVaultItems(items: List<VaultItem>, onComplete: ((Int) -> Unit)? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            var count = 0
+            for (item in items) {
+                val ok = PrivateVaultManager.restoreFromVault(getApplication(), item)
+                if (ok) count++
+            }
+            withContext(Dispatchers.Main) {
+                if (count > 0) {
+                    loadVaultItems()
+                    loadCategoryCounts(force = true)
+                    loadRecentFiles()
+                }
+                onComplete?.invoke(count)
+            }
+        }
+    }
+
+    fun deleteVaultItemsPermanently(items: List<VaultItem>, onComplete: ((Int) -> Unit)? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            var count = 0
+            for (item in items) {
+                val ok = PrivateVaultManager.deletePermanently(getApplication(), item)
+                if (ok) count++
+            }
+            withContext(Dispatchers.Main) {
+                if (count > 0) {
+                    loadVaultItems()
+                }
+                onComplete?.invoke(count)
+            }
+        }
+    }
+
     data class StorageInfo(
         val totalBytes: Long,
         val availableBytes: Long,
@@ -3709,6 +3816,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     ?: providerLabel
                     ?: defaultTypeName
 
+                val isLocked = isStorageLocked(uriString)
+
                 devices.add(
                     StorageDevice.DocumentTree(
                         name = finalName,
@@ -3718,7 +3827,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         uriString = uriString,
                         isCloud = isCloudStorage,
                         providerName = providerLabel ?: defaultTypeName,
-                        storageType = storageType
+                        storageType = storageType,
+                        isLocked = isLocked
                     )
                 )
             }
@@ -3739,6 +3849,27 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    fun isStorageLocked(path: String): Boolean {
+        val clean = path.replace("://", ":/").trimEnd('/')
+        return settings.lockedStoragePaths.any { lockedPath ->
+            val lockedClean = lockedPath.replace("://", ":/").trimEnd('/')
+            clean == lockedClean || path == lockedPath
+        }
+    }
+
+    fun setStorageLocked(path: String, locked: Boolean) {
+        val current = settings.lockedStoragePaths.toMutableSet()
+        val clean = path.replace("://", ":/").trimEnd('/')
+        if (locked) {
+            current.add(path)
+        } else {
+            current.remove(path)
+            current.removeAll { it.replace("://", ":/").trimEnd('/') == clean }
+        }
+        settings.lockedStoragePaths = current
+        loadStorageDevices()
     }
 
     fun addCustomStorage(uri: Uri) {
@@ -3786,6 +3917,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {}
             val current = settings.addedStorageUris
             settings.addedStorageUris = current.filterNot { it.substringBefore("|::|") == uriString }.toSet()
+            val lockedCurrent = settings.lockedStoragePaths
+            settings.lockedStoragePaths = lockedCurrent.filterNot { it == uriString || it.replace("://", ":/").trimEnd('/') == uriString.replace("://", ":/").trimEnd('/') }.toSet()
             loadStorageDevices()
         }
     }
