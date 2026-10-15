@@ -440,28 +440,7 @@ object PrivateVaultManager {
     fun isPinSet(context: Context): Boolean {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val hash = prefs.getString(KEY_PIN_HASH, null)
-        if (!hash.isNullOrEmpty()) return true
-
-        // Check fallback config in vault dir (in case app data was cleared)
-        return try {
-            val primaryDir = getVaultDirs(context).first()
-            val configFile = File(primaryDir, VAULT_CONFIG_FILE)
-            if (configFile.exists()) {
-                val text = configFile.readText()
-                val json = JSONObject(text)
-                val backupHash = json.optString("hash")
-                val backupSalt = json.optString("salt")
-                if (backupHash.isNotBlank() && backupSalt.isNotBlank()) {
-                    prefs.edit()
-                        .putString(KEY_PIN_HASH, backupHash)
-                        .putString(KEY_PIN_SALT, backupSalt)
-                        .apply()
-                    true
-                } else false
-            } else false
-        } catch (e: Exception) {
-            false
-        }
+        return !hash.isNullOrEmpty()
     }
 
     fun setupPin(context: Context, pin: String): Boolean {
@@ -479,18 +458,6 @@ object PrivateVaultManager {
                 .putString(KEY_PIN_SALT, salt)
                 .apply()
 
-            // Backup in .vault_config on storage
-            getVaultDirs(context).firstOrNull()?.let { vaultDir ->
-                runCatching {
-                    val configFile = File(vaultDir, VAULT_CONFIG_FILE)
-                    val json = JSONObject().apply {
-                        put("hash", hash)
-                        put("salt", salt)
-                    }
-                    configFile.writeText(json.toString())
-                }
-            }
-
             isUnlocked = true
             true
         } catch (e: Exception) {
@@ -500,30 +467,11 @@ object PrivateVaultManager {
 
     fun verifyPin(context: Context, pin: String): Boolean {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        var hash = prefs.getString(KEY_PIN_HASH, null)
-        var salt = prefs.getString(KEY_PIN_SALT, null)
+        val hash = prefs.getString(KEY_PIN_HASH, null)
+        val salt = prefs.getString(KEY_PIN_SALT, null)
 
-        if (hash == null || salt == null) {
-            // Try recover from backup config
-            val primaryDir = getVaultDirs(context).first()
-            val configFile = File(primaryDir, VAULT_CONFIG_FILE)
-            if (configFile.exists()) {
-                runCatching {
-                    val json = JSONObject(configFile.readText())
-                    hash = json.optString("hash")
-                    salt = json.optString("salt")
-                    if (!hash.isNullOrEmpty() && !salt.isNullOrEmpty()) {
-                        prefs.edit()
-                            .putString(KEY_PIN_HASH, hash)
-                            .putString(KEY_PIN_SALT, salt)
-                            .apply()
-                    }
-                }
-            }
-        }
-
-        if (hash == null || salt == null) return false
-        val computed = hashPin(pin, salt!!)
+        if (hash.isNullOrEmpty() || salt.isNullOrEmpty()) return false
+        val computed = hashPin(pin, salt)
         val matches = computed == hash
         if (matches) {
             isUnlocked = true
@@ -540,10 +488,13 @@ object PrivateVaultManager {
         return try {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             prefs.edit().remove(KEY_PIN_HASH).remove(KEY_PIN_SALT).apply()
-            getVaultDirs(context).firstOrNull()?.let { vaultDir ->
-                val configFile = File(vaultDir, VAULT_CONFIG_FILE)
-                if (configFile.exists()) {
-                    configFile.delete()
+            getVaultDirs(context).forEach { vaultDir ->
+                runCatching {
+                    val configFile = File(vaultDir, VAULT_CONFIG_FILE)
+                    if (configFile.exists()) {
+                        configFile.writeText("")
+                        configFile.delete()
+                    }
                 }
             }
             isUnlocked = false

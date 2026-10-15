@@ -1069,7 +1069,7 @@ private fun CategoryGrid(
             .fillMaxWidth()
             .pointerInput(Unit) {
                 awaitEachGesture {
-                    val down = awaitFirstDown(pass = PointerEventPass.Main, requireUnconsumed = false)
+                    val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
                     val dragPointerId = down.id
                     var isGestureClaimed = false
                     var prevPositionX = down.position.x
@@ -1078,7 +1078,7 @@ private fun CategoryGrid(
 
                     try {
                         while (true) {
-                            val event = awaitPointerEvent(pass = PointerEventPass.Main)
+                            val event = awaitPointerEvent(pass = PointerEventPass.Initial)
                             val change = event.changes.firstOrNull { it.id == dragPointerId } ?: break
 
                             if (!change.pressed) {
@@ -1234,11 +1234,13 @@ private fun CategoryGrid(
             }
         }
 
+        Spacer(modifier = Modifier.height(8.dp))
+
         // Dot indicator
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 4.dp),
+                .padding(top = 2.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -1256,10 +1258,7 @@ private fun CategoryGrid(
                 )
                 Box(
                     modifier = Modifier
-                        .padding(horizontal = 4.dp, vertical = 2.dp)
-                        .size(width = width, height = 4.dp)
-                        .clip(CircleShape)
-                        .background(color)
+                        .size(width = 32.dp, height = 24.dp)
                         .clickable(
                             interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                             indication = null
@@ -1273,8 +1272,16 @@ private fun CategoryGrid(
                                     )
                                 }
                             }
-                        }
-                )
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(width = width, height = 4.dp)
+                            .clip(CircleShape)
+                            .background(color)
+                    )
+                }
             }
         }
     }

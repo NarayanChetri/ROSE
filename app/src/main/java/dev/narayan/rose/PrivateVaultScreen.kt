@@ -99,6 +99,10 @@ fun PrivateVaultScreen(
     val coroutineScope = rememberCoroutineScope()
     var isPinConfigured by remember { mutableStateOf(PrivateVaultManager.isPinSet(context)) }
 
+    LaunchedEffect(Unit) {
+        isPinConfigured = PrivateVaultManager.isPinSet(context)
+    }
+
     // Instant autolock when exiting private safe (without triggering biometric prompt)
     DisposableEffect(Unit) {
         onDispose {
@@ -108,7 +112,7 @@ fun PrivateVaultScreen(
 
     if (!viewModel.isVaultUnlocked) {
         VaultLockView(
-            isPinConfigured = isPinConfigured,
+            isPinConfigured = isPinConfigured && PrivateVaultManager.isPinSet(context),
             onPinVerified = {
                 viewModel.unlockVault()
             },
@@ -169,6 +173,7 @@ private fun VaultLockView(
     val context = LocalContext.current
     BackHandler(onBack = onBack)
 
+    val pinConfigured = isPinConfigured && PrivateVaultManager.isPinSet(context)
     var pinSetupStep by remember { mutableIntStateOf(0) } // 0: enter pin, 1: confirm pin
     var setupPinInitial by remember { mutableStateOf("") }
 
@@ -208,7 +213,7 @@ private fun VaultLockView(
             errorMessage = ""
 
             if (newPin.length == 4) {
-                if (!isPinConfigured) {
+                if (!pinConfigured) {
                     // PIN Setup Flow
                     if (pinSetupStep == 0) {
                         setupPinInitial = newPin
@@ -343,13 +348,13 @@ private fun VaultLockView(
                 Spacer(modifier = Modifier.height(14.dp))
 
                 val titleText = when {
-                    !isPinConfigured && pinSetupStep == 0 -> "Set PIN"
-                    !isPinConfigured && pinSetupStep == 1 -> "Confirm PIN"
+                    !pinConfigured && pinSetupStep == 0 -> "Set PIN"
+                    !pinConfigured && pinSetupStep == 1 -> "Confirm PIN"
                     else -> "Enter PIN"
                 }
                 val descText = when {
-                    !isPinConfigured && pinSetupStep == 0 -> "Set a 4-digit PIN to access private vault"
-                    !isPinConfigured && pinSetupStep == 1 -> "Re-enter your 4-digit PIN to confirm"
+                    !pinConfigured && pinSetupStep == 0 -> "Set a 4-digit PIN to access private vault"
+                    !pinConfigured && pinSetupStep == 1 -> "Re-enter your 4-digit PIN to confirm"
                     else -> "Enter your PIN to access hidden files"
                 }
 
@@ -493,7 +498,7 @@ private fun VaultLockView(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
                         .clickable {
-                            if (!isPinConfigured) {
+                            if (!pinConfigured) {
                                 Toast.makeText(context, "Set PIN first", Toast.LENGTH_SHORT).show()
                             } else if (isBiometricAvailable) {
                                 onBiometricRequested()
@@ -527,7 +532,7 @@ private fun VaultLockView(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .clickable {
-                            if (!isPinConfigured) {
+                            if (!pinConfigured) {
                                 Toast.makeText(context, "Set PIN first", Toast.LENGTH_SHORT).show()
                             } else {
                                 val activity = context as? FragmentActivity
