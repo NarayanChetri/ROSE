@@ -2381,20 +2381,6 @@ private fun ZoomableVaultImage(
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
 
-    val context = LocalContext.current
-    val view = LocalView.current
-    val initialBrightness = remember { getSystemScreenBrightness(context) }
-    var currentBrightness by remember { mutableFloatStateOf(initialBrightness.coerceIn(0.01f, 1f)) }
-    var showBrightnessIndicator by remember { mutableStateOf(false) }
-    var gestureTriggerTime by remember { mutableLongStateOf(0L) }
-
-    LaunchedEffect(gestureTriggerTime) {
-        if (gestureTriggerTime > 0L) {
-            delay(1200)
-            showBrightnessIndicator = false
-        }
-    }
-
     LaunchedEffect(file.absolutePath) {
         isLoading = true
         bitmap = VaultThumbnailLoader.decodeFullImage(file)
@@ -2404,50 +2390,6 @@ private fun ZoomableVaultImage(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(scale) {
-                if (scale <= 1.05f) {
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        val isLeft = down.position.x < (size.width / 2f)
-                        var hasDragged = false
-                        val touchSlop = viewConfiguration.touchSlop
-                        val initialY = down.position.y
-
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            if (event.changes.size > 1) {
-                                break
-                            }
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-
-                            if (!change.pressed) {
-                                if (hasDragged) {
-                                    gestureTriggerTime = System.currentTimeMillis()
-                                }
-                                break
-                            }
-
-                            val totalDragY = change.position.y - initialY
-                            if (!hasDragged && abs(totalDragY) > touchSlop && isLeft) {
-                                hasDragged = true
-                                showBrightnessIndicator = true
-                            }
-
-                            if (hasDragged && isLeft) {
-                                val dragDelta = change.previousPosition.y - change.position.y
-                                val heightFactor = size.height * 0.75f
-                                val delta = dragDelta / heightFactor
-
-                                currentBrightness = (currentBrightness + delta).coerceIn(0.01f, 1.0f)
-                                setVaultScreenBrightness(view, context, currentBrightness)
-                                showBrightnessIndicator = true
-                                gestureTriggerTime = System.currentTimeMillis()
-                                change.consume()
-                            }
-                        }
-                    }
-                }
-            }
             .pointerInput(Unit) {
                 detectTapGestures(
                     onDoubleTap = {
@@ -2514,22 +2456,6 @@ private fun ZoomableVaultImage(
                     textAlign = TextAlign.Center
                 )
             }
-        }
-
-        // Brightness Popup on Left
-        AnimatedVisibility(
-            visible = showBrightnessIndicator,
-            enter = fadeIn() + scaleIn(initialScale = 0.85f),
-            exit = fadeOut() + scaleOut(targetScale = 0.85f),
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .padding(start = 28.dp)
-        ) {
-            QuickGestureIndicator(
-                icon = Icons.Default.WbSunny,
-                label = "${(currentBrightness * 100).toInt()}%",
-                percent = currentBrightness
-            )
         }
     }
 }
