@@ -3816,6 +3816,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     ?: providerLabel
                     ?: defaultTypeName
 
+                val isLocked = isStorageLocked(uriString)
+
                 devices.add(
                     StorageDevice.DocumentTree(
                         name = finalName,
@@ -3825,7 +3827,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         uriString = uriString,
                         isCloud = isCloudStorage,
                         providerName = providerLabel ?: defaultTypeName,
-                        storageType = storageType
+                        storageType = storageType,
+                        isLocked = isLocked
                     )
                 )
             }
@@ -3846,6 +3849,27 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    fun isStorageLocked(path: String): Boolean {
+        val clean = path.replace("://", ":/").trimEnd('/')
+        return settings.lockedStoragePaths.any { lockedPath ->
+            val lockedClean = lockedPath.replace("://", ":/").trimEnd('/')
+            clean == lockedClean || path == lockedPath
+        }
+    }
+
+    fun setStorageLocked(path: String, locked: Boolean) {
+        val current = settings.lockedStoragePaths.toMutableSet()
+        val clean = path.replace("://", ":/").trimEnd('/')
+        if (locked) {
+            current.add(path)
+        } else {
+            current.remove(path)
+            current.removeAll { it.replace("://", ":/").trimEnd('/') == clean }
+        }
+        settings.lockedStoragePaths = current
+        loadStorageDevices()
     }
 
     fun addCustomStorage(uri: Uri) {
@@ -3893,6 +3917,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {}
             val current = settings.addedStorageUris
             settings.addedStorageUris = current.filterNot { it.substringBefore("|::|") == uriString }.toSet()
+            val lockedCurrent = settings.lockedStoragePaths
+            settings.lockedStoragePaths = lockedCurrent.filterNot { it == uriString || it.replace("://", ":/").trimEnd('/') == uriString.replace("://", ":/").trimEnd('/') }.toSet()
             loadStorageDevices()
         }
     }

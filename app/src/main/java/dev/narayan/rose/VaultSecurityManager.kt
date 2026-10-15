@@ -38,7 +38,6 @@ object VaultSecurityManager {
             val prompt = BiometricPrompt(activity, executor, object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     super.onAuthenticationSucceeded(result)
-                    PrivateVaultManager.isUnlocked = true
                     onSuccess()
                 }
 

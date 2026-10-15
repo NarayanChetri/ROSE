@@ -13,6 +13,7 @@ sealed class StorageDevice {
     abstract val totalBytes: Long
     abstract val availableBytes: Long
     abstract val iconRes: Int? // Optional icon resource override
+    open val isLocked: Boolean get() = false
 
     data class Physical(
         override val name: String,
@@ -33,7 +34,8 @@ sealed class StorageDevice {
         val uriString: String = path,
         val isCloud: Boolean = false,
         val providerName: String? = null,
-        val storageType: CustomStorageType = CustomStorageType.DOCUMENT_TREE
+        val storageType: CustomStorageType = CustomStorageType.DOCUMENT_TREE,
+        override val isLocked: Boolean = false
     ) : StorageDevice() {
         override val iconRes: Int? = null
     }
