@@ -536,6 +536,23 @@ object PrivateVaultManager {
         return setupPin(context, newPin)
     }
 
+    fun resetPin(context: Context): Boolean {
+        return try {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit().remove(KEY_PIN_HASH).remove(KEY_PIN_SALT).apply()
+            getVaultDirs(context).firstOrNull()?.let { vaultDir ->
+                val configFile = File(vaultDir, VAULT_CONFIG_FILE)
+                if (configFile.exists()) {
+                    configFile.delete()
+                }
+            }
+            isUnlocked = false
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     private fun hashPin(pin: String, salt: String): String {
         val md = MessageDigest.getInstance("SHA-256")
         md.update(salt.toByteArray(Charsets.UTF_8))

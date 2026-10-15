@@ -91,30 +91,10 @@ fun PrivateVaultScreen(
     val coroutineScope = rememberCoroutineScope()
     var isPinConfigured by remember { mutableStateOf(PrivateVaultManager.isPinSet(context)) }
 
-    // Instant autolock when exiting private safe
+    // Instant autolock when exiting private safe (without triggering biometric prompt)
     DisposableEffect(Unit) {
         onDispose {
             viewModel.lockVault()
-        }
-    }
-
-    // Auto-authenticate with biometric if available and configured
-    LaunchedEffect(isPinConfigured, viewModel.isVaultUnlocked) {
-        if (isPinConfigured && !viewModel.isVaultUnlocked && viewModel.vaultBiometricEnabled) {
-            val activity = context as? FragmentActivity
-            if (activity != null && VaultSecurityManager.isBiometricAvailable(context)) {
-                VaultSecurityManager.authenticate(
-                    activity = activity,
-                    title = context.getString(R.string.vault_biometric_prompt_title),
-                    subtitle = context.getString(R.string.vault_biometric_prompt_subtitle),
-                    onSuccess = {
-                        viewModel.unlockVault()
-                    },
-                    onError = {
-                        // Keep PIN keypad visible
-                    }
-                )
-            }
         }
     }
 
@@ -131,6 +111,9 @@ fun PrivateVaultScreen(
             },
             onPinSavedRequireUnlock = {
                 isPinConfigured = true
+            },
+            onPinReset = {
+                isPinConfigured = false
             },
             onBiometricRequested = {
                 val activity = context as? FragmentActivity
@@ -160,7 +143,7 @@ fun PrivateVaultScreen(
 }
 
 // -----------------------------------------------------------------------------
-// PIN & Lock Keypad Screen
+// PIN & Lock Keypad Screen (Matches MX Player Dark Aesthetic Exactly)
 // -----------------------------------------------------------------------------
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -170,6 +153,7 @@ private fun VaultLockView(
     onPinVerified: () -> Unit,
     onPinSetupComplete: () -> Unit,
     onPinSavedRequireUnlock: () -> Unit,
+    onPinReset: () -> Unit,
     onBiometricRequested: () -> Unit,
     isBiometricAvailable: Boolean,
     onBack: () -> Unit
@@ -183,6 +167,7 @@ private fun VaultLockView(
     var enteredPin by remember { mutableStateOf("") }
     var isError by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
+    var showResetConfirmDialog by remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
     val shakeOffset = remember { Animatable(0f) }
@@ -235,23 +220,15 @@ private fun VaultLockView(
                                     VaultSecurityManager.authenticate(
                                         activity = activity,
                                         title = context.getString(R.string.vault_biometric_prompt_title),
-                                        subtitle = "Verify fingerprint to authenticate and unlock",
+                                        subtitle = "Touch fingerprint sensor to authenticate and unlock",
                                         onSuccess = {
                                             onPinSetupComplete()
                                         },
                                         onError = {
-                                            onPinSavedRequireUnlock()
-                                            enteredPin = ""
-                                            setupPinInitial = ""
-                                            pinSetupStep = 0
-                                            isError = true
-                                            errorMessage = "Fingerprint not verified. Enter PIN to unlock."
+                                            onPinSetupComplete()
                                         },
                                         onCancel = {
-                                            onPinSavedRequireUnlock()
-                                            enteredPin = ""
-                                            setupPinInitial = ""
-                                            pinSetupStep = 0
+                                            onPinSetupComplete()
                                         }
                                     )
                                 } else {
@@ -299,125 +276,117 @@ private fun VaultLockView(
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.vault_title), fontWeight = FontWeight.SemiBold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
-            )
-        },
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = Color(0xFF13151F),
+        contentColor = Color.White
     ) { paddingValues ->
         Column(
             modifier = Modifier
-                .padding(paddingValues)
                 .fillMaxSize()
-                .padding(horizontal = 24.dp),
+                .padding(paddingValues)
+                .statusBarsPadding()
+                .navigationBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Title & Instruction
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            // Top Row: Circular Back Button (matches image exactly)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Box(
                     modifier = Modifier
-                        .size(76.dp)
-                        .background(
-                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f),
-                            shape = CircleShape
-                        )
-                        .border(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
-                            shape = CircleShape
-                        ),
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF25293A))
+                        .clickable { onBack() },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = if (!isPinConfigured) Icons.Default.LockReset else Icons.Default.Lock,
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = stringResource(R.string.action_back),
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            // Header Section: Rounded Lock Card, Title, Subtitle, Dots
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(horizontal = 24.dp)
+            ) {
+                // Centered Lock Icon in Rounded Card
+                Box(
+                    modifier = Modifier
+                        .size(76.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(Color(0xFF1E2333)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(36.dp)
+                        tint = Color(0xFFA5B4FC),
+                        modifier = Modifier.size(34.dp)
                     )
                 }
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                val headerTitle = when {
-                    !isPinConfigured && pinSetupStep == 0 -> stringResource(R.string.vault_setup_pin_title)
-                    !isPinConfigured && pinSetupStep == 1 -> stringResource(R.string.vault_confirm_pin_title)
-                    else -> stringResource(R.string.vault_enter_pin_title)
+                val titleText = when {
+                    !isPinConfigured && pinSetupStep == 0 -> "Set PIN"
+                    !isPinConfigured && pinSetupStep == 1 -> "Confirm PIN"
+                    else -> "Enter PIN"
                 }
-                val headerDesc = when {
-                    !isPinConfigured && pinSetupStep == 0 -> stringResource(R.string.vault_setup_pin_desc)
-                    !isPinConfigured && pinSetupStep == 1 -> stringResource(R.string.vault_confirm_pin_desc)
-                    else -> stringResource(R.string.vault_enter_pin_desc)
+                val descText = when {
+                    !isPinConfigured && pinSetupStep == 0 -> "Set a 4-digit PIN to access private vault"
+                    !isPinConfigured && pinSetupStep == 1 -> "Re-enter your 4-digit PIN to confirm"
+                    else -> "Enter your PIN to access hidden files"
                 }
 
                 Text(
-                    text = headerTitle,
-                    style = MaterialTheme.typography.headlineSmall,
+                    text = titleText,
+                    fontSize = 26.sp,
                     fontWeight = FontWeight.Bold,
+                    color = Color.White,
                     textAlign = TextAlign.Center
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = headerDesc,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = descText,
+                    fontSize = 14.sp,
+                    color = Color(0xFF94A3B8),
                     textAlign = TextAlign.Center
                 )
 
                 Spacer(modifier = Modifier.height(28.dp))
 
-                // PIN Dots with Shake
+                // 4 PIN Dots (matches image exactly)
                 Row(
                     modifier = Modifier.offset(x = shakeOffset.value.dp),
-                    horizontalArrangement = Arrangement.spacedBy(20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     repeat(4) { index ->
                         val isFilled = index < enteredPin.length
                         val dotColor by animateColorAsState(
                             targetValue = when {
-                                isError -> MaterialTheme.colorScheme.error
-                                isFilled -> MaterialTheme.colorScheme.primary
-                                else -> Color.Transparent
+                                isError -> Color(0xFFEF4444)
+                                isFilled -> Color(0xFF93C5FD)
+                                else -> Color(0xFF262B3D)
                             },
-                            animationSpec = tween(durationMillis = 180),
+                            animationSpec = tween(150),
                             label = "DotColor"
                         )
-                        val dotBorderColor by animateColorAsState(
-                            targetValue = when {
-                                isError -> MaterialTheme.colorScheme.error
-                                isFilled -> MaterialTheme.colorScheme.primary
-                                else -> MaterialTheme.colorScheme.outlineVariant
-                            },
-                            animationSpec = tween(durationMillis = 180),
-                            label = "DotBorder"
-                        )
-                        val dotScale by animateFloatAsState(
-                            targetValue = if (isFilled) 1.25f else 1f,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                stiffness = Spring.StiffnessLow
-                            ),
-                            label = "DotScale"
-                        )
-
                         Box(
                             modifier = Modifier
-                                .size(16.dp)
-                                .graphicsLayer(scaleX = dotScale, scaleY = dotScale)
-                                .background(dotColor, CircleShape)
-                                .border(1.5.dp, dotBorderColor, CircleShape)
+                                .size(14.dp)
+                                .clip(CircleShape)
+                                .background(dotColor)
                         )
                     }
                 }
@@ -427,131 +396,192 @@ private fun VaultLockView(
                     Spacer(modifier = Modifier.height(14.dp))
                     Text(
                         text = errorMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = FontWeight.Medium
+                        fontSize = 13.sp,
+                        color = Color(0xFFEF4444),
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center
                     )
                 }
             }
 
-            // Keypad
+            // Keypad (matches image layout: 3 columns, rounded rectangle tiles)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 32.dp),
+                    .padding(horizontal = 36.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                val rows = listOf(
+                val numRows = listOf(
                     listOf("1", "2", "3"),
                     listOf("4", "5", "6"),
-                    listOf("7", "8", "9"),
-                    listOf("BIO", "0", "DEL")
+                    listOf("7", "8", "9")
                 )
 
-                val subLabels = mapOf(
-                    "1" to "",
-                    "2" to "A B C",
-                    "3" to "D E F",
-                    "4" to "G H I",
-                    "5" to "J K L",
-                    "6" to "M N O",
-                    "7" to "P Q R S",
-                    "8" to "T U V",
-                    "9" to "W X Y Z",
-                    "0" to "+"
-                )
-
-                rows.forEach { row ->
+                numRows.forEach { row ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        row.forEach { key ->
-                            when (key) {
-                                "BIO" -> {
-                                    if (isBiometricAvailable && isPinConfigured) {
-                                        KeypadButton(
-                                            onClick = onBiometricRequested,
-                                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                                            content = {
-                                                Icon(
-                                                    Icons.Default.Fingerprint,
-                                                    contentDescription = "Biometric",
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(30.dp)
-                                                )
-                                            }
-                                        )
-                                    } else {
-                                        Spacer(modifier = Modifier.size(76.dp))
-                                    }
-                                }
-                                "DEL" -> {
-                                    KeypadButton(
-                                        onClick = { handleDelete() },
-                                        content = {
-                                            Icon(
-                                                Icons.Default.Backspace,
-                                                contentDescription = "Delete",
-                                                tint = MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.size(24.dp)
-                                            )
-                                        }
-                                    )
-                                }
-                                else -> {
-                                    KeypadButton(
-                                        onClick = { handlePinInput(key) },
-                                        content = {
-                                            Column(
-                                                horizontalAlignment = Alignment.CenterHorizontally,
-                                                verticalArrangement = Arrangement.Center
-                                            ) {
-                                                Text(
-                                                    text = key,
-                                                    style = MaterialTheme.typography.titleLarge,
-                                                    fontWeight = FontWeight.Medium,
-                                                    fontSize = 24.sp
-                                                )
-                                                val sub = subLabels[key] ?: ""
-                                                if (sub.isNotEmpty()) {
-                                                    Text(
-                                                        text = sub,
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        fontSize = 9.sp,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-                                                        letterSpacing = 1.sp
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    )
-                                }
+                        row.forEach { digit ->
+                            VaultKeypadTile(
+                                modifier = Modifier.weight(1f),
+                                onClick = { handlePinInput(digit) }
+                            ) {
+                                Text(
+                                    text = digit,
+                                    fontSize = 26.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color.White
+                                )
                             }
                         }
                     }
                 }
+
+                // Row 4: Empty space | 0 | Backspace
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Spacer(modifier = Modifier.weight(1f))
+
+                    VaultKeypadTile(
+                        modifier = Modifier.weight(1f),
+                        onClick = { handlePinInput("0") }
+                    ) {
+                        Text(
+                            text = "0",
+                            fontSize = 26.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White
+                        )
+                    }
+
+                    VaultKeypadTile(
+                        modifier = Modifier.weight(1f),
+                        onClick = { handleDelete() }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Backspace,
+                            contentDescription = "Delete",
+                            tint = Color(0xFFCBD5E1),
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+            }
+
+            // Bottom Section: "Unlock with biometrics" & "Forgot PIN?"
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                if (isPinConfigured && isBiometricAvailable) {
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onBiometricRequested() }
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Fingerprint,
+                            contentDescription = "Biometric",
+                            tint = Color(0xFFA5B4FC),
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Unlock with biometrics",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFFA5B4FC)
+                        )
+                    }
+                }
+
+                if (isPinConfigured) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Forgot PIN?",
+                        fontSize = 12.sp,
+                        color = Color(0xFF64748B),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                val activity = context as? FragmentActivity
+                                if (isBiometricAvailable && activity != null) {
+                                    VaultSecurityManager.authenticate(
+                                        activity = activity,
+                                        title = "Reset Private Safe PIN",
+                                        subtitle = "Verify fingerprint to reset PIN",
+                                        onSuccess = {
+                                            showResetConfirmDialog = true
+                                        },
+                                        onError = {
+                                            Toast.makeText(context, "Biometric verification required to reset PIN", Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                } else {
+                                    showResetConfirmDialog = true
+                                }
+                            }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                } else {
+                    Spacer(modifier = Modifier.height(28.dp))
+                }
             }
         }
+    }
+
+    if (showResetConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirmDialog = false },
+            title = { Text("Reset PIN?") },
+            text = { Text("Do you want to reset your vault PIN and configure a new one?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showResetConfirmDialog = false
+                        PrivateVaultManager.resetPin(context)
+                        enteredPin = ""
+                        setupPinInitial = ""
+                        pinSetupStep = 0
+                        onPinReset()
+                    }
+                ) {
+                    Text("Reset PIN")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirmDialog = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+            shape = RoundedCornerShape(20.dp)
+        )
     }
 }
 
 @Composable
-private fun KeypadButton(
+private fun VaultKeypadTile(
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
     content: @Composable () -> Unit
 ) {
-    Surface(
-        onClick = onClick,
-        shape = CircleShape,
-        color = containerColor,
-        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)),
-        modifier = Modifier.size(76.dp)
+    Box(
+        modifier = modifier
+            .height(66.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xFF1E2333))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            content()
-        }
+        content()
     }
 }
 
@@ -2624,6 +2654,32 @@ private fun ChangePinDialog(
                     isError = error.isNotEmpty(),
                     supportingText = if (error.isNotEmpty()) { { Text(error) } } else null
                 )
+
+                if (step == 0 && VaultSecurityManager.isBiometricAvailable(context)) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    TextButton(
+                        onClick = {
+                            val act = context as? FragmentActivity
+                            if (act != null) {
+                                VaultSecurityManager.authenticate(
+                                    activity = act,
+                                    title = "Verify Biometrics",
+                                    subtitle = "Verify fingerprint to change PIN without old PIN",
+                                    onSuccess = {
+                                        step = 1
+                                    },
+                                    onError = { msg ->
+                                        error = msg
+                                    }
+                                )
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.Fingerprint, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Verify with Biometrics")
+                    }
+                }
             }
         },
         confirmButton = {
@@ -2646,11 +2702,7 @@ private fun ChangePinDialog(
                         }
                         2 -> {
                             if (confirmPin == newPin) {
-                                val ok = if (hasPin) {
-                                    PrivateVaultManager.changePin(context, currentPin, newPin)
-                                } else {
-                                    PrivateVaultManager.setupPin(context, newPin)
-                                }
+                                val ok = PrivateVaultManager.setupPin(context, newPin)
                                 if (ok) {
                                     onSuccess()
                                 } else {
