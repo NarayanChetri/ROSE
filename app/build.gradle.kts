@@ -101,6 +101,7 @@ android {
 }
 
 dependencies {
+    implementation(libs.androidx.fragment.ktx)
     implementation(libs.androidx.documentfile)
     implementation(libs.androidx.biometric)
     implementation(libs.libarchive)
