@@ -481,39 +481,47 @@ private fun VaultLockView(
                     .padding(bottom = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                if (isPinConfigured && isBiometricAvailable) {
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { onBiometricRequested() }
-                            .padding(horizontal = 16.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Fingerprint,
-                            contentDescription = "Biometric",
-                            tint = Color(0xFFA5B4FC),
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Unlock with biometrics",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFFA5B4FC)
-                        )
-                    }
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            if (!isPinConfigured) {
+                                Toast.makeText(context, "Set PIN first", Toast.LENGTH_SHORT).show()
+                            } else if (isBiometricAvailable) {
+                                onBiometricRequested()
+                            } else {
+                                Toast.makeText(context, "Biometric authentication not available", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Fingerprint,
+                        contentDescription = "Biometric",
+                        tint = Color(0xFFA5B4FC),
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Unlock with biometrics",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFFA5B4FC)
+                    )
                 }
 
-                if (isPinConfigured) {
-                    Text(
-                        text = "Forgot PIN?",
-                        fontSize = 12.sp,
-                        color = Color(0xFF64748B),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable {
+                Text(
+                    text = "Forgot PIN?",
+                    fontSize = 12.sp,
+                    color = Color(0xFF64748B),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            if (!isPinConfigured) {
+                                Toast.makeText(context, "Set PIN first", Toast.LENGTH_SHORT).show()
+                            } else {
                                 val activity = context as? FragmentActivity
                                 if (isBiometricAvailable && activity != null) {
                                     VaultSecurityManager.authenticate(
@@ -531,11 +539,9 @@ private fun VaultLockView(
                                     showResetConfirmDialog = true
                                 }
                             }
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                    )
-                } else {
-                    Spacer(modifier = Modifier.height(18.dp))
-                }
+                        }
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                )
             }
         }
     }
@@ -2652,32 +2658,6 @@ private fun ChangePinDialog(
                     isError = error.isNotEmpty(),
                     supportingText = if (error.isNotEmpty()) { { Text(error) } } else null
                 )
-
-                if (step == 0 && VaultSecurityManager.isBiometricAvailable(context)) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    TextButton(
-                        onClick = {
-                            val act = context as? FragmentActivity
-                            if (act != null) {
-                                VaultSecurityManager.authenticate(
-                                    activity = act,
-                                    title = "Verify Biometrics",
-                                    subtitle = "Verify fingerprint to change PIN without old PIN",
-                                    onSuccess = {
-                                        step = 1
-                                    },
-                                    onError = { msg ->
-                                        error = msg
-                                    }
-                                )
-                            }
-                        }
-                    ) {
-                        Icon(Icons.Default.Fingerprint, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Verify with Biometrics")
-                    }
-                }
             }
         },
         confirmButton = {
@@ -2700,7 +2680,7 @@ private fun ChangePinDialog(
                         }
                         2 -> {
                             if (confirmPin == newPin) {
-                                val ok = PrivateVaultManager.setupPin(context, newPin)
+                                val ok = PrivateVaultManager.changePin(context, currentPin, newPin)
                                 if (ok) {
                                     onSuccess()
                                 } else {
