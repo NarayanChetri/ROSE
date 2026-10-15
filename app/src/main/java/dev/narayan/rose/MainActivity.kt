@@ -28,7 +28,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -54,7 +56,7 @@ import dev.narayan.rose.ftpserver.FtpServerScreen
 import dev.narayan.rose.ftpserver.FtpServerNotification
 
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3Api::class)
-class MainActivity : ComponentActivity() {
+class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     internal val viewModel: RoseViewModel by viewModels()
 
@@ -525,7 +527,7 @@ class MainActivity : ComponentActivity() {
                                                             .using(SizeTransform(clip = false))
                                                     }
                                                 }
-                                                is AppScreen.Home, is AppScreen.RecycleBin -> {
+                                                is AppScreen.Home, is AppScreen.RecycleBin, is AppScreen.PrivateSafe -> {
                                                     (fadeIn(tween(160, easing = FastOutSlowInEasing)) +
                                                             scaleIn(initialScale = 0.97f, animationSpec = tween(160, easing = FastOutSlowInEasing)))
                                                         .togetherWith(fadeOut(tween(90, easing = FastOutSlowInEasing)))
@@ -738,7 +740,8 @@ class MainActivity : ComponentActivity() {
                                                             onShareClick = { fileItem -> shareFiles(listOf(fileItem)) },
                                                             onSettingsClick = { screen = AppScreen.Settings },
                                                             onAboutClick = { screen = AppScreen.About },
-                                                            onRecycleBinClick = { screen = AppScreen.RecycleBin }
+                                                            onRecycleBinClick = { screen = AppScreen.RecycleBin },
+                                                            onOpenPrivateSafe = { screen = AppScreen.PrivateSafe }
                                                         )
                                                     }
                                                 }
@@ -857,6 +860,41 @@ class MainActivity : ComponentActivity() {
                                                                         )
                                                                     }
                                                                 }
+
+                                                                if (viewModel.showSafeInBottomBar) {
+                                                                    val isSafeSelected = screen is AppScreen.PrivateSafe
+                                                                    Box(
+                                                                        modifier = Modifier
+                                                                            .weight(1f)
+                                                                            .fillMaxHeight()
+                                                                            .clickable(
+                                                                                interactionSource = remember { MutableInteractionSource() },
+                                                                                indication = null
+                                                                            ) {
+                                                                                screen = AppScreen.PrivateSafe
+                                                                            },
+                                                                        contentAlignment = Alignment.Center
+                                                                    ) {
+                                                                        Column(
+                                                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                                                            verticalArrangement = Arrangement.Center
+                                                                        ) {
+                                                                            Icon(
+                                                                                imageVector = if (isSafeSelected) Icons.Filled.Lock else Icons.Outlined.Lock,
+                                                                                contentDescription = stringResource(R.string.nav_safe),
+                                                                                tint = if (isSafeSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                                modifier = Modifier.size(22.dp)
+                                                                            )
+                                                                            Spacer(modifier = Modifier.height(3.dp))
+                                                                            Text(
+                                                                                text = stringResource(R.string.nav_safe),
+                                                                                style = MaterialTheme.typography.labelSmall,
+                                                                                fontWeight = if (isSafeSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                                                                color = if (isSafeSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                                                            )
+                                                                        }
+                                                                    }
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -932,6 +970,10 @@ class MainActivity : ComponentActivity() {
                                             onBack = { screen = AppScreen.Home }
                                         )
                                         AppScreen.FtpServer -> FtpServerScreen(
+                                            viewModel = viewModel,
+                                            onBack = { screen = AppScreen.Home }
+                                        )
+                                        AppScreen.PrivateSafe -> PrivateVaultScreen(
                                             viewModel = viewModel,
                                             onBack = { screen = AppScreen.Home }
                                         )
@@ -1717,6 +1759,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
+        viewModel.lockVault()
         try { unregisterReceiver(storageReceiver) } catch (e: IllegalArgumentException) { /* already unregistered */ }
     }
 
@@ -1800,6 +1843,7 @@ private sealed class AppScreen {
     object About : AppScreen()
     object RecycleBin : AppScreen()
     object FtpServer : AppScreen()
+    object PrivateSafe : AppScreen()
     data class Document(
         val source: DocumentSource,
         val isMarkdown: Boolean,

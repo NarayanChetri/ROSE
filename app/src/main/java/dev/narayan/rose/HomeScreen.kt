@@ -71,7 +71,8 @@ private data class HomeCategory(
     val icon: ImageVector,
     val color: Color,
     val isFavourites: Boolean = false,
-    val isFtp: Boolean = false
+    val isFtp: Boolean = false,
+    val isPrivateSafe: Boolean = false
 )
 
 private val page1Categories = listOf(
@@ -97,6 +98,13 @@ private val page2Categories = listOf(
         icon = Icons.Default.WifiTethering,
         color = Color(0xFF00897B),
         isFtp = true
+    ),
+    HomeCategory(
+        labelRes = R.string.category_private_safe,
+        type = null,
+        icon = Icons.Default.Lock,
+        color = Color(0xFF6366F1),
+        isPrivateSafe = true
     )
 )
 
@@ -112,6 +120,7 @@ fun HomeScreen(
     onOpenRecent: () -> Unit,
     onOpenFavourites: () -> Unit = {},
     onOpenFtpServer: () -> Unit = {},
+    onOpenPrivateSafe: () -> Unit = {},
     onFileClick: (FileItem) -> Unit,
     onOpenWithClick: (FileItem) -> Unit,
     onShareClick: (FileItem) -> Unit,
@@ -576,6 +585,8 @@ fun HomeScreen(
                                     onOpenFavourites()
                                 } else if (category.isFtp) {
                                     onOpenFtpServer()
+                                } else if (category.isPrivateSafe) {
+                                    onOpenPrivateSafe()
                                 } else if (category.type != null) {
                                     onOpenCategory(category.type, context.getString(category.labelRes))
                                 }
@@ -1343,6 +1354,8 @@ private fun CategoryCard(
                     dev.narayan.rose.ftpserver.FtpServerState.STARTING -> stringResource(R.string.ftp_server_state_summary_starting)
                     else -> stringResource(R.string.ftp_server_state_summary_stopped)
                 }
+            } else if (category.isPrivateSafe) {
+                stringResource(R.string.nav_safe)
             } else if (count == null) {
                 "..."
             } else {

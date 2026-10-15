@@ -102,6 +102,7 @@ android {
 
 dependencies {
     implementation(libs.androidx.documentfile)
+    implementation(libs.androidx.biometric)
     implementation(libs.libarchive)
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)

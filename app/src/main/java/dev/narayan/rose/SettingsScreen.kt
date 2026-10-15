@@ -171,6 +171,14 @@ fun SettingsScreen(
                         selected = viewModel.startPage,
                         onSelect = { viewModel.setStartPage(it) }
                     )
+                    SettingsDivider()
+                    SettingsSwitchRow(
+                        icon = Icons.Default.Lock,
+                        title = stringResource(R.string.settings_show_safe_in_bottom_bar),
+                        subtitle = stringResource(R.string.settings_show_safe_in_bottom_bar_subtitle),
+                        checked = viewModel.showSafeInBottomBar,
+                        onCheckedChange = { viewModel.setShowSafeInBottomBar(it) }
+                    )
                 }
             }
 
@@ -192,6 +200,16 @@ fun SettingsScreen(
                         checked = viewModel.useRecycleBin,
                         onCheckedChange = { viewModel.setUseRecycleBin(it) }
                     )
+                    if (VaultSecurityManager.isBiometricAvailable(context)) {
+                        SettingsDivider()
+                        SettingsSwitchRow(
+                            icon = Icons.Default.Fingerprint,
+                            title = stringResource(R.string.settings_vault_use_biometrics),
+                            subtitle = stringResource(R.string.settings_vault_use_biometrics_subtitle),
+                            checked = viewModel.vaultBiometricEnabled,
+                            onCheckedChange = { viewModel.setVaultBiometricEnabled(it) }
+                        )
+                    }
                 }
             }
 

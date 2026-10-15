@@ -3203,6 +3203,29 @@ fun SelectionBottomBar(
                                             }
                                         )
                                     }
+                                    if (fileOnlySelected.isNotEmpty() && viewModel.currentZipFile == null) {
+                                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.action_move_to_safe)) },
+                                            onClick = {
+                                                val toMove = fileOnlySelected.toList()
+                                                viewModel.exitSelectionMode()
+                                                showMoreMenu = false
+                                                viewModel.moveToVault(toMove) { count ->
+                                                    if (count > 0) {
+                                                        Toast.makeText(context, context.getString(R.string.toast_moved_to_safe), Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    Icons.Default.Lock,
+                                                    null,
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        )
+                                    }
                                     val savableOfflineFiles = fileOnlySelected.filter {
                                         !it.isDirectory && viewModel.isCloudStorage(it.file.absolutePath)
                                     }
