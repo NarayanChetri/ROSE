@@ -612,14 +612,12 @@ fun HomeScreen(
                     }
                 }
 
-                if (viewModel.showQuickAccess) {
-                    item(key = "quick_access") {
-                        AnimatedVisibility(
-                            visible = visible,
-                            enter = fadeIn(tween(300, delayMillis = 130)) + slideInVertically(tween(300, delayMillis = 130)) { it / 12 }
-                        ) {
-                            QuickAccessSection(viewModel = viewModel, onOpenPath = { path -> onOpenPath(path, null) })
-                        }
+                item(key = "quick_access") {
+                    AnimatedVisibility(
+                        visible = visible,
+                        enter = fadeIn(tween(300, delayMillis = 130)) + slideInVertically(tween(300, delayMillis = 130)) { it / 12 }
+                    ) {
+                        QuickAccessSection(viewModel = viewModel, onOpenPath = { path -> onOpenPath(path, null) })
                     }
                 }
 
