@@ -174,7 +174,7 @@
     <string name="vault_restore_message">Restore %1$d file(s) back to original locations?</string>
     <string name="vault_delete_title">Delete permanently</string>
     <string name="vault_delete_message">Permanently delete %1$d file(s) from Private Safe? This cannot be undone.</string>
-    <string name="action_move_to_safe">Move to Safe</string>
+    <string name="action_move_to_safe">Set as private</string>
     <string name="toast_moved_to_safe">Moved to Private Safe</string>
     <string name="toast_restored_from_vault">Restored to original location</string>
     <string name="toast_restoring_from_vault">Restoring file…</string>
@@ -188,6 +188,14 @@
     <string name="vault_change_pin_current_title">Enter Current PIN</string>
     <string name="vault_change_pin_new_title">Enter New PIN</string>
     <string name="vault_pin_changed_success">PIN changed successfully</string>
+    <string name="vault_tab_all">All</string>
+    <string name="vault_tab_photos">Photos</string>
+    <string name="vault_tab_videos">Videos</string>
+    <string name="vault_tab_music">Music</string>
+    <string name="vault_tab_documents">Documents</string>
+    <string name="vault_tab_other">Other</string>
+    <string name="vault_picker_title">Select files to set as private</string>
+    <string name="vault_picker_select_button">Set as private (%1$d)</string>
     <string name="recycle_bin_empty">Trash empty</string>
     <string name="recent_files_empty">No recent files</string>
     <string name="quick_access_empty">No quick access folders added yet</string>

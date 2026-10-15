@@ -53,12 +53,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.style.TextDecoration
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.text.SimpleDateFormat
 
 enum class VaultSortBy {
     NAME, DATE, SIZE
+}
+
+enum class VaultCategory {
+    ALL, PHOTOS, VIDEOS, MUSIC, DOCUMENTS, OTHER
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -490,11 +499,45 @@ private fun VaultContentView(
         }
     }
 
-    val items = remember(viewModel.vaultItems, sortBy, sortAscending) {
+    var selectedCategory by remember { mutableStateOf(VaultCategory.ALL) }
+    var showCustomFilePicker by remember { mutableStateOf(false) }
+
+    val categoryCounts = remember(viewModel.vaultItems) {
+        val counts = mutableMapOf<VaultCategory, Int>()
+        counts[VaultCategory.ALL] = viewModel.vaultItems.size
+        counts[VaultCategory.PHOTOS] = viewModel.vaultItems.count { it.fileType == FileType.IMAGE }
+        counts[VaultCategory.VIDEOS] = viewModel.vaultItems.count { it.fileType == FileType.VIDEO }
+        counts[VaultCategory.MUSIC] = viewModel.vaultItems.count { it.fileType == FileType.AUDIO }
+        counts[VaultCategory.DOCUMENTS] = viewModel.vaultItems.count { it.fileType == FileType.DOCUMENT || it.fileType == FileType.PDF }
+        counts[VaultCategory.OTHER] = viewModel.vaultItems.count {
+            it.fileType != FileType.IMAGE &&
+            it.fileType != FileType.VIDEO &&
+            it.fileType != FileType.AUDIO &&
+            it.fileType != FileType.DOCUMENT &&
+            it.fileType != FileType.PDF
+        }
+        counts
+    }
+
+    val items = remember(viewModel.vaultItems, selectedCategory, sortBy, sortAscending) {
+        val filtered = when (selectedCategory) {
+            VaultCategory.ALL -> viewModel.vaultItems
+            VaultCategory.PHOTOS -> viewModel.vaultItems.filter { it.fileType == FileType.IMAGE }
+            VaultCategory.VIDEOS -> viewModel.vaultItems.filter { it.fileType == FileType.VIDEO }
+            VaultCategory.MUSIC -> viewModel.vaultItems.filter { it.fileType == FileType.AUDIO }
+            VaultCategory.DOCUMENTS -> viewModel.vaultItems.filter { it.fileType == FileType.DOCUMENT || it.fileType == FileType.PDF }
+            VaultCategory.OTHER -> viewModel.vaultItems.filter {
+                it.fileType != FileType.IMAGE &&
+                it.fileType != FileType.VIDEO &&
+                it.fileType != FileType.AUDIO &&
+                it.fileType != FileType.DOCUMENT &&
+                it.fileType != FileType.PDF
+            }
+        }
         val sorted = when (sortBy) {
-            VaultSortBy.NAME -> viewModel.vaultItems.sortedBy { it.originalName.lowercase() }
-            VaultSortBy.DATE -> viewModel.vaultItems.sortedBy { it.dateAdded }
-            VaultSortBy.SIZE -> viewModel.vaultItems.sortedBy { it.size }
+            VaultSortBy.NAME -> filtered.sortedBy { it.originalName.lowercase() }
+            VaultSortBy.DATE -> filtered.sortedBy { it.dateAdded }
+            VaultSortBy.SIZE -> filtered.sortedBy { it.size }
         }
         if (sortAscending) sorted else sorted.reversed()
     }
@@ -512,158 +555,173 @@ private fun VaultContentView(
 
     Scaffold(
         topBar = {
-            if (isSelectionMode) {
-                TopAppBar(
-                    title = {
-                        Text(
-                            "${selectedVaultItems.size} selected",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = {
-                            isSelectionMode = false
-                            selectedVaultItems.clear()
-                        }) {
-                            Icon(Icons.Default.Close, contentDescription = "Exit Selection")
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = {
-                            if (selectedVaultItems.size == items.size) {
-                                selectedVaultItems.clear()
-                            } else {
-                                selectedVaultItems.clear()
-                                selectedVaultItems.addAll(items)
-                            }
-                        }) {
-                            Icon(
-                                if (selectedVaultItems.size == items.size) Icons.Default.Deselect else Icons.Default.SelectAll,
-                                contentDescription = "Select All"
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer
-                    )
-                )
-            } else {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text(stringResource(R.string.vault_title), fontWeight = FontWeight.SemiBold)
-                            val totalSize = items.sumOf { it.size }
+            Column {
+                if (isSelectionMode) {
+                    TopAppBar(
+                        title = {
                             Text(
-                                "${items.size} file${if (items.size != 1) "s" else ""} • ${formatFileSize(totalSize)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                "${selectedVaultItems.size} selected",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
                             )
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
-                        }
-                    },
-                    actions = {
-                        // Sort action
-                        Box {
-                            IconButton(onClick = { showSortMenu = true }) {
-                                Icon(Icons.Default.Sort, contentDescription = "Sort")
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = {
+                                isSelectionMode = false
+                                selectedVaultItems.clear()
+                            }) {
+                                Icon(Icons.Default.Close, contentDescription = "Exit Selection")
                             }
-                            DropdownMenu(
-                                expanded = showSortMenu,
-                                onDismissRequest = { showSortMenu = false },
-                                shape = RoundedCornerShape(16.dp)
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Date added") },
-                                    onClick = {
-                                        if (sortBy == VaultSortBy.DATE) sortAscending = !sortAscending
-                                        else { sortBy = VaultSortBy.DATE; sortAscending = false }
-                                        showSortMenu = false
-                                    },
-                                    leadingIcon = {
-                                        if (sortBy == VaultSortBy.DATE) {
-                                            Icon(if (sortAscending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward, null)
-                                        }
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Name") },
-                                    onClick = {
-                                        if (sortBy == VaultSortBy.NAME) sortAscending = !sortAscending
-                                        else { sortBy = VaultSortBy.NAME; sortAscending = true }
-                                        showSortMenu = false
-                                    },
-                                    leadingIcon = {
-                                        if (sortBy == VaultSortBy.NAME) {
-                                            Icon(if (sortAscending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward, null)
-                                        }
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Size") },
-                                    onClick = {
-                                        if (sortBy == VaultSortBy.SIZE) sortAscending = !sortAscending
-                                        else { sortBy = VaultSortBy.SIZE; sortAscending = false }
-                                        showSortMenu = false
-                                    },
-                                    leadingIcon = {
-                                        if (sortBy == VaultSortBy.SIZE) {
-                                            Icon(if (sortAscending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward, null)
-                                        }
-                                    }
+                        },
+                        actions = {
+                            IconButton(onClick = {
+                                if (selectedVaultItems.size == items.size) {
+                                    selectedVaultItems.clear()
+                                } else {
+                                    selectedVaultItems.clear()
+                                    selectedVaultItems.addAll(items)
+                                }
+                            }) {
+                                Icon(
+                                    if (selectedVaultItems.size == items.size) Icons.Default.Deselect else Icons.Default.SelectAll,
+                                    contentDescription = "Select All"
                                 )
                             }
-                        }
-
-                        // Lock action
-                        IconButton(onClick = {
-                            viewModel.lockVault()
-                            Toast.makeText(context, context.getString(R.string.toast_vault_locked), Toast.LENGTH_SHORT).show()
-                        }) {
-                            Icon(Icons.Default.Lock, contentDescription = stringResource(R.string.vault_lock_now))
-                        }
-
-                        // More options
-                        Box {
-                            IconButton(onClick = { showOptionsMenu = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "More")
-                            }
-                            DropdownMenu(
-                                expanded = showOptionsMenu,
-                                onDismissRequest = { showOptionsMenu = false },
-                                shape = RoundedCornerShape(16.dp)
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.settings_vault_change_pin)) },
-                                    onClick = {
-                                        showOptionsMenu = false
-                                        showChangePinDialog = true
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.Pin, null) }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer
+                        )
+                    )
+                } else {
+                    TopAppBar(
+                        title = {
+                            Column {
+                                Text(stringResource(R.string.vault_title), fontWeight = FontWeight.SemiBold)
+                                val totalSize = items.sumOf { it.size }
+                                Text(
+                                    "${items.size} file${if (items.size != 1) "s" else ""} • ${formatFileSize(totalSize)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                if (VaultSecurityManager.isBiometricAvailable(context)) {
+                            }
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = onBack) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                            }
+                        },
+                        actions = {
+                            // Sort action
+                            Box {
+                                IconButton(onClick = { showSortMenu = true }) {
+                                    Icon(Icons.Default.Sort, contentDescription = "Sort")
+                                }
+                                DropdownMenu(
+                                    expanded = showSortMenu,
+                                    onDismissRequest = { showSortMenu = false },
+                                    shape = RoundedCornerShape(16.dp)
+                                ) {
                                     DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.settings_vault_use_biometrics)) },
-                                        trailingIcon = {
-                                            Switch(
-                                                checked = viewModel.vaultBiometricEnabled,
-                                                onCheckedChange = { viewModel.setVaultBiometricEnabled(it) }
-                                            )
-                                        },
+                                        text = { Text("Date added") },
                                         onClick = {
-                                            viewModel.setVaultBiometricEnabled(!viewModel.vaultBiometricEnabled)
+                                            if (sortBy == VaultSortBy.DATE) sortAscending = !sortAscending
+                                            else { sortBy = VaultSortBy.DATE; sortAscending = false }
+                                            showSortMenu = false
                                         },
-                                        leadingIcon = { Icon(Icons.Default.Fingerprint, null) }
+                                        leadingIcon = {
+                                            if (sortBy == VaultSortBy.DATE) {
+                                                Icon(if (sortAscending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward, null)
+                                            }
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Name") },
+                                        onClick = {
+                                            if (sortBy == VaultSortBy.NAME) sortAscending = !sortAscending
+                                            else { sortBy = VaultSortBy.NAME; sortAscending = true }
+                                            showSortMenu = false
+                                        },
+                                        leadingIcon = {
+                                            if (sortBy == VaultSortBy.NAME) {
+                                                Icon(if (sortAscending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward, null)
+                                            }
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Size") },
+                                        onClick = {
+                                            if (sortBy == VaultSortBy.SIZE) sortAscending = !sortAscending
+                                            else { sortBy = VaultSortBy.SIZE; sortAscending = false }
+                                            showSortMenu = false
+                                        },
+                                        leadingIcon = {
+                                            if (sortBy == VaultSortBy.SIZE) {
+                                                Icon(if (sortAscending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward, null)
+                                            }
+                                        }
                                     )
                                 }
                             }
+
+                            // Lock action
+                            IconButton(onClick = {
+                                viewModel.lockVault()
+                                Toast.makeText(context, context.getString(R.string.toast_vault_locked), Toast.LENGTH_SHORT).show()
+                            }) {
+                                Icon(Icons.Default.Lock, contentDescription = stringResource(R.string.vault_lock_now))
+                            }
+
+                            // More options
+                            Box {
+                                IconButton(onClick = { showOptionsMenu = true }) {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "More")
+                                }
+                                DropdownMenu(
+                                    expanded = showOptionsMenu,
+                                    onDismissRequest = { showOptionsMenu = false },
+                                    shape = RoundedCornerShape(16.dp)
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.settings_vault_change_pin)) },
+                                        onClick = {
+                                            showOptionsMenu = false
+                                            showChangePinDialog = true
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.Pin, null) }
+                                    )
+                                    if (VaultSecurityManager.isBiometricAvailable(context)) {
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.settings_vault_use_biometrics)) },
+                                            trailingIcon = {
+                                                Switch(
+                                                    checked = viewModel.vaultBiometricEnabled,
+                                                    onCheckedChange = { viewModel.setVaultBiometricEnabled(it) }
+                                                )
+                                            },
+                                            onClick = {
+                                                viewModel.setVaultBiometricEnabled(!viewModel.vaultBiometricEnabled)
+                                            },
+                                            leadingIcon = { Icon(Icons.Default.Fingerprint, null) }
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                    )
+                }
+
+                // Category Filter Tabs Row
+                VaultCategoryFilterRow(
+                    selectedCategory = selectedCategory,
+                    onCategorySelected = {
+                        selectedCategory = it
+                        if (isSelectionMode) {
+                            isSelectionMode = false
+                            selectedVaultItems.clear()
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                    counts = categoryCounts
                 )
             }
         },
@@ -723,7 +781,7 @@ private fun VaultContentView(
             if (!isSelectionMode) {
                 FloatingActionButton(
                     onClick = {
-                        importLauncher.launch(arrayOf("*/*"))
+                        showCustomFilePicker = true
                     },
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -764,7 +822,8 @@ private fun VaultContentView(
                     }
                     Spacer(modifier = Modifier.height(20.dp))
                     Text(
-                        stringResource(R.string.vault_empty_title),
+                        if (viewModel.vaultItems.isEmpty()) stringResource(R.string.vault_empty_title)
+                        else "No ${selectedCategory.name.lowercase()} found in Safe",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -777,7 +836,7 @@ private fun VaultContentView(
                     )
                     Spacer(modifier = Modifier.height(24.dp))
                     Button(
-                        onClick = { importLauncher.launch(arrayOf("*/*")) },
+                        onClick = { showCustomFilePicker = true },
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -928,6 +987,378 @@ private fun VaultContentView(
                 Toast.makeText(context, context.getString(R.string.vault_pin_changed_success), Toast.LENGTH_SHORT).show()
             }
         )
+    }
+
+    // -------------------------------------------------------------------------
+    // Custom File Manager File Picker Dialog
+    // -------------------------------------------------------------------------
+    if (showCustomFilePicker) {
+        VaultCustomFilePickerDialog(
+            onDismiss = { showCustomFilePicker = false },
+            onConfirmFiles = { filesToMove ->
+                showCustomFilePicker = false
+                if (filesToMove.isNotEmpty()) {
+                    val fileItems = filesToMove.map { FileItem(it) }
+                    viewModel.moveToVault(fileItems) { count ->
+                        if (count > 0) {
+                            Toast.makeText(context, context.getString(R.string.toast_moved_to_safe), Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun VaultCategoryFilterRow(
+    selectedCategory: VaultCategory,
+    onCategorySelected: (VaultCategory) -> Unit,
+    counts: Map<VaultCategory, Int>,
+    modifier: Modifier = Modifier
+) {
+    val scrollState = rememberScrollState()
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(scrollState)
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        VaultCategory.entries.forEach { cat ->
+            val isSelected = cat == selectedCategory
+            val count = counts[cat] ?: 0
+
+            val label = when (cat) {
+                VaultCategory.ALL -> stringResource(R.string.vault_tab_all)
+                VaultCategory.PHOTOS -> stringResource(R.string.vault_tab_photos)
+                VaultCategory.VIDEOS -> stringResource(R.string.vault_tab_videos)
+                VaultCategory.MUSIC -> stringResource(R.string.vault_tab_music)
+                VaultCategory.DOCUMENTS -> stringResource(R.string.vault_tab_documents)
+                VaultCategory.OTHER -> stringResource(R.string.vault_tab_other)
+            }
+
+            val icon = when (cat) {
+                VaultCategory.ALL -> Icons.Default.AllInclusive
+                VaultCategory.PHOTOS -> Icons.Default.Image
+                VaultCategory.VIDEOS -> Icons.Default.Movie
+                VaultCategory.MUSIC -> Icons.Default.MusicNote
+                VaultCategory.DOCUMENTS -> Icons.Default.Description
+                VaultCategory.OTHER -> Icons.Default.Category
+            }
+
+            val accentColor = when (cat) {
+                VaultCategory.ALL -> MaterialTheme.colorScheme.primary
+                VaultCategory.PHOTOS -> Color(0xFF38BDF8)
+                VaultCategory.VIDEOS -> Color(0xFFA855F7)
+                VaultCategory.MUSIC -> Color(0xFFF43F5E)
+                VaultCategory.DOCUMENTS -> Color(0xFF10B981)
+                VaultCategory.OTHER -> Color(0xFFF59E0B)
+            }
+
+            val animatedBg by animateColorAsState(
+                targetValue = if (isSelected) accentColor.copy(alpha = 0.16f)
+                else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
+                animationSpec = tween(180, easing = FastOutSlowInEasing),
+                label = "VaultCatBg"
+            )
+
+            val animatedBorderColor by animateColorAsState(
+                targetValue = if (isSelected) accentColor
+                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                animationSpec = tween(180, easing = FastOutSlowInEasing),
+                label = "VaultCatBorder"
+            )
+
+            val animatedContentColor by animateColorAsState(
+                targetValue = if (isSelected) accentColor
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                animationSpec = tween(180, easing = FastOutSlowInEasing),
+                label = "VaultCatContent"
+            )
+
+            Surface(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .clickable { onCategorySelected(cat) }
+                    .border(
+                        BorderStroke(if (isSelected) 1.5.dp else 1.dp, animatedBorderColor),
+                        shape = RoundedCornerShape(20.dp)
+                    ),
+                shape = RoundedCornerShape(20.dp),
+                color = animatedBg
+            ) {
+                Row(
+                    modifier = Modifier
+                        .height(34.dp)
+                        .padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = label,
+                        tint = animatedContentColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                        color = animatedContentColor
+                    )
+                    if (count > 0) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(
+                                    if (isSelected) accentColor else MaterialTheme.colorScheme.surfaceContainerHighest
+                                )
+                                .padding(horizontal = 6.dp, vertical = 1.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (count > 99) "99+" else "$count",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun VaultCustomFilePickerDialog(
+    onDismiss: () -> Unit,
+    onConfirmFiles: (List<File>) -> Unit
+) {
+    val rootDir = remember { Environment.getExternalStorageDirectory() }
+    var currentDir by remember { mutableStateOf(rootDir) }
+    val selectedFiles = remember { mutableStateListOf<File>() }
+
+    // List of files and folders in current directory (ignoring hidden & vault folder)
+    val directoryContents = remember(currentDir) {
+        val all = currentDir.listFiles { f ->
+            !f.name.startsWith(".") && f.name != ".rose_vault"
+        }?.toList() ?: emptyList()
+
+        val folders = all.filter { it.isDirectory }.sortedBy { it.name.lowercase() }
+        val regularFiles = all.filter { !it.isDirectory }.sortedBy { it.name.lowercase() }
+        folders + regularFiles
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        BackHandler {
+            if (currentDir != rootDir) {
+                currentDir.parentFile?.let { currentDir = it }
+            } else {
+                onDismiss()
+            }
+        }
+
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(
+                                stringResource(R.string.vault_picker_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                if (currentDir == rootDir) stringResource(R.string.breadcrumbs_internal_storage) else currentDir.name,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = {
+                            if (currentDir != rootDir) {
+                                currentDir.parentFile?.let { currentDir = it }
+                            } else {
+                                onDismiss()
+                            }
+                        }) {
+                            Icon(
+                                if (currentDir != rootDir) Icons.AutoMirrored.Filled.ArrowBack else Icons.Default.Close,
+                                contentDescription = stringResource(R.string.action_back)
+                            )
+                        }
+                    },
+                    actions = {
+                        if (currentDir != rootDir) {
+                            IconButton(onClick = { currentDir = rootDir }) {
+                                Icon(Icons.Default.Home, contentDescription = stringResource(R.string.content_desc_go_to_root))
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    )
+                )
+            },
+            bottomBar = {
+                Surface(
+                    tonalElevation = 4.dp,
+                    shadowElevation = 8.dp,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(16.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                onConfirmFiles(selectedFiles.toList())
+                            },
+                            enabled = selectedFiles.isNotEmpty(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                stringResource(R.string.vault_picker_select_button, selectedFiles.size),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            }
+        ) { paddingValues ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+            ) {
+                // Interactive Breadcrumb Header
+                Breadcrumbs(
+                    path = currentDir.absolutePath,
+                    storageDevices = emptyList(),
+                    onNavigate = { currentDir = it }
+                )
+
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                )
+
+                if (directoryContents.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            stringResource(R.string.no_files_found),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 16.dp)
+                    ) {
+                        itemsIndexed(
+                            items = directoryContents,
+                            key = { _, file -> file.absolutePath }
+                        ) { _, file ->
+                            val isDir = file.isDirectory
+                            val isSelected = selectedFiles.contains(file)
+                            val fileItem = remember(file.absolutePath, file.lastModified()) { FileItem(file) }
+
+                            ListItem(
+                                headlineContent = {
+                                    Text(
+                                        text = file.name,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        fontWeight = if (isDir) FontWeight.SemiBold else FontWeight.Normal,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                },
+                                supportingContent = {
+                                    val dateStr = SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault()).format(java.util.Date(file.lastModified()))
+                                    if (isDir) {
+                                        val count = file.list { _, name -> !name.startsWith(".") }?.size ?: 0
+                                        Text(stringResource(R.string.item_count_and_date, count, dateStr))
+                                    } else {
+                                        Text(stringResource(R.string.item_size_and_date, formatFileSize(file.length()), dateStr))
+                                    }
+                                },
+                                leadingContent = {
+                                    FileIcon(
+                                        fileItem = fileItem,
+                                        iconSize = 40.dp
+                                    )
+                                },
+                                trailingContent = {
+                                    if (isDir) {
+                                        Icon(
+                                            Icons.Default.ChevronRight,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                        )
+                                    } else {
+                                        Checkbox(
+                                            checked = isSelected,
+                                            onCheckedChange = { checked ->
+                                                if (checked) selectedFiles.add(file)
+                                                else selectedFiles.remove(file)
+                                            },
+                                            colors = CheckboxDefaults.colors(
+                                                checkedColor = MaterialTheme.colorScheme.primary
+                                            )
+                                        )
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (isDir) {
+                                            currentDir = file
+                                        } else {
+                                            if (isSelected) selectedFiles.remove(file)
+                                            else selectedFiles.add(file)
+                                        }
+                                    }
+                            )
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                thickness = 0.5.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

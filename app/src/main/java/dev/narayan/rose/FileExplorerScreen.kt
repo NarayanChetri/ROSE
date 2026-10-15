@@ -3830,6 +3830,27 @@ fun FileListItem(
                                     }
                                 )
                             }
+                            if (!isVirtual && !fileItem.isDirectory && !isCloud && viewModel?.currentZipFile == null && viewModel != null) {
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.action_move_to_safe)) },
+                                    onClick = {
+                                        showMenu = false
+                                        viewModel.moveToVault(listOf(fileItem)) { count ->
+                                            if (count > 0) {
+                                                Toast.makeText(context, context.getString(R.string.toast_moved_to_safe), Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.Lock,
+                                            null,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                )
+                            }
                             if (!isVirtual) {
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                 DropdownMenuItem(
