@@ -25,10 +25,6 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeStyle
-import dev.chrisbanes.haze.HazeTint
-import dev.chrisbanes.haze.hazeEffect
 
 /**
  * Renders a frosted/tinted glass background behind the system navigation bar,
@@ -39,7 +35,6 @@ import dev.chrisbanes.haze.hazeEffect
  */
 @Composable
 fun BoxScope.TintedGlassNavigationBar(
-    hazeState: HazeState,
     modifier: Modifier = Modifier
 ) {
     val layoutDirection = LocalLayoutDirection.current
@@ -78,17 +73,19 @@ fun BoxScope.TintedGlassNavigationBar(
     // Tint color: dark translucent smoke tint in dark/amoled mode, clean light translucent tint in light mode
     val backgroundColor = MaterialTheme.colorScheme.background
     val isDark = backgroundColor.luminance() < 0.5f
-    val glassTint = if (isDark) {
-        backgroundColor.copy(alpha = 0.45f)
-    } else {
-        backgroundColor.copy(alpha = 0.65f)
-    }
 
-    val hazeStyle = HazeStyle(
-        backgroundColor = backgroundColor,
-        tint = HazeTint(glassTint),
-        blurRadius = 24.dp,
-        noiseFactor = 0.04f
+    val glassBackground = Brush.verticalGradient(
+        colors = if (isDark) {
+            listOf(
+                backgroundColor.copy(alpha = 0.72f),
+                backgroundColor.copy(alpha = 0.90f)
+            )
+        } else {
+            listOf(
+                backgroundColor.copy(alpha = 0.82f),
+                backgroundColor.copy(alpha = 0.95f)
+            )
+        }
     )
 
     val outlineColor = MaterialTheme.colorScheme.outlineVariant
@@ -99,10 +96,7 @@ fun BoxScope.TintedGlassNavigationBar(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .height(navBarBottom)
-                .hazeEffect(
-                    state = hazeState,
-                    style = hazeStyle
-                )
+                .background(glassBackground)
         ) {
             // Subtle frosted glass top border / specular highlight line
             Box(
@@ -113,7 +107,7 @@ fun BoxScope.TintedGlassNavigationBar(
                         Brush.horizontalGradient(
                             colors = listOf(
                                 outlineColor.copy(alpha = 0.10f),
-                                outlineColor.copy(alpha = 0.30f),
+                                outlineColor.copy(alpha = 0.32f),
                                 outlineColor.copy(alpha = 0.10f)
                             )
                         )
@@ -126,9 +120,14 @@ fun BoxScope.TintedGlassNavigationBar(
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
                 .width(navBarEnd)
-                .hazeEffect(
-                    state = hazeState,
-                    style = hazeStyle
+                .background(
+                    Brush.horizontalGradient(
+                        colors = if (isDark) {
+                            listOf(backgroundColor.copy(alpha = 0.72f), backgroundColor.copy(alpha = 0.90f))
+                        } else {
+                            listOf(backgroundColor.copy(alpha = 0.82f), backgroundColor.copy(alpha = 0.95f))
+                        }
+                    )
                 )
         ) {
             Box(
@@ -139,7 +138,7 @@ fun BoxScope.TintedGlassNavigationBar(
                         Brush.verticalGradient(
                             colors = listOf(
                                 outlineColor.copy(alpha = 0.10f),
-                                outlineColor.copy(alpha = 0.30f),
+                                outlineColor.copy(alpha = 0.32f),
                                 outlineColor.copy(alpha = 0.10f)
                             )
                         )
@@ -152,9 +151,14 @@ fun BoxScope.TintedGlassNavigationBar(
                 .align(Alignment.CenterStart)
                 .fillMaxHeight()
                 .width(navBarStart)
-                .hazeEffect(
-                    state = hazeState,
-                    style = hazeStyle
+                .background(
+                    Brush.horizontalGradient(
+                        colors = if (isDark) {
+                            listOf(backgroundColor.copy(alpha = 0.90f), backgroundColor.copy(alpha = 0.72f))
+                        } else {
+                            listOf(backgroundColor.copy(alpha = 0.95f), backgroundColor.copy(alpha = 0.82f))
+                        }
+                    )
                 )
         ) {
             Box(
@@ -166,7 +170,7 @@ fun BoxScope.TintedGlassNavigationBar(
                         Brush.verticalGradient(
                             colors = listOf(
                                 outlineColor.copy(alpha = 0.10f),
-                                outlineColor.copy(alpha = 0.30f),
+                                outlineColor.copy(alpha = 0.32f),
                                 outlineColor.copy(alpha = 0.10f)
                             )
                         )

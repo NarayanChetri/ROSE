@@ -55,8 +55,6 @@ import dev.narayan.rose.update.UpdateBottomSheet
 import dev.narayan.rose.ftpserver.FtpServerScreen
 import dev.narayan.rose.ftpserver.FtpServerNotification
 import dev.narayan.rose.ui.TintedGlassNavigationBar
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeSource
 
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3Api::class)
 class MainActivity : androidx.fragment.app.FragmentActivity() {
@@ -499,13 +497,11 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             }
                         }
 
-                        val hazeState = remember { HazeState() }
-
                         Box(modifier = Modifier.fillMaxSize()) {
                             SharedTransitionLayout {
                                 AnimatedContent(
                                     targetState = screen,
-                                    modifier = Modifier.fillMaxSize().hazeSource(state = hazeState),
+                                    modifier = Modifier.fillMaxSize(),
                                     transitionSpec = {
                                         val target = targetState
                                         val initial = initialState
@@ -948,7 +944,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             // Tinted glass navigation bar behind system navigation buttons
                             // only active when 3-button / 2-button navigation is used and not in selection mode
                             if (!viewModel.isSelectionMode) {
-                                TintedGlassNavigationBar(hazeState = hazeState)
+                                TintedGlassNavigationBar()
                             }
 
                             // Global mini bar + detailed dialog for in-flight jobs - lives

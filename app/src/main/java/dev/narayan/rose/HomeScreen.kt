@@ -58,6 +58,8 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.filter
@@ -2452,87 +2454,203 @@ private fun StorageSection(
     }
 
     pendingStorageUriForLock?.let { uri ->
-        val docName = remember(uri) {
+        val rawDocName = remember(uri) {
             try {
                 androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)?.name
             } catch (e: Exception) {
                 null
             } ?: "Folder"
         }
-        AlertDialog(
+        val docName = rawDocName.trim()
+
+        Dialog(
             onDismissRequest = {
                 viewModel.addCustomStorage(uri)
                 pendingStorageUriForLock = null
                 Toast.makeText(context, context.getString(R.string.toast_storage_added), Toast.LENGTH_SHORT).show()
-            },
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.Fingerprint,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(36.dp)
-                )
-            },
-            title = {
-                Text(
-                    text = "Lock Folder?",
-                    fontWeight = FontWeight.Bold,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                )
-            },
-            text = {
-                Text(
-                    text = "Would you like to lock \"$docName\" with fingerprint? It will require fingerprint authentication each time it is opened.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val activity = context as? androidx.fragment.app.FragmentActivity
-                        if (activity != null && BiometricSecurityManager.isBiometricAvailable(context)) {
-                            BiometricSecurityManager.authenticate(
-                                activity = activity,
-                                title = "Lock $docName",
-                                subtitle = "Confirm fingerprint to lock this folder",
-                                onSuccess = {
-                                    viewModel.addCustomStorage(uri)
-                                    viewModel.setStorageLocked(uri.toString(), true)
-                                    pendingStorageUriForLock = null
-                                    Toast.makeText(context, "Folder added and locked with fingerprint", Toast.LENGTH_SHORT).show()
-                                },
-                                onError = { err ->
-                                    Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
-                                }
+            }
+        ) {
+            Card(
+                shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Fingerprint Glow Badge
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .background(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.06f)
+                                    )
+                                ),
+                                shape = RoundedCornerShape(24.dp)
                             )
-                        } else {
-                            viewModel.addCustomStorage(uri)
-                            viewModel.setStorageLocked(uri.toString(), true)
-                            pendingStorageUriForLock = null
-                            Toast.makeText(context, "Folder added and locked", Toast.LENGTH_SHORT).show()
+                            .border(
+                                width = 1.dp,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.30f),
+                                shape = RoundedCornerShape(24.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Fingerprint,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(38.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(18.dp))
+
+                    Text(
+                        text = "Lock Folder?",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Folder Name Pill Badge with Google Drive icon
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f),
+                        border = BorderStroke(
+                            width = 0.8.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .background(Color(0xFF0F9D58).copy(alpha = 0.16f), RoundedCornerShape(10.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Cloud,
+                                    contentDescription = null,
+                                    tint = Color(0xFF0F9D58),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = docName,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "Google Drive Folder",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
-                    },
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Text("Lock with Fingerprint")
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Text(
+                        text = "Require fingerprint authentication each time you open this folder to protect your files.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        lineHeight = 18.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Primary Action: Lock with Fingerprint
+                    Button(
+                        onClick = {
+                            val activity = context as? androidx.fragment.app.FragmentActivity
+                            if (activity != null && BiometricSecurityManager.isBiometricAvailable(context)) {
+                                BiometricSecurityManager.authenticate(
+                                    activity = activity,
+                                    title = "Lock $docName",
+                                    subtitle = "Confirm fingerprint to lock this folder",
+                                    onSuccess = {
+                                        viewModel.addCustomStorage(uri)
+                                        viewModel.setStorageLocked(uri.toString(), true)
+                                        pendingStorageUriForLock = null
+                                        Toast.makeText(context, "Folder added and locked with fingerprint", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onError = { err ->
+                                        Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                            } else {
+                                viewModel.addCustomStorage(uri)
+                                viewModel.setStorageLocked(uri.toString(), true)
+                                pendingStorageUriForLock = null
+                                Toast.makeText(context, "Folder added and locked", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Lock with Fingerprint",
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Secondary Action: No, Keep Unlocked
+                    FilledTonalButton(
+                        onClick = {
+                            viewModel.addCustomStorage(uri)
+                            pendingStorageUriForLock = null
+                            Toast.makeText(context, context.getString(R.string.toast_storage_added), Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.55f),
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text(
+                            text = "No, Keep Unlocked",
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.addCustomStorage(uri)
-                        pendingStorageUriForLock = null
-                        Toast.makeText(context, context.getString(R.string.toast_storage_added), Toast.LENGTH_SHORT).show()
-                    },
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Text("No, Keep Unlocked")
-                }
-            },
-            shape = RoundedCornerShape(24.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        )
+            }
+        }
     }
 
 }
