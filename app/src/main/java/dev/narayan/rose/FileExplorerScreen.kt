@@ -2716,47 +2716,50 @@ fun MainTopBar(
                             }
                             if (currentCustomStorage != null) {
                                 val isCurrentStorageLocked = viewModel.isStorageLocked(currentCustomStorage.path) || currentCustomStorage.isLocked
-                                DropdownMenuItem(
-                                    text = { Text(if (isCurrentStorageLocked) "Remove Fingerprint Lock" else "Lock This Folder", modifier = Modifier.padding(vertical = 4.dp)) },
-                                    onClick = {
-                                        showMoreMenu = false
-                                        val activity = context as? androidx.fragment.app.FragmentActivity
-                                        if (activity != null && BiometricSecurityManager.isBiometricAvailable(context)) {
-                                            BiometricSecurityManager.authenticate(
-                                                activity = activity,
-                                                title = if (isCurrentStorageLocked) "Unlock ${currentCustomStorage.name}" else "Lock ${currentCustomStorage.name}",
-                                                subtitle = "Authenticate fingerprint to confirm",
-                                                onSuccess = {
-                                                    viewModel.setStorageLocked(currentCustomStorage.path, !isCurrentStorageLocked)
-                                                    Toast.makeText(
-                                                        context,
-                                                        if (isCurrentStorageLocked) "Fingerprint lock removed" else "Folder locked with fingerprint",
-                                                        Toast.LENGTH_SHORT
-                                                    ).show()
-                                                },
-                                                onError = { err ->
-                                                    Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
-                                                }
+                                val isGdriveOrCloud = currentCustomStorage.storageType == CustomStorageType.GOOGLE_DRIVE || currentCustomStorage.isCloud || isCurrentStorageLocked
+                                if (isGdriveOrCloud) {
+                                    DropdownMenuItem(
+                                        text = { Text(if (isCurrentStorageLocked) "Remove Fingerprint Lock" else "Lock This Folder", modifier = Modifier.padding(vertical = 4.dp)) },
+                                        onClick = {
+                                            showMoreMenu = false
+                                            val activity = context as? androidx.fragment.app.FragmentActivity
+                                            if (activity != null && BiometricSecurityManager.isBiometricAvailable(context)) {
+                                                BiometricSecurityManager.authenticate(
+                                                    activity = activity,
+                                                    title = if (isCurrentStorageLocked) "Unlock ${currentCustomStorage.name}" else "Lock ${currentCustomStorage.name}",
+                                                    subtitle = "Authenticate fingerprint to confirm",
+                                                    onSuccess = {
+                                                        viewModel.setStorageLocked(currentCustomStorage.path, !isCurrentStorageLocked)
+                                                        Toast.makeText(
+                                                            context,
+                                                            if (isCurrentStorageLocked) "Fingerprint lock removed" else "Folder locked with fingerprint",
+                                                            Toast.LENGTH_SHORT
+                                                        ).show()
+                                                    },
+                                                    onError = { err ->
+                                                        Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                                                    }
+                                                )
+                                            } else {
+                                                viewModel.setStorageLocked(currentCustomStorage.path, !isCurrentStorageLocked)
+                                                Toast.makeText(
+                                                    context,
+                                                    if (isCurrentStorageLocked) "Lock removed" else "Folder locked",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                if (isCurrentStorageLocked) Icons.Default.LockOpen else Icons.Default.Fingerprint,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary
                                             )
-                                        } else {
-                                            viewModel.setStorageLocked(currentCustomStorage.path, !isCurrentStorageLocked)
-                                            Toast.makeText(
-                                                context,
-                                                if (isCurrentStorageLocked) "Lock removed" else "Folder locked",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            if (isCurrentStorageLocked) Icons.Default.LockOpen else Icons.Default.Fingerprint,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    },
-                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                                )
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                                    )
+                                    HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                }
                             }
 
                             if (currentView != "Category" && viewModel.currentZipFile == null) {

@@ -19,7 +19,7 @@ A fast, modern, beautiful, and privacy-first Android file manager built with **K
 ### 📥 Download ROSE
 
 <a href="https://github.com/NarayanChetri/ROSE/releases/latest">
-  <img src="https://img.shields.io/badge/⚡_DOWNLOAD_LATEST_APK-v1.2.8_(FREE)-00C853?style=for-the-badge&logo=android&logoColor=white&labelColor=1a1f2c" alt="Download Latest APK" height="50">
+  <img src="https://img.shields.io/badge/⚡_DOWNLOAD_LATEST_APK-v2.0_(FREE)-00C853?style=for-the-badge&logo=android&logoColor=white&labelColor=1a1f2c" alt="Download Latest APK" height="50">
 </a>
 
   
@@ -43,19 +43,18 @@ A fast, modern, beautiful, and privacy-first Android file manager built with **K
 
 ## ✨ Features
 
-* 🗜️ **Powerful Archive Support** — Browse and extract ZIP, RAR, 7z, TAR, GZ, ISO, APK, XAPK, APKS, and more.
-* 🔐 **Encrypted Archives** — Create and extract password-protected ZIP archives with AES-256.
-* 📁 **Complete File Management** — Copy, move, rename, delete, share, and open files with any app.
-* 🔎 **Fast Search** — Quickly search files by name across directories.
-* ♻️ **Recycle Bin** — Restore deleted files or permanently remove them.
-* 🛡️ **Shizuku Support** — Access restricted `Android/data` and `Android/obb` directories without root.
-* 💾 **USB OTG & SD Cards** — Browse and manage files across internal, SD card, and USB storage.
-* 📄 **Markdown Reader** — Read `.md` files directly inside ROSE.
-* ⚡ **Background Operations** — Run large copy, move, compress, and extract operations with live progress.
-* 🎨 **Material 3 UI** — Modern interface with dynamic colors, dark mode, and smooth animations.
-* 🔒 **Privacy First** — No ads, no tracking, no analytics, and fully open source.
-* 🔄 **Media Rescan** — Refresh MediaStore and scan WhatsApp media when needed.
-* 🚫 **Folder Exclusion** — Exclude selected folders from media scanning.
+* ⚡ **Root Support** — Full superuser (Root) browsing and file operations across system partitions via libsu.
+* 🌐 **Wireless File Sharing (FTP Server)** — Transfer files easily between your device and PC over Wi-Fi without cables.
+* ⭐ **Favorites** — Star your most important files and folders for instant, one-tap access.
+* ☁️ **Google Drive & Cloud Folders** — Add cloud storage folders from Google Drive directly, with fingerprint lock support.
+* 🗜️ **Powerful Archive Engine** — Browse, create, and extract ZIP, RAR, 7z, TAR, GZ, ISO, APK, and password-protected AES-256 archives.
+* 🎨 **Enhanced Modern Look** — Refined Material 3 interface with fluid spring animations, clean layouts, and dynamic theming.
+* 🛡️ **Shizuku Integration** — Access restricted `Android/data` and `Android/obb` directories without root.
+* ♻️ **Recycle Bin** — Restore deleted files or erase them permanently with confidence.
+* 💾 **USB OTG & SD Cards** — Comprehensive support for SD cards, USB flash drives, and external storage.
+* 📄 **Markdown Reader** — Preview and read `.md` documents directly inside the app.
+* ⚡ **Background Operations** — Run large file copy, move, compress, and extract jobs reliably with progress notifications.
+* 🔒 **Privacy First & Zero Ads** — No ads, no trackers, no telemetry, and 100% open source.
 
 ---
 ## 📋 Requirements & Permissions
@@ -80,6 +79,8 @@ A fast, modern, beautiful, and privacy-first Android file manager built with **K
 
 * **Language:** [Kotlin](https://kotlinlang.org/)
 * **UI:** [Jetpack Compose](https://developer.android.com/jetpack/compose) + [Material 3](https://m3.material.io/)
+* **Root Engine:** [libsu](https://github.com/topjohnwu/libsu)
+* **FTP Server:** [Apache Mina FtpServer](https://mina.apache.org/ftpserver-project/)
 * **Archive Engine:** Libarchive (`me.zhanghai.android.libarchive`)
 * **System Access:** [Shizuku API](https://shizuku.rikka.app/)
 * **Image Loading:** [Coil](https://coil-kt.github.io/coil/)

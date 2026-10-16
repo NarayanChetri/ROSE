@@ -2022,8 +2022,14 @@ private fun StorageSection(
         contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
     ) { uri: android.net.Uri? ->
         if (uri != null) {
+            val auth = uri.authority ?: ""
+            val uriStr = uri.toString()
+            val isGoogleDrive = uriStr.startsWith("gdrive://") ||
+                    auth.contains("docs.storage") ||
+                    auth.contains("com.google.android.apps.docs")
+
             val activity = context as? androidx.fragment.app.FragmentActivity
-            if (activity != null && BiometricSecurityManager.isBiometricAvailable(context)) {
+            if (isGoogleDrive && activity != null && BiometricSecurityManager.isBiometricAvailable(context)) {
                 pendingStorageUriForLock = uri
             } else {
                 viewModel.addCustomStorage(uri)
@@ -2254,46 +2260,49 @@ private fun StorageSection(
                                             shape = RoundedCornerShape(14.dp),
                                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                                         ) {
-                                            DropdownMenuItem(
-                                                text = { Text(if (isLocked) "Remove Fingerprint Lock" else "Lock with Fingerprint") },
-                                                onClick = {
-                                                    showItemMenu = false
-                                                    val activity = context as? androidx.fragment.app.FragmentActivity
-                                                    if (activity != null && BiometricSecurityManager.isBiometricAvailable(context)) {
-                                                        BiometricSecurityManager.authenticate(
-                                                            activity = activity,
-                                                            title = if (isLocked) "Unlock ${device.name}" else "Lock ${device.name}",
-                                                            subtitle = "Authenticate fingerprint to confirm",
-                                                            onSuccess = {
-                                                                viewModel.setStorageLocked(device.path, !isLocked)
-                                                                Toast.makeText(
-                                                                    context,
-                                                                    if (isLocked) "Fingerprint lock removed" else "Folder locked with fingerprint",
-                                                                    Toast.LENGTH_SHORT
-                                                                ).show()
-                                                            },
-                                                            onError = { err ->
-                                                                Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
-                                                            }
+                                            val isGdriveOrCloud = device.storageType == CustomStorageType.GOOGLE_DRIVE || device.isCloud || isLocked
+                                            if (isGdriveOrCloud) {
+                                                DropdownMenuItem(
+                                                    text = { Text(if (isLocked) "Remove Fingerprint Lock" else "Lock with Fingerprint") },
+                                                    onClick = {
+                                                        showItemMenu = false
+                                                        val activity = context as? androidx.fragment.app.FragmentActivity
+                                                        if (activity != null && BiometricSecurityManager.isBiometricAvailable(context)) {
+                                                            BiometricSecurityManager.authenticate(
+                                                                activity = activity,
+                                                                title = if (isLocked) "Unlock ${device.name}" else "Lock ${device.name}",
+                                                                subtitle = "Authenticate fingerprint to confirm",
+                                                                onSuccess = {
+                                                                    viewModel.setStorageLocked(device.path, !isLocked)
+                                                                    Toast.makeText(
+                                                                        context,
+                                                                        if (isLocked) "Fingerprint lock removed" else "Folder locked with fingerprint",
+                                                                        Toast.LENGTH_SHORT
+                                                                    ).show()
+                                                                },
+                                                                onError = { err ->
+                                                                    Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                                                                }
+                                                            )
+                                                        } else {
+                                                            viewModel.setStorageLocked(device.path, !isLocked)
+                                                            Toast.makeText(
+                                                                context,
+                                                                if (isLocked) "Lock removed" else "Folder locked",
+                                                                Toast.LENGTH_SHORT
+                                                            ).show()
+                                                        }
+                                                    },
+                                                    leadingIcon = {
+                                                        Icon(
+                                                            if (isLocked) Icons.Default.LockOpen else Icons.Default.Fingerprint,
+                                                            contentDescription = null,
+                                                            tint = MaterialTheme.colorScheme.primary
                                                         )
-                                                    } else {
-                                                        viewModel.setStorageLocked(device.path, !isLocked)
-                                                        Toast.makeText(
-                                                            context,
-                                                            if (isLocked) "Lock removed" else "Folder locked",
-                                                            Toast.LENGTH_SHORT
-                                                        ).show()
                                                     }
-                                                },
-                                                leadingIcon = {
-                                                    Icon(
-                                                        if (isLocked) Icons.Default.LockOpen else Icons.Default.Fingerprint,
-                                                        contentDescription = null,
-                                                        tint = MaterialTheme.colorScheme.primary
-                                                    )
-                                                }
-                                            )
-                                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                                )
+                                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+                                            }
                                             DropdownMenuItem(
                                                 text = { Text(stringResource(R.string.action_remove)) },
                                                 onClick = {
