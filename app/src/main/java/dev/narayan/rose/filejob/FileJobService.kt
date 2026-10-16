@@ -228,8 +228,9 @@ class FileJobService : Service() {
             lastNotifUpdateMap.remove(notificationId)
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(notificationId)
 
-            // Only show completion notifications for downloads
-            if (isDownload) {
+            // Only show completion notifications for downloads if not cancelled
+            val isCancelled = JobManager.isCancelled(job.id)
+            if (isDownload && !isCancelled) {
                 showCompletionNotification(job, success, notificationId)
             }
 

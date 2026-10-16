@@ -338,10 +338,17 @@ object FileOperationRunner {
                             onProgress(it)
                             JobManager.updateJob(it)
                         }
-                        if (success) {
-                            job.completedPaths.add(type.source.path)
-                            touchedPaths.add(type.targetFile.toString())
+                        val isCancelled = JobManager.isCancelled(job.id)
+                        if (!success || isCancelled) {
+                            try {
+                                val targetF = java.io.File(type.targetFile.toString())
+                                if (targetF.exists()) targetF.delete()
+                            } catch (e: Exception) { /* best-effort cleanup */ }
+                            if (isCancelled) throw java.io.InterruptedIOException("Cancelled")
+                            throw Exception("Failed to download file.")
                         }
+                        job.completedPaths.add(type.source.path)
+                        touchedPaths.add(type.targetFile.toString())
                     }
                     is FileJobType.Recycle -> {
                         type.sources.forEach { source ->
@@ -443,13 +450,15 @@ object FileOperationRunner {
                         android.media.MediaScannerConnection.scanFile(appContext, touchedPaths.toTypedArray(), null, null)
                     } catch (e: Exception) { /* best-effort */ }
                 }
-                val hasFailures = job.failedItems.isNotEmpty()
+                val isJobCancelled = JobManager.isCancelled(job.id)
+                val hasFailures = job.failedItems.isNotEmpty() || isJobCancelled
+                val isSuccess = !hasFailures && !isJobCancelled
                 JobManager.completeJob(
                     job,
-                    success = !hasFailures,
-                    error = if (hasFailures) "Some items could not be processed" else null
+                    success = isSuccess,
+                    error = if (isJobCancelled) "Cancelled" else if (hasFailures) "Some items could not be processed" else null
                 )
-                onFinished(!hasFailures)
+                onFinished(isSuccess)
             } catch (e: Exception) {
                 e.printStackTrace()
                 JobManager.completeJob(job, success = false, error = e.message ?: e.javaClass.simpleName)

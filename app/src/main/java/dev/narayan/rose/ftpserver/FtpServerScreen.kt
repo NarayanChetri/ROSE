@@ -11,6 +11,7 @@ import android.os.Environment
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -44,11 +45,13 @@ import dev.narayan.rose.RoseViewModel
 import dev.narayan.rose.SettingsManager
 import java.io.File
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
 fun FtpServerScreen(
     viewModel: RoseViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -79,7 +82,25 @@ fun FtpServerScreen(
         currentUrl = FtpServerUrl.getUrl(context, settings)
     }
 
-    Scaffold(
+    val ftpBoundsModifier = if (sharedTransitionScope != null && animatedVisibilityScope != null) {
+        with(sharedTransitionScope) {
+            Modifier.sharedBounds(
+                rememberSharedContentState(key = "category_card_FTP"),
+                animatedVisibilityScope = animatedVisibilityScope,
+                enter = fadeIn(tween(260)),
+                exit = fadeOut(tween(220)),
+                resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds()
+            )
+        }
+    } else Modifier
+
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .then(ftpBoundsModifier),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Scaffold(
         topBar = {
             TopAppBar(
                 title = {
@@ -528,6 +549,7 @@ fun FtpServerScreen(
                 }
             }
         }
+    }
     }
 
     // Dialogs

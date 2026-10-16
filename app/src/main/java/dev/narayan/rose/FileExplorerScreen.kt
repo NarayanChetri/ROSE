@@ -308,7 +308,7 @@ fun FileExplorerScreen(
     backHandlerEnabled: Boolean = true,
     onSearchActiveChange: (Boolean) -> Unit = {},
     onOpenPath: ((String, FileItem?) -> Unit)? = null,
-    contentWindowInsets: WindowInsets = ScaffoldDefaults.contentWindowInsets
+    contentWindowInsets: WindowInsets = WindowInsets(0, 0, 0, 0)
 ) {
     val context = LocalContext.current
 
@@ -338,6 +338,17 @@ fun FileExplorerScreen(
     // Screens: "Main", "Settings", "About"
     var activeScreen by remember { mutableStateOf("Main") }
     var lastNonZipView by remember { mutableStateOf(currentView) }
+    val screenEnterTime = remember { System.currentTimeMillis() }
+    var lastBackClickTime by remember { mutableLongStateOf(0L) }
+
+    val canProcessItemClick: () -> Boolean = {
+        val now = System.currentTimeMillis()
+        val notTransitioning = animatedVisibilityScope == null || !animatedVisibilityScope.transition.isRunning
+        notTransitioning &&
+            (now - screenEnterTime > 450L) &&
+            (now - viewModel.lastNavigationTimestamp > 450L) &&
+            (now - viewModel.lastSwipeToHomeTimestamp > 500L)
+    }
 
     val coroutineScope = rememberCoroutineScope()
     val isDocumentCategory = currentView == "Category" && viewModel.categoryFilterType == FileType.DOCUMENT
@@ -455,6 +466,9 @@ fun FileExplorerScreen(
     }
 
     BackHandler(enabled = backHandlerEnabled) {
+        val now = System.currentTimeMillis()
+        if (now - lastBackClickTime < 350L) return@BackHandler
+        lastBackClickTime = now
 
         if (viewModel.propertiesFile != null) {
             viewModel.closeProperties()
@@ -727,8 +741,21 @@ fun FileExplorerScreen(
     // over this, but it only "usually" worked. The reliable fix is to not run that
     // per-item entrance animation for Recent at all - see hasAnimatedBefore
     // below - so there's nothing that can get stuck invisible in the first place.
-    val isAtQuickAccessRoot = isFromQuickAccess && (viewModel.currentPath == startPath || viewModel.currentPath.isEmpty())
-    val skipEntranceAnimation = currentView == "Recent" || isAtQuickAccessRoot
+    var hasLeftQuickAccessRoot by remember { mutableStateOf(false) }
+
+    LaunchedEffect(viewModel.currentPath) {
+        if (viewModel.currentPath.isNotEmpty() && startPath != null && viewModel.currentPath != startPath) {
+            hasLeftQuickAccessRoot = true
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(400)
+        hasLeftQuickAccessRoot = true
+    }
+
+    val isAtInitialQuickAccessRoot = isFromQuickAccess && !hasLeftQuickAccessRoot && (viewModel.currentPath == startPath || viewModel.currentPath.isEmpty())
+    val skipEntranceAnimation = currentView == "Recent" || isAtInitialQuickAccessRoot
 
     // Live folder updates (silentRefresh from the FileObserver/poll in the
     // ViewModel) swap `files` in place without touching scrollResetKey, so
@@ -829,8 +856,8 @@ fun FileExplorerScreen(
                 )
             }
             else -> {
-                val homeBottomPadding = if (fromHome && !viewModel.isSelectionMode) {
-                    68.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                val homeBottomPadding = if (!viewModel.isSelectionMode) {
+                    WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
                 } else {
                     0.dp
                 }
@@ -915,7 +942,11 @@ fun FileExplorerScreen(
                                         }
                                     }
                                     else -> {
-                                        val handleBack = {
+                                        val handleBack = handleBackLabel@{
+                                            val now = System.currentTimeMillis()
+                                            if (now - lastBackClickTime < 350L) return@handleBackLabel
+                                            lastBackClickTime = now
+
                                             if (viewModel.propertiesFile != null) {
                                                 viewModel.closeProperties()
                                             } else if (activeScreen != "Main") {
@@ -1282,7 +1313,7 @@ fun FileExplorerScreen(
                                 modifier = Modifier.align(Alignment.TopCenter)
                             )
                         },
-                        modifier = Modifier.padding(paddingValues).fillMaxSize()
+                        modifier = Modifier.padding(top = paddingValues.calculateTopPadding()).fillMaxSize()
                     ) {
                         Box(modifier = Modifier.fillMaxSize().onGloballyPositioned { coords ->
                             checkboxDragSelectState.containerBounds = coords.boundsInWindow()
@@ -1563,7 +1594,7 @@ fun FileExplorerScreen(
                                                                 onClick = {
                                                                     if (viewModel.isSelectionMode) {
                                                                         viewModel.toggleSelection(fileItem)
-                                                                    } else if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
+                                                                    } else if (canProcessItemClick()) {
                                                                         onFileClick(fileItem)
                                                                     }
                                                                 },
@@ -1608,7 +1639,7 @@ fun FileExplorerScreen(
                                                                 onClick = {
                                                                     if (viewModel.isSelectionMode) {
                                                                         viewModel.toggleSelection(fileItem)
-                                                                    } else if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
+                                                                    } else if (canProcessItemClick()) {
                                                                         onFileClick(fileItem)
                                                                     }
                                                                 },
@@ -1707,6 +1738,8 @@ fun FileExplorerScreen(
                                                                     onClick = {
                                                                         if (viewModel.isSelectionMode) {
                                                                             viewModel.toggleSelection(fileItem)
+                                                                        } else if (!canProcessItemClick()) {
+                                                                            // Ignore clicks during screen transitions or immediately after entering
                                                                         } else {
                                                                             if (fileItem.isDirectory) {
                                                                                 if (isSearching) {
@@ -1735,7 +1768,7 @@ fun FileExplorerScreen(
                                                                                 lastNonZipView = currentView
                                                                                 viewModel.openArchive(fileItem.file)
                                                                                 currentView = "Files"
-                                                                            } else if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
+                                                                            } else {
                                                                                 onFileClick(fileItem)
                                                                             }
                                                                         }
@@ -1776,6 +1809,8 @@ fun FileExplorerScreen(
                                                             onClick = {
                                                                 if (viewModel.isSelectionMode) {
                                                                     viewModel.toggleSelection(fileItem)
+                                                                } else if (!canProcessItemClick()) {
+                                                                    // Ignore clicks during screen transitions or immediately after entering
                                                                 } else {
                                                                     if (fileItem.isDirectory) {
                                                                         if (isSearching) {
@@ -1804,7 +1839,7 @@ fun FileExplorerScreen(
                                                                         lastNonZipView = currentView
                                                                         viewModel.openArchive(fileItem.file)
                                                                         currentView = "Files"
-                                                                    } else if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
+                                                                    } else {
                                                                         onFileClick(fileItem)
                                                                     }
                                                                 }
@@ -1866,6 +1901,8 @@ fun FileExplorerScreen(
                                                                     onClick = {
                                                                         if (viewModel.isSelectionMode) {
                                                                             viewModel.toggleSelection(fileItem)
+                                                                        } else if (!canProcessItemClick()) {
+                                                                            // Ignore clicks during screen transitions or immediately after entering
                                                                         } else {
                                                                             if (fileItem.isDirectory) {
                                                                                 if (isSearching) {
@@ -1894,7 +1931,7 @@ fun FileExplorerScreen(
                                                                                 lastNonZipView = currentView
                                                                                 viewModel.openArchive(fileItem.file)
                                                                                 currentView = "Files"
-                                                                            } else if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
+                                                                            } else {
                                                                                 onFileClick(fileItem)
                                                                             }
                                                                         }
@@ -2006,6 +2043,8 @@ fun FileExplorerScreen(
                                                             onClick = {
                                                                 if (viewModel.isSelectionMode) {
                                                                     viewModel.toggleSelection(fileItem)
+                                                                } else if (!canProcessItemClick()) {
+                                                                    // Ignore clicks during screen transitions or immediately after entering
                                                                 } else {
                                                                     if (fileItem.isDirectory) {
                                                                         if (isSearching) {
@@ -2034,7 +2073,7 @@ fun FileExplorerScreen(
                                                                         lastNonZipView = currentView
                                                                         viewModel.openArchive(fileItem.file)
                                                                         currentView = "Files"
-                                                                    } else if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
+                                                                    } else {
                                                                         onFileClick(fileItem)
                                                                     }
                                                                 }
@@ -2672,53 +2711,7 @@ fun MainTopBar(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                             offset = androidx.compose.ui.unit.DpOffset(x = (-8).dp, y = 0.dp)
                         ) {
-                            val currentCustomStorage = viewModel.storageDevices.filterIsInstance<StorageDevice.DocumentTree>().firstOrNull { dev ->
-                                path != null && (path == dev.path || path.startsWith(dev.path) || path.replace("://", ":/").startsWith(dev.path.replace("://", ":/")))
-                            }
-                            if (currentCustomStorage != null) {
-                                val isCurrentStorageLocked = viewModel.isStorageLocked(currentCustomStorage.path) || currentCustomStorage.isLocked
-                                DropdownMenuItem(
-                                    text = { Text(if (isCurrentStorageLocked) "Remove Fingerprint Lock" else "Lock This Folder", modifier = Modifier.padding(vertical = 4.dp)) },
-                                    onClick = {
-                                        showMoreMenu = false
-                                        val activity = context as? androidx.fragment.app.FragmentActivity
-                                        if (activity != null && VaultSecurityManager.isBiometricAvailable(context)) {
-                                            VaultSecurityManager.authenticate(
-                                                activity = activity,
-                                                title = if (isCurrentStorageLocked) "Unlock ${currentCustomStorage.name}" else "Lock ${currentCustomStorage.name}",
-                                                subtitle = "Authenticate fingerprint to confirm",
-                                                onSuccess = {
-                                                    viewModel.setStorageLocked(currentCustomStorage.path, !isCurrentStorageLocked)
-                                                    Toast.makeText(
-                                                        context,
-                                                        if (isCurrentStorageLocked) "Fingerprint lock removed" else "Folder locked with fingerprint",
-                                                        Toast.LENGTH_SHORT
-                                                    ).show()
-                                                },
-                                                onError = { err ->
-                                                    Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
-                                                }
-                                            )
-                                        } else {
-                                            viewModel.setStorageLocked(currentCustomStorage.path, !isCurrentStorageLocked)
-                                            Toast.makeText(
-                                                context,
-                                                if (isCurrentStorageLocked) "Lock removed" else "Folder locked",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            if (isCurrentStorageLocked) Icons.Default.LockOpen else Icons.Default.Fingerprint,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    },
-                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                                )
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                            }
+
                             if (currentView != "Category" && viewModel.currentZipFile == null) {
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.action_new_file), modifier = Modifier.padding(vertical = 4.dp)) },
@@ -2871,16 +2864,7 @@ fun Breadcrumbs(
                             fontWeight = if (parts.size == 1) FontWeight.SemiBold else FontWeight.Medium,
                             color = if (parts.size == 1) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary
                         )
-                        val isCurrentTreeLocked = knownTreeDevice != null && ((viewModel?.isStorageLocked(knownTreeDevice.path) == true) || knownTreeDevice.isLocked)
-                        if (isCurrentTreeLocked) {
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Icon(
-                                imageVector = Icons.Default.Lock,
-                                contentDescription = "Locked with fingerprint",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(14.dp)
-                            )
-                        }
+
                         Spacer(modifier = Modifier.width(2.dp))
                         Icon(
                             Icons.Default.ArrowDropDown,
@@ -2913,7 +2897,6 @@ fun Breadcrumbs(
                                     }
                                 }
                             }
-                            val isDevLocked = (viewModel?.isStorageLocked(dev.path) == true) || dev.isLocked
                             val isRootDev = dev is StorageDevice.Root
                             val isSd = dev is StorageDevice.Physical && dev.isSdCard
                             val isUsb = dev is StorageDevice.Physical && dev.isUsb
@@ -2959,15 +2942,7 @@ fun Breadcrumbs(
                                                 fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
                                                 color = if (isCurrent) devColor else MaterialTheme.colorScheme.onSurface
                                             )
-                                            if (isDevLocked) {
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Icon(
-                                                    imageVector = Icons.Default.Lock,
-                                                    contentDescription = "Locked with fingerprint",
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(15.dp)
-                                                )
-                                            }
+
                                             if (isRootDev) {
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Surface(
@@ -3019,26 +2994,7 @@ fun Breadcrumbs(
                                 onClick = {
                                     showStorageDropdown = false
                                     if (!isCurrent) {
-                                        if (isDevLocked) {
-                                            val activity = context as? androidx.fragment.app.FragmentActivity
-                                            if (activity != null && VaultSecurityManager.isBiometricAvailable(context)) {
-                                                VaultSecurityManager.authenticate(
-                                                    activity = activity,
-                                                    title = "Unlock $devDisplayName",
-                                                    subtitle = "Touch fingerprint sensor to open folder",
-                                                    onSuccess = {
-                                                        onNavigate(File(dev.path))
-                                                    },
-                                                    onError = { err ->
-                                                        Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
-                                                    }
-                                                )
-                                            } else {
-                                                onNavigate(File(dev.path))
-                                            }
-                                        } else {
-                                            onNavigate(File(dev.path))
-                                        }
+                                        onNavigate(File(dev.path))
                                     }
                                 },
                                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
@@ -3316,29 +3272,6 @@ fun SelectionBottomBar(
                                                     if (allFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                                                     null,
                                                     tint = Color(0xFFE11D48)
-                                                )
-                                            }
-                                        )
-                                    }
-                                    if (fileOnlySelected.isNotEmpty() && viewModel.currentZipFile == null) {
-                                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                                        DropdownMenuItem(
-                                            text = { Text(stringResource(R.string.action_move_to_safe)) },
-                                            onClick = {
-                                                val toMove = fileOnlySelected.toList()
-                                                viewModel.exitSelectionMode()
-                                                showMoreMenu = false
-                                                viewModel.moveToVault(toMove) { count ->
-                                                    if (count > 0) {
-                                                        Toast.makeText(context, context.getString(R.string.toast_moved_to_safe), Toast.LENGTH_SHORT).show()
-                                                    }
-                                                }
-                                            },
-                                            leadingIcon = {
-                                                Icon(
-                                                    Icons.Default.Lock,
-                                                    null,
-                                                    tint = MaterialTheme.colorScheme.primary
                                                 )
                                             }
                                         )
@@ -3943,27 +3876,6 @@ fun FileListItem(
                                             if (isOffline) Icons.Default.CloudDone else Icons.Default.Download,
                                             contentDescription = null,
                                             tint = if (isOffline) Color(0xFF10B981) else MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                )
-                            }
-                            if (!isVirtual && !fileItem.isDirectory && !isCloud && viewModel?.currentZipFile == null && viewModel != null) {
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.action_move_to_safe)) },
-                                    onClick = {
-                                        showMenu = false
-                                        viewModel.moveToVault(listOf(fileItem)) { count ->
-                                            if (count > 0) {
-                                                Toast.makeText(context, context.getString(R.string.toast_moved_to_safe), Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Default.Lock,
-                                            null,
-                                            tint = MaterialTheme.colorScheme.primary
                                         )
                                     }
                                 )

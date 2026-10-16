@@ -145,10 +145,13 @@ object JobManager {
 
     /** Marks a job finished, tells anyone listening the outcome, and cleans it up. */
     fun completeJob(job: FileJob, success: Boolean, error: String? = null) {
+        val cancelled = isCancelled(job.id)
+        val finalSuccess = success && !cancelled
+        val finalError = if (cancelled && error == null) "Cancelled" else error
         completedJobs.add(job.id)
         val failed = synchronized(job.failedItems) { job.failedItems.toList() }
         val created = synchronized(job.createdPaths) { job.createdPaths.toList() }
-        _jobEvents.tryEmit(JobResult(job.id, job.copy(), success, error, failed, created))
+        _jobEvents.tryEmit(JobResult(job.id, job.copy(), finalSuccess, finalError, failed, created))
         removeJob(job.id)
     }
 }

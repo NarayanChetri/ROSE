@@ -233,6 +233,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     var lastSwipeToHomeTimestamp by mutableLongStateOf(0L)
+    var lastNavigationTimestamp by mutableLongStateOf(0L)
 
     var showHiddenFiles by mutableStateOf(settings.showHiddenFiles)
         private set
@@ -657,113 +658,6 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             if (recycleBinBulkOperationActive) {
                 recycleBinBulkOperationActive = false
                 loadRecycleBin()
-            }
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // Private Safe / Vault
-    // -------------------------------------------------------------------------
-
-    var vaultItems by mutableStateOf(listOf<VaultItem>())
-        private set
-
-    var isVaultUnlocked by mutableStateOf(PrivateVaultManager.isUnlocked)
-        private set
-
-    private val _showSafeInBottomBar = mutableStateOf(settings.showSafeInBottomBar)
-    val showSafeInBottomBar: Boolean by _showSafeInBottomBar
-
-    fun setShowSafeInBottomBar(enabled: Boolean) {
-        _showSafeInBottomBar.value = enabled
-        settings.showSafeInBottomBar = enabled
-    }
-
-    private val _vaultBiometricEnabled = mutableStateOf(settings.vaultBiometricEnabled)
-    val vaultBiometricEnabled: Boolean by _vaultBiometricEnabled
-
-    fun setVaultBiometricEnabled(enabled: Boolean) {
-        _vaultBiometricEnabled.value = enabled
-        settings.vaultBiometricEnabled = enabled
-    }
-
-    var isVaultLoading by mutableStateOf(false)
-        private set
-
-    fun loadVaultItems() {
-        viewModelScope.launch(Dispatchers.IO) {
-            isVaultLoading = true
-            val items = PrivateVaultManager.listItems(getApplication())
-            withContext(Dispatchers.Main) {
-                vaultItems = items
-                isVaultLoading = false
-            }
-        }
-    }
-
-    fun lockVault() {
-        PrivateVaultManager.lock()
-        isVaultUnlocked = false
-    }
-
-    fun unlockVault() {
-        PrivateVaultManager.isUnlocked = true
-        isVaultUnlocked = true
-        loadVaultItems()
-    }
-
-    fun moveToVault(files: List<FileItem>, onComplete: ((Int) -> Unit)? = null) {
-        viewModelScope.launch(Dispatchers.IO) {
-            var count = 0
-            for (item in files) {
-                val ok = PrivateVaultManager.moveToVault(getApplication(), item.file)
-                if (ok) count++
-            }
-            withContext(Dispatchers.Main) {
-                if (count > 0) {
-                    loadCategoryCounts(force = true)
-                    loadRecentFiles()
-                    if (isVaultUnlocked) {
-                        loadVaultItems()
-                    }
-                    invalidateDirectoryCache(currentPath)
-                    loadFiles(currentPath, isManualRefresh = true, showLoading = false)
-                }
-                onComplete?.invoke(count)
-            }
-        }
-    }
-
-    fun restoreVaultItems(items: List<VaultItem>, onComplete: ((Int) -> Unit)? = null) {
-        viewModelScope.launch(Dispatchers.IO) {
-            var count = 0
-            for (item in items) {
-                val ok = PrivateVaultManager.restoreFromVault(getApplication(), item)
-                if (ok) count++
-            }
-            withContext(Dispatchers.Main) {
-                if (count > 0) {
-                    loadVaultItems()
-                    loadCategoryCounts(force = true)
-                    loadRecentFiles()
-                }
-                onComplete?.invoke(count)
-            }
-        }
-    }
-
-    fun deleteVaultItemsPermanently(items: List<VaultItem>, onComplete: ((Int) -> Unit)? = null) {
-        viewModelScope.launch(Dispatchers.IO) {
-            var count = 0
-            for (item in items) {
-                val ok = PrivateVaultManager.deletePermanently(getApplication(), item)
-                if (ok) count++
-            }
-            withContext(Dispatchers.Main) {
-                if (count > 0) {
-                    loadVaultItems()
-                }
-                onComplete?.invoke(count)
             }
         }
     }
@@ -1479,7 +1373,8 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         offlineFiles = updated
                         settings.offlineFiles = updated
                         files = files.toList()
-                        if (result.error != null) {
+                        val isCancelled = result.error?.contains("cancel", ignoreCase = true) == true
+                        if (result.error != null && !isCancelled) {
                             errorMessage = "Couldn't save ${downloadType.source.displayName} offline: ${result.error}"
                         }
                     }

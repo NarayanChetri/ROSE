@@ -54,6 +54,9 @@ import dev.narayan.rose.document.DocumentSource
 import dev.narayan.rose.update.UpdateBottomSheet
 import dev.narayan.rose.ftpserver.FtpServerScreen
 import dev.narayan.rose.ftpserver.FtpServerNotification
+import dev.narayan.rose.ui.TintedGlassNavigationBar
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3Api::class)
 class MainActivity : androidx.fragment.app.FragmentActivity() {
@@ -496,10 +499,13 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             }
                         }
 
+                        val hazeState = remember { HazeState() }
+
                         Box(modifier = Modifier.fillMaxSize()) {
                             SharedTransitionLayout {
                                 AnimatedContent(
                                     targetState = screen,
+                                    modifier = Modifier.fillMaxSize().hazeSource(state = hazeState),
                                     transitionSpec = {
                                         val target = targetState
                                         val initial = initialState
@@ -511,14 +517,32 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                             (slideInHorizontally(animationSpec = tween(320, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(250)))
                                                 .togetherWith(slideOutHorizontally(animationSpec = tween(320, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(200)))
                                                 .using(SizeTransform(clip = false))
-                                        } else if (initial is AppScreen.Home && target is AppScreen.Files && (target.category != null || target.favourites)) {
+                                        } else if (initial is AppScreen.Home && target is AppScreen.Files && target.isFromAllFiles) {
+                                            // Exact old All Files capsule animation
+                                            (fadeIn(tween(250, easing = FastOutSlowInEasing)) +
+                                                    slideInVertically(tween(250, easing = FastOutSlowInEasing)) { it / 20 })
+                                                .togetherWith(fadeOut(tween(150, easing = FastOutSlowInEasing)))
+                                                .using(SizeTransform(clip = false))
+                                        } else if (initial is AppScreen.Files && initial.isFromAllFiles && target is AppScreen.Home) {
+                                            // Exact old All Files capsule return animation
+                                            (fadeIn(tween(160, easing = FastOutSlowInEasing)) +
+                                                    scaleIn(initialScale = 0.97f, animationSpec = tween(160, easing = FastOutSlowInEasing)))
+                                                .togetherWith(fadeOut(tween(90, easing = FastOutSlowInEasing)))
+                                                .using(SizeTransform(clip = false))
+                                        } else if (initial is AppScreen.Home && (
+                                                (target is AppScreen.Files && (target.category != null || target.favourites)) ||
+                                                target is AppScreen.FtpServer
+                                        )) {
                                             // Category container transform: Expands smoothly from the clicked card
                                             (fadeIn(animationSpec = tween(300, easing = FastOutSlowInEasing)))
                                                 .togetherWith(
                                                     fadeOut(animationSpec = tween(220, easing = FastOutSlowInEasing))
                                                 )
                                                 .using(SizeTransform(clip = false))
-                                        } else if (initial is AppScreen.Files && (initial.category != null || initial.favourites) && target is AppScreen.Home) {
+                                        } else if (target is AppScreen.Home && (
+                                                (initial is AppScreen.Files && (initial.category != null || initial.favourites)) ||
+                                                initial is AppScreen.FtpServer
+                                        )) {
                                             // Return from Category to Home: Minimizes back into the category card
                                             (fadeIn(animationSpec = tween(220, easing = FastOutSlowInEasing)))
                                                 .togetherWith(
@@ -526,21 +550,17 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                 )
                                                 .using(SizeTransform(clip = false))
                                         } else if (initial is AppScreen.Home && (
-                                                (target is AppScreen.Files && target.category == null && !target.favourites) ||
+                                                (target is AppScreen.Files && target.category == null && !target.favourites && !target.isFromAllFiles) ||
                                                 target is AppScreen.RecycleBin ||
-                                                target is AppScreen.PrivateSafe ||
-                                                target is AppScreen.FtpServer ||
                                                 target is AppScreen.Settings ||
                                                 target is AppScreen.About
                                         )) {
-                                            // Smooth forward slide animation when opening Quick Access folders, All Files, Recycle Bin, Safe, etc.
+                                            // Smooth forward slide animation when opening Quick Access folders, Recycle Bin, etc.
                                             (slideInHorizontally(animationSpec = tween(300, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(220)))
                                                 .togetherWith(slideOutHorizontally(animationSpec = tween(300, easing = FastOutSlowInEasing)) { -it / 4 } + fadeOut(tween(180)))
                                         } else if (target is AppScreen.Home && (
-                                                (initial is AppScreen.Files && initial.category == null && !initial.recent && !initial.favourites) ||
+                                                (initial is AppScreen.Files && initial.category == null && !initial.recent && !initial.favourites && !initial.isFromAllFiles) ||
                                                 initial is AppScreen.RecycleBin ||
-                                                initial is AppScreen.PrivateSafe ||
-                                                initial is AppScreen.FtpServer ||
                                                 initial is AppScreen.Settings ||
                                                 initial is AppScreen.About
                                         )) {
@@ -555,7 +575,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                         .togetherWith(fadeOut(tween(100, easing = FastOutSlowInEasing)))
                                                         .using(SizeTransform(clip = false))
                                                 }
-                                                is AppScreen.Home, is AppScreen.RecycleBin, is AppScreen.PrivateSafe -> {
+                                                is AppScreen.Home, is AppScreen.RecycleBin -> {
                                                     (fadeIn(tween(160, easing = FastOutSlowInEasing)) +
                                                             scaleIn(initialScale = 0.97f, animationSpec = tween(160, easing = FastOutSlowInEasing)))
                                                         .togetherWith(fadeOut(tween(90, easing = FastOutSlowInEasing)))
@@ -575,8 +595,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                             }
                                         }
                                     },
-                                    label = "ScreenTransition",
-                                    modifier = Modifier.fillMaxSize()
+                                    label = "ScreenTransition"
                                 )
                                 { currentScreen ->
                                     viewModel.passphrasePromptItem?.let { fileItem ->
@@ -677,6 +696,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                             backHandlerEnabled = (homePagerState.currentPage == 0),
                                                             onSearchActiveChange = { isRecentSearching = it },
                                                             onOpenPath = { path, fileToHighlight ->
+                                                                viewModel.lastNavigationTimestamp = System.currentTimeMillis()
                                                                 viewModel.resetFiles()
                                                                 screen = AppScreen.Files(
                                                                     startPath = path,
@@ -687,6 +707,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                             sharedTransitionScope = this@SharedTransitionLayout,
                                                             animatedVisibilityScope = this@AnimatedContent,
                                                             onExitToHome = {
+                                                                viewModel.lastNavigationTimestamp = System.currentTimeMillis()
                                                                 coroutineScope.launch {
                                                                     homePagerState.animateScrollToPage(
                                                                         page = 1,
@@ -695,7 +716,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                                 }
                                                             },
                                                             onFileClick = { fileItem ->
-                                                                if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
+                                                                val now = System.currentTimeMillis()
+                                                                if (now - viewModel.lastSwipeToHomeTimestamp > 500L && now - viewModel.lastNavigationTimestamp > 500L) {
                                                                     if (fileItem.fileType == FileType.ZIP) {
                                                                         viewModel.resetFiles()
                                                                         screen = AppScreen.Files(
@@ -720,6 +742,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                             sharedTransitionScope = this@SharedTransitionLayout,
                                                             animatedVisibilityScope = this@AnimatedContent,
                                                             onOpenPath = { path, fileToHighlight ->
+                                                                viewModel.lastNavigationTimestamp = System.currentTimeMillis()
                                                                 val isFromAllFiles = path == Environment.getExternalStorageDirectory().absolutePath && fileToHighlight == null
                                                                 viewModel.resetFiles()
                                                                 viewModel.loadFiles(path, showLoading = false)
@@ -731,6 +754,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                                 )
                                                             },
                                                             onOpenQuickAccess = { path ->
+                                                                viewModel.lastNavigationTimestamp = System.currentTimeMillis()
                                                                 viewModel.resetFiles()
                                                                 viewModel.loadFiles(path, showLoading = false)
                                                                 screen = AppScreen.Files(
@@ -740,11 +764,13 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                                 )
                                                             },
                                                             onOpenCategory = { type, title ->
+                                                                viewModel.lastNavigationTimestamp = System.currentTimeMillis()
                                                                 viewModel.resetFiles()
                                                                 viewModel.browseCategory(type, title)
                                                                 screen = AppScreen.Files(category = type to title, fromHome = true)
                                                             },
                                                             onOpenFavourites = {
+                                                                viewModel.lastNavigationTimestamp = System.currentTimeMillis()
                                                                 screen = AppScreen.Files(favourites = true, fromHome = true)
                                                             },
                                                             onOpenFtpServer = {
@@ -762,7 +788,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                             },
                                                             canSwipeToRecent = canSwipe,
                                                             onFileClick = { fileItem ->
-                                                                if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
+                                                                val now = System.currentTimeMillis()
+                                                                if (now - viewModel.lastSwipeToHomeTimestamp > 500L && now - viewModel.lastNavigationTimestamp > 500L) {
                                                                     if (fileItem.fileType == FileType.ZIP) {
                                                                         viewModel.resetFiles()
                                                                         screen = AppScreen.Files(
@@ -778,163 +805,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                             onShareClick = { fileItem -> shareFiles(listOf(fileItem)) },
                                                             onSettingsClick = { screen = AppScreen.Settings },
                                                             onAboutClick = { screen = AppScreen.About },
-                                                            onRecycleBinClick = { screen = AppScreen.RecycleBin },
-                                                            onOpenPrivateSafe = { screen = AppScreen.PrivateSafe }
+                                                            onRecycleBinClick = { screen = AppScreen.RecycleBin }
                                                         )
-                                                    }
-                                                }
-
-                                                AnimatedVisibility(
-                                                    visible = !isHomeSearching && !isRecentSearching && !viewModel.isSelectionMode,
-                                                    enter = slideInVertically(
-                                                        animationSpec = tween(durationMillis = 300, delayMillis = 280, easing = FastOutSlowInEasing)
-                                                    ) { it },
-                                                    exit = slideOutVertically(
-                                                        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
-                                                    ) { it },
-                                                    modifier = Modifier.align(Alignment.BottomCenter)
-                                                ) {
-                                                    Surface(
-                                                        shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
-                                                        color = MaterialTheme.colorScheme.surfaceContainer,
-                                                        tonalElevation = 2.dp,
-                                                        shadowElevation = 8.dp,
-                                                        modifier = Modifier.fillMaxWidth()
-                                                    ) {
-                                                        Column(
-                                                            modifier = Modifier
-                                                                .fillMaxWidth()
-                                                                .windowInsetsPadding(WindowInsets.navigationBars)
-                                                        ) {
-                                                            HorizontalDivider(
-                                                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
-                                                                thickness = 0.5.dp
-                                                            )
-                                                            Row(
-                                                                modifier = Modifier
-                                                                    .fillMaxWidth()
-                                                                    .height(52.dp),
-                                                                verticalAlignment = Alignment.CenterVertically
-                                                            ) {
-                                                                val isRecentSelected = homePagerState.currentPage == 0
-                                                                val isFilesSelected = homePagerState.currentPage == 1
-
-                                                                Box(
-                                                                    modifier = Modifier
-                                                                        .weight(1f)
-                                                                        .fillMaxHeight()
-                                                                        .clickable(
-                                                                            interactionSource = remember { MutableInteractionSource() },
-                                                                            indication = null
-                                                                        ) {
-                                                                            coroutineScope.launch {
-                                                                                homePagerState.animateScrollToPage(
-                                                                                    page = 0,
-                                                                                    animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing)
-                                                                                )
-                                                                            }
-                                                                        },
-                                                                    contentAlignment = Alignment.Center
-                                                                ) {
-                                                                    Column(
-                                                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                                                        verticalArrangement = Arrangement.Center
-                                                                    ) {
-                                                                        Icon(
-                                                                            imageVector = if (isRecentSelected) Icons.Filled.Schedule else Icons.Outlined.Schedule,
-                                                                            contentDescription = stringResource(R.string.nav_recent),
-                                                                            tint = if (isRecentSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                                            modifier = Modifier.size(22.dp)
-                                                                        )
-                                                                        Spacer(modifier = Modifier.height(3.dp))
-                                                                        Text(
-                                                                            text = stringResource(R.string.nav_recent),
-                                                                            style = MaterialTheme.typography.labelSmall,
-                                                                            fontWeight = if (isRecentSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                                                            color = if (isRecentSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                                                        )
-                                                                    }
-                                                                }
-
-                                                                Box(
-                                                                    modifier = Modifier
-                                                                        .weight(1f)
-                                                                        .fillMaxHeight()
-                                                                        .clickable(
-                                                                            interactionSource = remember { MutableInteractionSource() },
-                                                                            indication = null
-                                                                        ) {
-                                                                            if (isFilesSelected) {
-                                                                                coroutineScope.launch {
-                                                                                    homeListState.animateScrollToItem(0)
-                                                                                }
-                                                                            } else {
-                                                                                coroutineScope.launch {
-                                                                                    homePagerState.animateScrollToPage(
-                                                                                        page = 1,
-                                                                                        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing)
-                                                                                    )
-                                                                                }
-                                                                            }
-                                                                        },
-                                                                    contentAlignment = Alignment.Center
-                                                                ) {
-                                                                    Column(
-                                                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                                                        verticalArrangement = Arrangement.Center
-                                                                    ) {
-                                                                        Icon(
-                                                                            painter = painterResource(R.drawable.ic_nav_home_minimal),
-                                                                            contentDescription = stringResource(R.string.nav_home),
-                                                                            tint = if (isFilesSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                                            modifier = Modifier.size(22.dp)
-                                                                        )
-                                                                        Spacer(modifier = Modifier.height(3.dp))
-                                                                        Text(
-                                                                            text = stringResource(R.string.nav_home),
-                                                                            style = MaterialTheme.typography.labelSmall,
-                                                                            fontWeight = if (isFilesSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                                                            color = if (isFilesSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                                                        )
-                                                                    }
-                                                                }
-
-                                                                if (viewModel.showSafeInBottomBar) {
-                                                                    val isSafeSelected = screen is AppScreen.PrivateSafe
-                                                                    Box(
-                                                                        modifier = Modifier
-                                                                            .weight(1f)
-                                                                            .fillMaxHeight()
-                                                                            .clickable(
-                                                                                interactionSource = remember { MutableInteractionSource() },
-                                                                                indication = null
-                                                                            ) {
-                                                                                screen = AppScreen.PrivateSafe
-                                                                            },
-                                                                        contentAlignment = Alignment.Center
-                                                                    ) {
-                                                                        Column(
-                                                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                                                            verticalArrangement = Arrangement.Center
-                                                                        ) {
-                                                                            Icon(
-                                                                                imageVector = if (isSafeSelected) Icons.Filled.Lock else Icons.Outlined.Lock,
-                                                                                contentDescription = stringResource(R.string.nav_safe),
-                                                                                tint = if (isSafeSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                                                modifier = Modifier.size(22.dp)
-                                                                            )
-                                                                            Spacer(modifier = Modifier.height(3.dp))
-                                                                            Text(
-                                                                                text = stringResource(R.string.nav_safe),
-                                                                                style = MaterialTheme.typography.labelSmall,
-                                                                                fontWeight = if (isSafeSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                                                                color = if (isSafeSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                                                            )
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
                                                     }
                                                 }
                                             }
@@ -953,6 +825,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                             sharedTransitionScope = this@SharedTransitionLayout,
                                             animatedVisibilityScope = this@AnimatedContent,
                                             onExitToHome = {
+                                                viewModel.lastNavigationTimestamp = System.currentTimeMillis()
                                                 viewModel.resetFiles()
                                                 viewModel.exitCategoryMode()
                                                 coroutineScope.launch {
@@ -965,6 +838,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                 }
                                             },
                                             onOpenPath = { path, fileToHighlight ->
+                                                viewModel.lastNavigationTimestamp = System.currentTimeMillis()
                                                 val isFromAllFiles = path == Environment.getExternalStorageDirectory().absolutePath && fileToHighlight == null
                                                 viewModel.resetFiles()
                                                 screen = AppScreen.Files(
@@ -975,14 +849,16 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                 )
                                             },
                                             onFileClick = { fileItem ->
-                                                if (System.currentTimeMillis() - viewModel.lastSwipeToHomeTimestamp > 500L) {
+                                                val now = System.currentTimeMillis()
+                                                if (now - viewModel.lastSwipeToHomeTimestamp > 500L && now - viewModel.lastNavigationTimestamp > 500L) {
                                                     openFile(fileItem)
                                                 }
                                             },
                                             onOpenWithClick = { openFileWith(it) },
                                             onShareClick = { fileItems -> shareFiles(fileItems) },
                                             listState = explorerListState,
-                                            gridState = explorerGridState
+                                            gridState = explorerGridState,
+                                            contentWindowInsets = WindowInsets(0, 0, 0, 0)
                                         )
                                         is AppScreen.RecycleBin -> RecycleBinScreen(
                                             onBack = { screen = AppScreen.Home },
@@ -1010,11 +886,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                         )
                                         AppScreen.FtpServer -> FtpServerScreen(
                                             viewModel = viewModel,
-                                            onBack = { screen = AppScreen.Home }
-                                        )
-                                        AppScreen.PrivateSafe -> PrivateVaultScreen(
-                                            viewModel = viewModel,
-                                            onBack = { screen = AppScreen.Home }
+                                            onBack = { screen = AppScreen.Home },
+                                            sharedTransitionScope = this@SharedTransitionLayout,
+                                            animatedVisibilityScope = this@AnimatedContent
                                         )
                                         AppScreen.About -> AboutScreen(
                                             viewModel = viewModel,
@@ -1071,6 +945,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                 }
                             }
 
+                            // Tinted glass navigation bar behind system navigation buttons
+                            // only active when 3-button / 2-button navigation is used and not in selection mode
+                            if (!viewModel.isSelectionMode) {
+                                TintedGlassNavigationBar(hazeState = hazeState)
+                            }
+
                             // Global mini bar + detailed dialog for in-flight jobs - lives
                             // above the AnimatedContent so it survives Home <-> Files <->
                             // Recycle Bin navigation instead of resetting per screen.
@@ -1079,6 +959,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                 Box(
                                     modifier = Modifier
                                         .align(Alignment.BottomCenter)
+                                        .navigationBarsPadding()
                                         .padding(16.dp)
                                 ) {
                                     ActiveJobsCard(
@@ -1798,7 +1679,6 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     override fun onStop() {
         super.onStop()
-        viewModel.lockVault()
         try { unregisterReceiver(storageReceiver) } catch (e: IllegalArgumentException) { /* already unregistered */ }
     }
 
@@ -1883,7 +1763,6 @@ private sealed class AppScreen {
     object About : AppScreen()
     object RecycleBin : AppScreen()
     object FtpServer : AppScreen()
-    object PrivateSafe : AppScreen()
     data class Document(
         val source: DocumentSource,
         val isMarkdown: Boolean,
