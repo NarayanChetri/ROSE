@@ -2016,13 +2016,19 @@ private fun StorageSection(
     val hasAnyStorages = sdDevices.isNotEmpty() || usbDevices.isNotEmpty() || rootDevice != null || treeDevices.isNotEmpty()
 
     var storagePendingRemoval by remember { mutableStateOf<StorageDevice.DocumentTree?>(null) }
+    var pendingStorageUriForLock by remember { mutableStateOf<android.net.Uri?>(null) }
 
     val openDocumentTreeLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
     ) { uri: android.net.Uri? ->
         if (uri != null) {
-            viewModel.addCustomStorage(uri)
-            Toast.makeText(context, context.getString(R.string.toast_storage_added), Toast.LENGTH_SHORT).show()
+            val activity = context as? androidx.fragment.app.FragmentActivity
+            if (activity != null && BiometricSecurityManager.isBiometricAvailable(context)) {
+                pendingStorageUriForLock = uri
+            } else {
+                viewModel.addCustomStorage(uri)
+                Toast.makeText(context, context.getString(R.string.toast_storage_added), Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -2205,9 +2211,28 @@ private fun StorageSection(
                                 iconColor = itemColor,
                                 badgeText = itemBadgeText,
                                 badgeColor = itemColor,
-                                isLocked = false,
+                                isLocked = isLocked,
                                 onClick = {
-                                    onOpenPath(device.path)
+                                    if (isLocked) {
+                                        val activity = context as? androidx.fragment.app.FragmentActivity
+                                        if (activity != null && BiometricSecurityManager.isBiometricAvailable(context)) {
+                                            BiometricSecurityManager.authenticate(
+                                                activity = activity,
+                                                title = "Unlock ${device.name}",
+                                                subtitle = "Scan fingerprint to access this folder",
+                                                onSuccess = {
+                                                    onOpenPath(device.path)
+                                                },
+                                                onError = { err ->
+                                                    Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                                                }
+                                            )
+                                        } else {
+                                            onOpenPath(device.path)
+                                        }
+                                    } else {
+                                        onOpenPath(device.path)
+                                    }
                                 },
                                 onLongClick = { storagePendingRemoval = device },
                                 trailingContent = {
@@ -2229,6 +2254,46 @@ private fun StorageSection(
                                             shape = RoundedCornerShape(14.dp),
                                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                                         ) {
+                                            DropdownMenuItem(
+                                                text = { Text(if (isLocked) "Remove Fingerprint Lock" else "Lock with Fingerprint") },
+                                                onClick = {
+                                                    showItemMenu = false
+                                                    val activity = context as? androidx.fragment.app.FragmentActivity
+                                                    if (activity != null && BiometricSecurityManager.isBiometricAvailable(context)) {
+                                                        BiometricSecurityManager.authenticate(
+                                                            activity = activity,
+                                                            title = if (isLocked) "Unlock ${device.name}" else "Lock ${device.name}",
+                                                            subtitle = "Authenticate fingerprint to confirm",
+                                                            onSuccess = {
+                                                                viewModel.setStorageLocked(device.path, !isLocked)
+                                                                Toast.makeText(
+                                                                    context,
+                                                                    if (isLocked) "Fingerprint lock removed" else "Folder locked with fingerprint",
+                                                                    Toast.LENGTH_SHORT
+                                                                ).show()
+                                                            },
+                                                            onError = { err ->
+                                                                Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        )
+                                                    } else {
+                                                        viewModel.setStorageLocked(device.path, !isLocked)
+                                                        Toast.makeText(
+                                                            context,
+                                                            if (isLocked) "Lock removed" else "Folder locked",
+                                                            Toast.LENGTH_SHORT
+                                                        ).show()
+                                                    }
+                                                },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        if (isLocked) Icons.Default.LockOpen else Icons.Default.Fingerprint,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.primary
+                                                    )
+                                                }
+                                            )
+                                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
                                             DropdownMenuItem(
                                                 text = { Text(stringResource(R.string.action_remove)) },
                                                 onClick = {
@@ -2373,6 +2438,90 @@ private fun StorageSection(
                 }
             },
             shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    }
+
+    pendingStorageUriForLock?.let { uri ->
+        val docName = remember(uri) {
+            try {
+                androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)?.name
+            } catch (e: Exception) {
+                null
+            } ?: "Folder"
+        }
+        AlertDialog(
+            onDismissRequest = {
+                viewModel.addCustomStorage(uri)
+                pendingStorageUriForLock = null
+                Toast.makeText(context, context.getString(R.string.toast_storage_added), Toast.LENGTH_SHORT).show()
+            },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Fingerprint,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Lock Folder?",
+                    fontWeight = FontWeight.Bold,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            },
+            text = {
+                Text(
+                    text = "Would you like to lock \"$docName\" with fingerprint? It will require fingerprint authentication each time it is opened.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val activity = context as? androidx.fragment.app.FragmentActivity
+                        if (activity != null && BiometricSecurityManager.isBiometricAvailable(context)) {
+                            BiometricSecurityManager.authenticate(
+                                activity = activity,
+                                title = "Lock $docName",
+                                subtitle = "Confirm fingerprint to lock this folder",
+                                onSuccess = {
+                                    viewModel.addCustomStorage(uri)
+                                    viewModel.setStorageLocked(uri.toString(), true)
+                                    pendingStorageUriForLock = null
+                                    Toast.makeText(context, "Folder added and locked with fingerprint", Toast.LENGTH_SHORT).show()
+                                },
+                                onError = { err ->
+                                    Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        } else {
+                            viewModel.addCustomStorage(uri)
+                            viewModel.setStorageLocked(uri.toString(), true)
+                            pendingStorageUriForLock = null
+                            Toast.makeText(context, "Folder added and locked", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Lock with Fingerprint")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.addCustomStorage(uri)
+                        pendingStorageUriForLock = null
+                        Toast.makeText(context, context.getString(R.string.toast_storage_added), Toast.LENGTH_SHORT).show()
+                    },
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("No, Keep Unlocked")
+                }
+            },
+            shape = RoundedCornerShape(24.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
     }
