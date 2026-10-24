@@ -1,5 +1,571 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="app_name">应用详情</string>
-    <string name="app_description">可靠的开源探索器</string>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Application Details -->
+    <string name="app_name">ROSE</string>
+    <string name="app_description">可靠的开源文件管理器</string>
+    <string name="about_app_description">因为我想要一款安全、开源、快速且功能强大的文件管理器，并支持 Shizuku，所以开发了它。虽然整个项目主要借助 AI 辅助编写，但在工程实现上依然经过专业、细致的打磨。这就是 ROSE。</string>
+    <string name="about_author_name">Narayan Chetri</string>
+    <string name="about_author_role">首席开发者</string>
+    <string name="about_version">版本</string>
+    <string name="about_view_on_github">在 GitHub 上查看</string>
+    <string name="about_github_subtitle">源代码仓库</string>
+    <string name="about_contact">联系</string>
+    <string name="about_contact_email">Narayanchetri.dev@gmail.com</string>
+    <string name="about_check_for_updates">检查更新</string>
+    <string name="about_checking_for_updates">正在检查更新…</string>
+
+    <!-- Common Actions -->
+    <string name="action_cancel">取消</string>
+    <string name="action_close">关闭</string>
+    <string name="action_confirm">确认</string>
+    <string name="action_create">创建</string>
+    <string name="action_done">完成</string>
+    <string name="action_delete">删除</string>
+    <string name="action_rename">重命名</string>
+    <string name="action_copy">复制</string>
+    <string name="action_move">移动</string>
+    <string name="action_share">分享</string>
+    <string name="action_properties">属性</string>
+    <string name="action_compress">压缩</string>
+    <string name="action_extract">解压</string>
+    <string name="action_restore">还原</string>
+    <string name="action_empty">空</string>
+    <string name="action_more">更多</string>
+    <string name="action_back">返回</string>
+    <string name="action_search">搜索</string>
+    <string name="action_refresh">刷新</string>
+    <string name="action_settings">设置</string>
+    <string name="action_open">打开</string>
+    <string name="action_open_with">打开方式</string>
+    <string name="action_open_location">打开所在位置</string>
+    <string name="action_select_all">全选</string>
+    <string name="action_unselect_all">取消全选</string>
+    <string name="action_remove">移除</string>
+    <string name="action_remove_all">全部移除</string>
+    <string name="action_move_up">上移</string>
+    <string name="action_move_down">下移</string>
+    <string name="action_unmount">卸载</string>
+    <string name="action_forget">忘记</string>
+    <string name="action_retry">重试</string>
+    <string name="action_install">安装</string>
+    <string name="action_later">稍后</string>
+    <string name="action_new_folder">新建文件夹</string>
+    <string name="action_new_file">新建文件</string>
+    <string name="action_hide_hidden_files">隐藏隐藏文件</string>
+    <string name="action_show_hidden_files">显示隐藏文件</string>
+    <string name="action_hide">隐藏</string>
+    <string name="action_see_all">查看全部</string>
+    <string name="action_add_storage">添加存储</string>
+    <string name="action_clean_up">清理</string>
+    <string name="action_empty_trash">清空回收站</string>
+    <string name="action_empty_bin">清空回收站</string>
+    <string name="action_share_via">通过以下方式分享</string>
+    <string name="action_allow_notifications">允许通知</string>
+    <string name="action_not_now">暂不</string>
+    <string name="action_about">关于</string>
+    <string name="action_add_folders">添加文件夹</string>
+    <string name="action_select_this_folder">选择此文件夹</string>
+
+    <!-- Content Descriptions & Accessibility -->
+    <string name="content_desc_back">返回</string>
+    <string name="content_desc_search">搜索</string>
+    <string name="content_desc_folder">文件夹</string>
+    <string name="content_desc_file_name">文件名</string>
+    <string name="content_desc_more_options">更多选项</string>
+    <string name="content_desc_file_actions">文件操作</string>
+    <string name="content_desc_expand">展开</string>
+    <string name="content_desc_collapse">收起</string>
+    <string name="content_desc_go_to_root">前往根目录</string>
+    <string name="content_desc_encrypted">已加密</string>
+
+    <!-- Categories -->
+    <string name="category_images">图片</string>
+    <string name="category_photos">照片</string>
+    <string name="category_videos">视频</string>
+    <string name="category_audio">音频</string>
+    <string name="category_documents">文档</string>
+    <string name="category_downloads">下载</string>
+    <string name="folder_camera">相机</string>
+    <string name="category_archives">压缩包</string>
+    <string name="category_apks">APK 文件</string>
+    <string name="category_files">文件</string>
+    <string name="category_all_files">所有文件</string>
+    <string name="category_ftp_server">FTP 服务器</string>
+    <string name="album_unknown">未知相册</string>
+
+    <!-- Common Statuses -->
+    <string name="status_empty">空</string>
+    <string name="status_done">完成</string>
+    <string name="status_calculating">正在计算…</string>
+    <string name="status_analyzing">正在分析…</string>
+    <string name="status_unknown_error">发生未知错误</string>
+
+    <!-- Home Screen -->
+    <string name="storage_internal">内部存储</string>
+    <string name="storage_drive_fallback">存储空间</string>
+    <string name="storage_google_drive">Google 云端硬盘</string>
+    <string name="storage_external">外部存储</string>
+    <string name="storage_storages_and_drives">存储空间和磁盘</string>
+    <string name="storage_add_cloud_or_network">添加 Google 云端硬盘或其他存储</string>
+    <string name="storage_sd_card">SD卡</string>
+    <string name="storage_usb_drive">USB 驱动器/U盘（OTG）</string>
+    <string name="storage_usb_placeholder_desc">SanDisk Ultra • 共 32 GB，剩余 18.4 GB</string>
+    <string name="storage_cloud_placeholder_desc">connected_account@gmail.com • 共 15 GB，已使用 9.4 GB</string>
+    <string name="storage_badge_sd">SD 卡</string>
+    <string name="storage_badge_otg">OTG</string>
+    <string name="storage_badge_cloud">云端</string>
+    <string name="toast_storage_add_clicked">添加云端或网络存储</string>
+    <string name="toast_storage_added">已成功添加存储</string>
+    <string name="toast_storage_removed">已移除存储</string>
+    <string name="storage_badge_custom">存储空间</string>
+    <string name="storage_no_external_devices">未连接外部存储设备</string>
+    <string name="storage_no_external_devices_hint">连接 USB 驱动器或 SD 卡，或点击“+”添加存储</string>
+    <string name="dialog_remove_storage_title">移除存储</string>
+    <string name="dialog_remove_storage_message">确定要从 ROSE 中移除“%1$s”吗？</string>
+    <string name="action_save_offline">保存到离线文件</string>
+    <string name="action_remove_offline">从离线文件中移除</string>
+    <string name="toast_saving_offline">正在下载，以便离线访问…</string>
+    <string name="toast_removed_from_offline">已从离线文件中移除</string>
+    <string name="status_offline_available">可离线使用</string>
+    <string name="toast_cloud_preview_clicked">Google 云端硬盘（预览）— 云存储功能即将推出</string>
+    <string name="toast_usb_preview_clicked">USB 驱动器（OTG 预览）— 连接实际的 OTG 存储设备即可浏览</string>
+    <string name="toast_sd_preview_clicked">SD 卡（预览）— 插入 SD 卡即可浏览</string>
+    <string name="storage_free_of_total">共 %2$s，剩余 %1$s</string>
+    <string name="storage_used">已使用 %1$s</string>
+    <string name="storage_used_of_total">已使用 / 共 %1$s</string>
+    <string name="storage_amount_used_of_total">已使用 %1$s / 共 %2$s</string>
+    <string name="storage_cloud">云存储</string>
+    <string name="storage_percent_used">已使用 %1$d%%</string>
+    <string name="home_section_storage_devices">存储设备</string>
+    <string name="home_section_categories">分类</string>
+    <string name="home_section_recycle_bin">回收站</string>
+    <string name="home_section_recent_files">最近的文件</string>
+    <string name="home_recent_files">最近的文件</string>
+    <string name="home_section_quick_access">快捷访问</string>
+    <string name="home_quick_access">快捷访问</string>
+    <string name="category_favourites">收藏</string>
+    <string name="title_favourite_files">收藏</string>
+    <string name="action_add_to_favourites">添加到收藏</string>
+    <string name="action_remove_from_favourites">从收藏中移除</string>
+    <string name="toast_added_to_favourites">已添加到收藏</string>
+    <string name="toast_removed_from_favourites">已从收藏中移除</string>
+    <string name="empty_favourite_files">没有收藏的文件</string>
+    <string name="empty_favourite_files_subtitle">点击三点菜单，或长按任意文件，将其添加到收藏</string>
+    <string name="recycle_bin_empty">回收站为空</string>
+    <string name="recent_files_empty">没有最近使用的文件</string>
+    <string name="quick_access_empty">尚未添加快捷访问文件夹</string>
+    <string name="manage_quick_access_title">管理快捷访问</string>
+    <string name="remove_quick_access_title">从快捷访问中移除</string>
+    <string name="remove_quick_access_message">确定要将“%1$s”从快捷访问中移除吗？</string>
+    <string name="dialog_remove_folder_title">移除文件夹</string>
+    <string name="dialog_remove_quick_access_message">要将“%1$s”从快捷访问中移除吗？之后随时可以重新添加。</string>
+    <string name="home_recycle_bin_subtitle">清理已删除的文件</string>
+    <string name="unmount_storage_title">卸载存储设备</string>
+    <string name="unmount_storage_message">确定要卸载此设备吗？正在进行的文件操作可能会中断。</string>
+    <string name="clean_up_found">找到 %1$s</string>
+    <string name="clean_up_in_bin">回收站中有 %1$s</string>
+    <string name="folder_picker_no_subfolders">此处没有子文件夹</string>
+
+    <!-- File Explorer Screen -->
+    <string name="search_files_placeholder">搜索文件…</string>
+    <string name="no_files_found">未找到文件</string>
+    <string name="no_results_for_query">没有找到与“%1$s”相关的结果</string>
+    <string name="breadcrumbs_internal_storage">所有文件</string>
+    <string name="selection_count">已选择 %1$d 项</string>
+    <string name="total_items_in_total">共 %1$d 项</string>
+    <string name="total_items_count">共 %1$d 项</string>
+    <string name="items_count">%1$d 项</string>
+    <string name="item_count_and_date">%1$d 项 | %2$s</string>
+    <string name="item_size_and_date">%1$s | %2$s</string>
+    <string name="action_extract_here">在此处解压</string>
+    <string name="action_paste_here">粘贴到此处</string>
+    <string name="action_move_here">移动到此处</string>
+    <string name="action_add_to_quick_access">添加到快捷访问</string>
+
+    <!-- Sorting and Views -->
+    <string name="sort_title">排序</string>
+    <string name="sort_name">名称</string>
+    <string name="sort_type">类型</string>
+    <string name="sort_size">大小</string>
+    <string name="sort_date">日期</string>
+    <string name="sort_last_modified">修改时间</string>
+    <string name="view_list">列表视图</string>
+    <string name="view_grid">网格视图</string>
+
+    <!-- Relative Dates -->
+    <string name="date_today">今天</string>
+    <string name="date_yesterday">昨天</string>
+    <string name="date_days_ago">%1$d 天前</string>
+
+    <!-- Save As Screen -->
+    <string name="save_as_archive_title">保存/解压压缩包</string>
+    <string name="save_as_title">保存到…</string>
+    <string name="save_as_save_here">保存到此处</string>
+    <string name="save_as_failed_to_save">文件保存失败</string>
+    <string name="save_as_no_folders_found">未找到文件夹</string>
+    <string name="save_as_archive_viewer">压缩包查看器</string>
+    <string name="save_as_archive_viewer_subtitle">预览并浏览压缩包</string>
+    <string name="save_as_save_as">另存为</string>
+    <string name="save_as_save_as_subtitle">将压缩包解压到指定位置</string>
+
+    <!-- Dialogs: Delete Confirmation -->
+    <string name="delete_large_item_title">要删除较大的项目吗？</string>
+    <string name="delete_item_title">确定删除？</string>
+    <string name="delete_file_title">删除文件</string>
+    <string name="delete_single_confirm">确定要删除“%1$s”吗？</string>
+    <string name="delete_multi_confirm">确定要删除选中的 %1$d 项吗？</string>
+    <string name="delete_single_moved_to_bin"> 该项目将被移至回收站。</string>
+    <string name="delete_multi_moved_to_bin"> 这些项目将被移至回收站。</string>
+    <string name="delete_cannot_be_undone"> 此操作无法撤销。</string>
+    <string name="delete_action_cannot_be_undone"> 此操作无法撤销。</string>
+    <string name="delete_total_size">总大小：%1$s</string>
+    <string name="delete_permanently">永久删除</string>
+    <string name="delete_permanently_title">永久删除</string>
+    <string name="delete_folder_title">删除文件夹</string>
+    <string name="delete_one_item_title">确定要删除 1 项吗？</string>
+    <string name="delete_items_title">确定要删除 %1$d 项吗？</string>
+    <string name="delete_moved_to_bin_short">将被移至回收站。</string>
+    <string name="delete_cannot_be_undone_short">此操作无法撤销。</string>
+    <string name="delete_permanently_bulk_confirm">确定要永久删除选中的 %1$d 项吗？</string>
+
+    <!-- Dialogs: Properties -->
+    <string name="prop_name">名称</string>
+    <string name="prop_type">类型</string>
+    <string name="prop_size">大小</string>
+    <string name="prop_path">路径</string>
+    <string name="prop_modified">修改时间</string>
+
+    <!-- Dialogs: Compress & Extract -->
+    <string name="compress_dialog_title">创建压缩包</string>
+    <string name="compress_file_name_label">压缩包名称</string>
+    <string name="compress_password_label">密码（可选）</string>
+    <string name="compress_format_label">压缩格式</string>
+    <string name="compress_items_count">正在压缩 %1$d 项</string>
+    <string name="compress_items_count_single">正在压缩 1 项</string>
+    <string name="compress_password_hint">使用 AES-256 加密</string>
+    <string name="extract_dialog_title">解压压缩包</string>
+    <string name="extract_dialog_message">你想如何解压“%1$s”？</string>
+    <string name="extract_here_title">在此处解压</string>
+    <string name="extract_here_subtitle">解压到当前目录下的新文件夹</string>
+    <string name="extract_select_location_title">选择位置</string>
+    <string name="extract_select_location_subtitle">选择要解压到的文件夹</string>
+
+    <!-- Dialogs: Create Folder, Password, Rename -->
+    <string name="create_folder_dialog_title">新建文件夹</string>
+    <string name="create_folder_name_label">文件夹名称</string>
+    <string name="create_file_dialog_title">新建文件</string>
+    <string name="create_file_name_label">文件名（默认扩展名为 .txt）</string>
+    <string name="password_dialog_title">需要密码</string>
+    <string name="password_label">密码</string>
+    <string name="wrong_password">密码错误，请重试。</string>
+    <string name="password_required">此压缩包受密码保护。</string>
+    <string name="rename_dialog_title">重命名</string>
+    <string name="rename_new_name_label">新名称</string>
+
+    <!-- Restricted Folder Prompts -->
+    <string name="restricted_folder_default_title">受限文件夹</string>
+    <string name="restricted_folder_default_desc">Android 限制了对此文件夹的访问。若要查看和修改其中的文件，ROSE 需要获得相应权限。</string>
+    <string name="restricted_system_folder_title">受限系统文件夹</string>
+    <string name="drive_access_required_title">需要存储设备访问权限</string>
+    <string name="restricted_system_folder_desc">Android 限制了对此文件夹的访问。请授予 Shizuku 权限，以查看和修改文件。</string>
+    <string name="drive_access_required_desc">读取和修改此 USB 驱动器或 SD 卡需要 Android 标准访问权限，请授予相应权限。</string>
+    <string name="action_grant_shizuku">授予 Shizuku 访问权限</string>
+    <string name="action_how_to_setup_shizuku">如何设置 Shizuku？</string>
+    <string name="action_grant_storage_access">授予存储访问权限</string>
+    <string name="action_use_shizuku_instead">改用 Shizuku</string>
+
+    <!-- Recycle Bin Screen -->
+    <string name="recycle_bin_title">回收站</string>
+    <string name="recycle_bin_is_empty">回收站为空</string>
+    <string name="recycle_bin_empty_desc">这些项目将在 30 天后被删除</string>
+    <string name="empty_recycle_bin_title">清空回收站</string>
+    <string name="empty_recycle_bin_confirm">所有项目都将被永久删除。确定继续吗？</string>
+    <string name="restore_folder_prompt_title">还原文件夹？</string>
+    <string name="restore_archive_prompt_title">还原压缩包？</string>
+    <string name="restore_to_view_message">要查看“%1$s”中的内容，必须先将其还原。</string>
+    <string name="action_restore_now">立即还原</string>
+    <string name="recycled_item_subtitle">%1$s | 删除时间：%2$s</string>
+    <string name="recycled_item_from">来源：%1$s</string>
+    <string name="recycle_prop_original_name">原始名称</string>
+    <string name="recycle_prop_original_path">原始路径</string>
+    <string name="recycle_prop_deletion_date">删除日期</string>
+    <string name="recycle_prop_size">大小</string>
+
+    <!-- Settings Screen -->
+    <string name="settings_title">设置</string>
+    <string name="settings_section_appearance">外观</string>
+    <string name="settings_theme">主题</string>
+    <string name="settings_theme_system">跟随系统</string>
+    <string name="settings_theme_light">浅色</string>
+    <string name="settings_theme_dark">深色</string>
+    <string name="settings_amoled_mode">纯黑 AMOLED 模式</string>
+    <string name="settings_amoled_mode_subtitle">在深色模式下使用纯黑背景</string>
+    <string name="settings_dynamic_color">动态取色</string>
+    <string name="settings_dynamic_color_subtitle">使用根据壁纸生成的颜色（Android 12+）</string>
+    <string name="settings_section_browsing">浏览</string>
+    <string name="settings_recent_files_limit">最近文件数量上限</string>
+    <string name="settings_show_list_dividers">显示列表分隔线</string>
+    <string name="settings_show_list_dividers_subtitle">在最近文件、快捷访问和文件夹列表中的项目之间显示细分隔线</string>
+    <string name="settings_excluded_folders">排除的文件夹</string>
+    <string name="settings_excluded_folders_subtitle">选择要从最近文件和分类中隐藏的文件夹</string>
+    <string name="settings_section_navigation">导航</string>
+    <string name="settings_start_page">起始页面</string>
+    <string name="settings_start_page_landing">首页</string>
+    <string name="settings_start_page_all_files">所有文件</string>
+    <string name="settings_section_safety">安全</string>
+    <string name="settings_confirm_before_delete">删除前确认</string>
+    <string name="settings_confirm_before_delete_subtitle">删除文件或文件夹前询问确认</string>
+    <string name="settings_use_recycle_bin">使用回收站</string>
+    <string name="settings_use_recycle_bin_subtitle">已删除的文件会移至回收站，并保留 30 天</string>
+    <string name="settings_section_home_screen">主屏幕</string>
+    <string name="settings_show_recent_files">显示最近文件</string>
+    <string name="settings_show_recent_files_subtitle">在首页显示“最近文件”区域</string>
+    <string name="settings_show_quick_access">显示快捷访问</string>
+    <string name="settings_show_quick_access_subtitle">在首页显示“快捷访问”区域</string>
+    <string name="settings_section_storage">存储</string>
+    <string name="settings_clear_thumbnail_cache">清除缩略图缓存</string>
+    <string name="settings_clear_thumbnail_cache_subtitle">释放图片和视频缩略图缓存占用的空间</string>
+    <string name="settings_toast_cache_cleared">已清除缩略图缓存</string>
+    <string name="settings_section_support">支持</string>
+    <string name="settings_report_issue">报告问题</string>
+    <string name="settings_report_issue_subtitle">在 GitHub 上报告错误或提出功能建议</string>
+    <string name="settings_buy_coffee">请开发者喝杯咖啡</string>
+    <string name="settings_buy_coffee_subtitle">通过 Ko-fi 支持 ROSE 的开发</string>
+    <string name="excluded_folders_dialog_title">排除的文件夹</string>
+    <string name="excluded_folders_dialog_subtitle">从最近文件和分类中隐藏</string>
+    <string name="excluded_folders_empty">尚未排除任何文件夹</string>
+    <string name="action_add_folder_to_exclude">添加要排除的文件夹</string>
+    <string name="action_exclude_current_folder">排除当前文件夹</string>
+    <string name="excluded_folders_picker_empty">此处没有子文件夹</string>
+
+    <!-- File Jobs & Operations -->
+    <string name="job_active_tasks_count">%1$d 个活动任务</string>
+    <string name="job_working">处理中…</string>
+    <string name="job_background_hint">任务会在后台继续运行，可以放心关闭此对话框。</string>
+    <string name="job_item_progress">第 %1$d 项，共 %2$d 项</string>
+    <string name="job_bytes_progress">%1$s / %2$s</string>
+    <string name="job_label_from">来源</string>
+    <string name="job_label_to">目标</string>
+    <string name="job_stat_speed">速度</string>
+    <string name="job_stat_left">剩余</string>
+    <string name="job_stat_elapsed">已用时间</string>
+    <string name="job_locations_count">%1$d 个位置</string>
+    <string name="job_title_copying">正在复制文件</string>
+    <string name="job_title_moving">正在移动文件</string>
+    <string name="job_title_deleting">正在删除文件</string>
+    <string name="job_title_saving_offline">正在保存到离线文件</string>
+    <string name="job_title_moving_to_recycle_bin">正在移至回收站</string>
+    <string name="job_title_restoring">正在还原文件</string>
+    <string name="job_title_extracting">正在解压压缩包</string>
+    <string name="job_title_creating_archive">正在创建压缩包</string>
+    <string name="job_copying_files_ellipsis">正在复制文件…</string>
+    <string name="job_moving_files_ellipsis">正在移动文件…</string>
+    <string name="job_saving_offline_ellipsis">正在保存到离线文件…</string>
+    <string name="job_deleting_files_ellipsis">正在删除文件…</string>
+    <string name="job_moving_to_bin_ellipsis">正在移至回收站…</string>
+    <string name="job_restoring_files_ellipsis">正在还原文件…</string>
+    <string name="job_extracting_archive_ellipsis">正在解压压缩包…</string>
+    <string name="job_creating_archive_ellipsis">正在创建压缩包…</string>
+    <string name="job_processing_ellipsis">正在处理…</string>
+    <string name="job_downloading_with_bytes">正在下载… %1$s</string>
+    <string name="job_downloading">正在下载…</string>
+    <string name="job_progress_items_and_percent">%1$d / %2$d（%3$d%%）</string>
+    <string name="job_percent_completed">已完成 %1$d%%</string>
+    <string name="job_moving_to_bin_fast">正在移至回收站…</string>
+    <string name="job_restoring_fast">正在还原…</string>
+    <string name="job_deleting_fast">正在删除…</string>
+
+    <!-- File Job Notifications -->
+    <string name="notif_channel_file_operations">文件操作</string>
+    <string name="notif_channel_background_operations">后台操作</string>
+    <string name="notif_channel_completion">文件操作结果</string>
+    <string name="notif_title_copying">正在复制文件</string>
+    <string name="notif_title_moving">正在移动文件</string>
+    <string name="notif_title_deleting">正在删除文件</string>
+    <string name="notif_title_saving_offline">正在保存到离线文件</string>
+    <string name="notif_title_moving_to_recycle_bin">正在移至回收站</string>
+    <string name="notif_title_restoring">正在还原文件</string>
+    <string name="notif_title_extracting">正在解压压缩包</string>
+    <string name="notif_title_creating_archive">正在创建压缩包</string>
+    <string name="notif_content_indeterminate_multi">正在处理 %1$d/%2$d：%3$s%4$s</string>
+    <string name="notif_content_indeterminate_single">正在下载 %1$s%2$s</string>
+    <string name="notif_content_determinate_multi">正在处理 %1$d/%2$d：%3$s（%4$d%%）</string>
+    <string name="notif_content_determinate_single">正在处理 %1$s：%2$d%%</string>
+    <string name="job_op_copy">复制</string>
+    <string name="job_op_move">移动</string>
+    <string name="job_op_delete">删除</string>
+    <string name="job_op_save_offline">保存到离线文件</string>
+    <string name="job_op_moving_to_bin">正在移至回收站</string>
+    <string name="job_op_restore">还原</string>
+    <string name="job_op_extraction">解压</string>
+    <string name="job_op_compression">压缩</string>
+    <string name="notif_completion_moved_to_bin">已移至回收站</string>
+    <string name="notif_completion_restored">文件已还原</string>
+    <string name="notif_completion_success">%1$s已完成</string>
+    <string name="notif_completion_failure">%1$s失败</string>
+    <string name="notif_completion_couldnt_finish">无法完成%1$s</string>
+
+    <!-- Notification Primer -->
+    <string name="notif_primer_title">及时了解传输进度</string>
+    <string name="notif_primer_description">文件在后台下载时，ROSE 可以实时通知你传输进度，让你随时了解文件何时保存完毕并可离线使用。</string>
+
+    <!-- Updates -->
+    <string name="settings_section_updates">更新</string>
+    <string name="settings_auto_check_updates">自动检查更新</string>
+    <string name="settings_auto_check_updates_subtitle">启动应用时检查新版本（每 24 小时最多检查一次）</string>
+    <string name="settings_auto_check_updates_sheet_subtitle">启动时自动检查</string>
+    <string name="action_skip_version">跳过此版本</string>
+    <string name="toast_skipped_version_info">你仍然可以在“关于”页面下载此版本。</string>
+    <string name="update_sheet_title">有可用更新</string>
+    <string name="update_sheet_version_header">版本 %1$s</string>
+    <string name="update_sheet_whats_new">更新内容</string>
+    <string name="action_update">更新</string>
+    <string name="update_dialog_title">有可用更新</string>
+    <string name="update_dialog_message">发现新版本（%1$s）。现在更新吗？</string>
+    <string name="update_dialog_whats_new">更新内容：</string>
+    <string name="update_download_progress">%1$s / %2$s（%3$d%%）</string>
+    <string name="update_download_bytes">已下载 %1$s</string>
+    <string name="update_download_ready">下载完成。如果安装程序没有自动打开，请点击下方的“安装”。</string>
+    <string name="update_downloading">正在下载…</string>
+    <string name="action_download_and_install">下载并安装</string>
+    <string name="action_update_now">立即更新</string>
+    <string name="update_check_failed_http">检查更新失败（HTTP %1$d）</string>
+    <string name="update_download_failed_http">下载失败（HTTP %1$d）</string>
+    <string name="update_download_failed">下载失败</string>
+    <string name="update_error_open_install_settings">无法打开安装权限设置</string>
+
+    <!-- Toasts & General Feedback -->
+    <string name="toast_notification_permission_recommended">建议授予通知权限，以便查看后台任务进度</string>
+    <string name="toast_manage_storage_required">需要“管理存储空间”权限</string>
+    <string name="toast_failed_to_add_storage">添加存储失败：%1$s</string>
+    <string name="toast_failed_to_open_archive">无法打开压缩包：%1$s</string>
+    <string name="toast_failed_to_extract">解压 %1$s 失败：%2$s</string>
+    <string name="toast_failed_to_extract_file">解压文件失败：%1$s</string>
+    <string name="toast_folders_cannot_be_shared">无法直接分享文件夹</string>
+    <string name="toast_couldnt_open_file">无法打开文件：%1$s</string>
+    <string name="toast_file_no_longer_exists">文件已不存在</string>
+    <string name="toast_couldnt_access_file">无法访问文件</string>
+    <string name="toast_allow_install_source">请允许从此来源安装应用</string>
+    <string name="toast_couldnt_prepare_intent">无法准备 Intent：%1$s</string>
+    <string name="toast_file_not_found_recycle_bin">在回收站中找不到该文件</string>
+    <string name="toast_usb_drive_removed">USB 驱动器已移除</string>
+    <string name="toast_archive_ready_extract">压缩包已就绪。请进入目标文件夹进行解压。</string>
+    <string name="toast_shizuku_not_running">Shizuku 尚未运行，请先启动它。</string>
+    <string name="toast_added_to_quick_access">已添加到快捷访问</string>
+    <string name="toast_up_to_date">当前已是最新版本</string>
+    <string name="toast_cannot_paste_here" tools:ignore="MissingTranslation">无法粘贴到此处</string>
+    <string name="toast_cannot_paste_in_archive" tools:ignore="MissingTranslation">无法粘贴到压缩包内</string>
+    <string name="toast_source_dest_same" tools:ignore="MissingTranslation">源文件夹与目标文件夹相同</string>
+    <string name="toast_cannot_copy_into_subfolder" tools:ignore="MissingTranslation">无法将文件夹复制到自身或其子文件夹中</string>
+    <string name="toast_cannot_move_into_subfolder" tools:ignore="MissingTranslation">无法将文件夹移动到自身或其子文件夹中</string>
+    <string name="permission_placeholder_waiting">正在等待存储权限…</string>
+
+    <!-- Document Viewer & Text Editor -->
+    <string name="doc_reader_title">文档</string>
+    <string name="doc_markdown_reader">Markdown 阅读器</string>
+    <string name="doc_text_editor">文本编辑器</string>
+    <string name="doc_preview">预览</string>
+    <string name="doc_edit">编辑</string>
+    <string name="doc_save">保存</string>
+    <string name="doc_saved_success">文件已成功保存</string>
+    <string name="doc_save_failed">保存文件失败：%1$s</string>
+    <string name="doc_unsaved_title">未保存的更改</string>
+    <string name="doc_unsaved_message">“%1$s”中有尚未保存的更改。离开前要保存吗？</string>
+    <string name="doc_discard">放弃更改</string>
+    <string name="doc_keep_editing">继续编辑</string>
+    <string name="doc_read_only">只读</string>
+    <string name="doc_read_only_warning">此文件为只读文件，无法修改</string>
+    <string name="doc_large_file_warning">此文件很大（%1$s）。为保证性能，目前以只读模式显示前 %2$d 行。</string>
+    <string name="doc_word_wrap">自动换行</string>
+    <string name="doc_line_numbers">行号</string>
+    <string name="doc_monospace">等宽字体</string>
+    <string name="doc_search_hint">在文档中查找…</string>
+    <string name="doc_no_matches">没有匹配项</string>
+    <string name="doc_matches_count">第 %1$d 项，共 %2$d 项</string>
+    <string name="doc_copy_code">复制代码</string>
+    <string name="doc_code_copied">代码已复制到剪贴板</string>
+    <string name="doc_info">文档详情</string>
+    <string name="doc_stat_lines">行数</string>
+    <string name="doc_stat_words">字数</string>
+    <string name="doc_stat_chars">字符数</string>
+    <string name="doc_stat_encoding">编码</string>
+    <string name="doc_stat_line_ending">换行符格式</string>
+    <string name="doc_empty_release_notes">此版本没有提供更新说明。</string>
+    <string name="doc_loading">正在加载文档…</string>
+    <string name="doc_failed_to_load">加载文档失败：%1$s</string>
+    <string name="doc_empty_file">空文件</string>
+    <string name="doc_open_external">使用其他应用打开</string>
+
+    <!-- Job cancellation and pause -->
+    <string name="job_cancel_confirm_title">取消操作？</string>
+    <string name="job_cancel_confirm_message">确定要取消此次传输吗？尚未传输完成的文件将被丢弃。</string>
+    <string name="job_action_resume">继续</string>
+    <string name="job_action_pause">暂停</string>
+    <string name="job_status_paused">已暂停</string>
+
+    <!-- File Operation Failure Dialog -->
+    <string name="action_ok">确定</string>
+    <string name="dialog_title_failure">失败</string>
+    <string name="dialog_subtitle_failed_to_copy">复制文件失败</string>
+    <string name="dialog_subtitle_failed_to_move">移动文件失败</string>
+    <string name="dialog_subtitle_failed_to_delete">删除文件失败</string>
+    <string name="dialog_reason_invalid_characters">文件名包含无效字符</string>
+    <string name="dialog_reason_access_denied">访问被拒绝</string>
+    <string name="dialog_reason_storage_full">存储空间已满</string>
+    <string name="dialog_reason_io_error">输入/输出错误</string>
+
+    <!-- Quick Access Add / Prevent Duplicate -->
+    <string name="tag_added">已添加</string>
+    <string name="folder_already_added">已添加</string>
+    <string name="action_already_in_quick_access">已在快捷访问中</string>
+    <string name="toast_already_in_quick_access">该文件夹已在快捷访问中</string>
+
+    <!-- Root Access -->
+    <string name="storage_root">根目录</string>
+    <string name="storage_root_desc">根目录（/）</string>
+    <string name="breadcrumbs_root">根目录</string>
+    <string name="settings_section_root">Root 权限</string>
+    <string name="settings_enable_root">启用 Root 权限</string>
+    <string name="settings_enable_root_subtitle">使用超级用户权限浏览和管理系统根分区</string>
+    <string name="toast_root_enabled">已启用 Root 权限</string>
+    <string name="toast_root_disabled">已禁用 Root 权限</string>
+    <string name="toast_root_not_available">无法使用 Root 权限，请授予超级用户权限。</string>
+
+    <string name="storage_gdrive">Google 云端硬盘</string>
+    <string name="storage_gdrive_subtitle">连接你的 Google 云端硬盘账号</string>
+
+    <!-- FTP Server -->
+    <string name="ftp_server_title">FTP 服务器</string>
+    <string name="ftp_server_subtitle">通过 Wi-Fi 在电脑上访问手机文件</string>
+    <string name="ftp_server_state_title">状态</string>
+    <string name="ftp_server_state_summary_starting">正在启动…</string>
+    <string name="ftp_server_state_summary_running">运行中</string>
+    <string name="ftp_server_state_summary_stopping">正在停止…</string>
+    <string name="ftp_server_state_summary_stopped">已停止</string>
+    <string name="ftp_server_url_title">FTP 地址</string>
+    <string name="ftp_server_url_hint">在电脑的文件管理器中输入此地址</string>
+    <string name="ftp_server_url_summary_no_local_inet_address">未连接 Wi-Fi 或热点</string>
+    <string name="ftp_server_url_menu_copy_url">复制地址</string>
+    <string name="ftp_server_url_copied">地址已复制到剪贴板</string>
+    <string name="ftp_server_password_copied">密码已复制到剪贴板</string>
+    <string name="ftp_server_configuration_title">服务器配置</string>
+    <string name="ftp_server_anonymous_login_title">匿名登录</string>
+    <string name="ftp_server_anonymous_login_summary">允许不使用用户名或密码连接</string>
+    <string name="ftp_server_username_title">用户名</string>
+    <string name="ftp_server_password_title">密码</string>
+    <string name="ftp_server_port_title">端口</string>
+    <string name="ftp_server_home_directory_title">根目录</string>
+    <string name="ftp_server_home_directory_select">选择根文件夹</string>
+    <string name="ftp_server_writable_title">允许写入</string>
+    <string name="ftp_server_writable_summary">允许电脑上传、编辑、重命名和删除文件</string>
+    <string name="ftp_server_add_tile_title">添加快捷设置磁贴</string>
+    <string name="ftp_server_add_tile_summary">添加磁贴，以便快速启动或停止 FTP 服务器</string>
+    <string name="ftp_server_notification_channel_name">FTP 服务器</string>
+    <string name="ftp_server_notification_channel_description">显示正在运行的 FTP 服务器地址和控制选项</string>
+    <string name="ftp_server_notification_stop">停止</string>
+    <string name="ftp_server_how_to_connect_title">如何从电脑连接</string>
+    <string name="ftp_server_how_to_connect_win">Windows：打开文件资源管理器，在地址栏中输入上方的 FTP 地址，然后按 Enter。</string>
+    <string name="ftp_server_how_to_connect_mac">macOS：在 Finder 中按 Cmd+K，粘贴 FTP 地址，然后点击“连接”。</string>
+    <string name="ftp_server_how_to_connect_linux">Linux：打开“文件”（Nautilus）→“其他位置”→“连接到服务器”。</string>
+    <string name="ftp_server_how_to_connect_note">请确保手机和电脑连接到同一个 Wi-Fi 网络或移动热点。</string>
 </resources>
