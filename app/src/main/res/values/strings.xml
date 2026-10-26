@@ -10,6 +10,9 @@
     <string name="about_github_subtitle">Source Code Repository</string>
     <string name="about_contact">Contact</string>
     <string name="about_contact_email">Narayanchetri.dev@gmail.com</string>
+    <string name="about_star_github">Star on GitHub</string>
+    <string name="about_star_github_desc">Enjoying ROSE? Starring the repository helps a lot!</string>
+    <string name="about_repo_url">https://github.com/NarayanChetri/ROSE</string>
     <string name="about_check_for_updates">Check for updates</string>
     <string name="about_checking_for_updates">Checking for updates…</string>
 
@@ -22,6 +25,7 @@
     <string name="action_delete">Delete</string>
     <string name="action_rename">Rename</string>
     <string name="action_copy">Copy</string>
+    <string name="action_cut">Cut</string>
     <string name="action_move">Move</string>
     <string name="action_share">Share</string>
     <string name="action_properties">Properties</string>
@@ -37,7 +41,7 @@
     <string name="action_open">Open</string>
     <string name="action_open_with">Open with</string>
     <string name="action_open_location">Open location</string>
-    <string name="action_copy_path">Copy path</string>
+    <string name="action_copy_path">Copy as path</string>
     <string name="action_select_all">Select All</string>
     <string name="action_unselect_all">Unselect All</string>
     <string name="action_remove">Remove</string>
@@ -455,6 +459,7 @@
     <string name="toast_archive_ready_extract">Archive ready. Navigate to a folder to extract.</string>
     <string name="toast_shizuku_not_running">Shizuku not running. Please start it first.</string>
     <string name="toast_added_to_quick_access">Added to Quick access</string>
+    <string name="toast_path_copied">Path copied to clipboard</string>
     <string name="toast_up_to_date">You\'re on the latest version</string>
     <string name="toast_cannot_paste_here" tools:ignore="MissingTranslation">Cannot paste here</string>
     <string name="toast_cannot_paste_in_archive" tools:ignore="MissingTranslation">Cannot paste inside an archive</string>
