@@ -147,4 +147,10 @@
     <string name="unmount_storage_title">Speicher aushängen</string>
     <string name="unmount_storage_message">Möchten Sie dieses Gerät wirklich aushängen? Eventuell laufende Dateioperationen werden dadurch unterbrochen.</string>
     <string name="clean_up_found">%1$s gefunden</string>
+    <string name="folder_picker_no_subfolders">Hier gibt es keine Unterordner</string>
+    <string name="search_files_placeholder">Dateien suchen…</string>
+    <string name="no_files_found">Keine Dateien gefunden</string>
+    <string name="no_results_for_query">Keine Ergebnisse für „%1$s“</string>
+    <string name="breadcrumbs_internal_storage">Alle Dateien</string>
+    <string name="selection_count">%1$d ausgewählt</string>
 </resources>
