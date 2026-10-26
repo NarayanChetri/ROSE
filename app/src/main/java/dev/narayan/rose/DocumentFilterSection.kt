@@ -75,9 +75,9 @@ enum class DocumentTypeCategory(
                         "application/rtf",
                         "application/vnd.oasis.opendocument.text"
                     )
-            TXT -> (ext in setOf("txt", "text", "log", "md", "markdown", "cfg", "conf", "ini") ||
+            TXT -> (ext in setOf("txt", "text", "log", "md", "markdown", "cfg", "conf", "ini", "xml", "yml", "yaml", "json", "html", "htm", "css", "js", "ts", "sh", "py", "ml") ||
                     mime.startsWith("text/")) &&
-                    ext !in setOf("csv", "tsv", "htm", "html", "xml", "json")
+                    ext !in setOf("csv", "tsv")
             XLS -> ext in setOf("xls", "xlsx", "csv", "tsv", "ods", "xlsm") ||
                     mime in setOf(
                         "application/vnd.ms-excel",

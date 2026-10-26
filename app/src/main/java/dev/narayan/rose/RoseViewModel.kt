@@ -1463,7 +1463,19 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     fun setFoldersFirst(enabled: Boolean) {
         _foldersFirst.value = enabled
         settings.foldersFirst = enabled
-        loadFiles(currentPath)
+        pathScrollPositions.clear()
+        invalidateDirectoryCache()
+        if (categoryFilterType != null) {
+            categoryFiles = sortFileList(categoryFiles)
+            categoryCache[categoryFilterType!! to categoryBucketId] = categoryFiles
+        } else if (currentZipFile != null) {
+            files = sortFileList(files)
+        } else if (currentPath.isNotEmpty()) {
+            files = sortFileList(files)
+            if (sortBy == SortBy.SIZE) {
+                loadFiles(currentPath, showLoading = false, isManualRefresh = true)
+            }
+        }
     }
 
     fun setShowDetails(enabled: Boolean) {

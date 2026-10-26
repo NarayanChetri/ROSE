@@ -53,6 +53,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -91,6 +92,7 @@ import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -2153,10 +2155,26 @@ fun FileExplorerScreen(
                                 }
 
                                 if (viewModel.propertiesFile != null) {
+                                    val propItem = viewModel.propertiesFile!!
                                     PropertiesDialog(
-                                        fileItem = viewModel.propertiesFile!!,
+                                        fileItem = propItem,
                                         onDismiss = { viewModel.closeProperties() },
-                                        viewModel = viewModel
+                                        viewModel = viewModel,
+                                        onOpenLocation = { targetPath, targetItem ->
+                                            viewModel.closeProperties()
+                                            val targetFile = File(targetPath)
+                                            isSearching = false
+                                            searchQuery = ""
+                                            if ((currentView == "Recent" || currentView == "Favourites") && onOpenPath != null) {
+                                                onOpenPath(targetFile.absolutePath, targetItem)
+                                            } else {
+                                                viewModel.navigateTo(targetFile, true)
+                                                if (targetItem != null) {
+                                                    viewModel.highlightedFile = targetItem
+                                                }
+                                                currentView = "Files"
+                                            }
+                                        }
                                     )
                                 }
 
@@ -3550,6 +3568,37 @@ fun SortMenu(expanded: Boolean, viewModel: RoseViewModel, currentView: String, o
 
         HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
 
+        DropdownMenuItem(
+            text = {
+                Text(
+                    stringResource(R.string.sort_folders_first),
+                    modifier = Modifier.padding(vertical = 4.dp),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            onClick = {
+                viewModel.setFoldersFirst(!viewModel.foldersFirst)
+            },
+            leadingIcon = {
+                Icon(
+                    Icons.Default.Folder,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = if (viewModel.foldersFirst) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            trailingIcon = {
+                Switch(
+                    checked = viewModel.foldersFirst,
+                    onCheckedChange = { viewModel.setFoldersFirst(it) },
+                    modifier = Modifier.scale(0.8f)
+                )
+            },
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp)
+        )
+
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
+
         val isGridView = if (currentView == "Category" || currentView == "Favourites") viewModel.isCategoryGridView else viewModel.isGridView
 
         DropdownMenuItem(
@@ -4469,7 +4518,15 @@ fun getPackageIcon(context: Context, packageName: String): Drawable? {
 }
 
 @Composable
-fun PropertiesDialog(fileItem: FileItem, onDismiss: () -> Unit, viewModel: RoseViewModel) {
+fun PropertiesDialog(
+    fileItem: FileItem,
+    onDismiss: () -> Unit,
+    viewModel: RoseViewModel,
+    onOpenLocation: ((String, FileItem?) -> Unit)? = null
+) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -4484,7 +4541,90 @@ fun PropertiesDialog(fileItem: FileItem, onDismiss: () -> Unit, viewModel: RoseV
                 PropertyRow(stringResource(R.string.prop_name), fileItem.name)
                 PropertyRow(stringResource(R.string.prop_type), fileItem.fileType.name)
                 PropertyRow(stringResource(R.string.prop_size), if (fileItem.isDirectory) viewModel.folderSize?.let { formatFileSize(it) } ?: stringResource(R.string.status_calculating) else formatFileSize(fileItem.size))
-                PropertyRow(stringResource(R.string.prop_path), fileItem.file.absolutePath)
+                Column {
+                    Text(
+                        stringResource(R.string.prop_path),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        fileItem.file.absolutePath,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    clipboardManager.setText(AnnotatedString(fileItem.file.absolutePath))
+                                    Toast.makeText(context, context.getString(R.string.toast_path_copied), Toast.LENGTH_SHORT).show()
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.ContentCopy,
+                                    contentDescription = stringResource(R.string.action_copy_path),
+                                    modifier = Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    stringResource(R.string.action_copy_path),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
+                        if (onOpenLocation != null) {
+                            val parentPath = if (fileItem.isDirectory) {
+                                fileItem.file.parent ?: fileItem.file.absolutePath
+                            } else {
+                                fileItem.file.parent ?: fileItem.file.absolutePath
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        onDismiss()
+                                        onOpenLocation(parentPath, fileItem)
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.FolderOpen,
+                                        contentDescription = stringResource(R.string.action_open_location),
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        stringResource(R.string.action_open_location),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
                 PropertyRow(stringResource(R.string.prop_modified), SimpleDateFormat("MMM dd, yyyy HH:mm:ss", Locale.getDefault()).format(Date(fileItem.lastModified)))
             }
         },
@@ -5149,48 +5289,70 @@ fun RenameDialog(initialName: String, onDismiss: () -> Unit, onRename: (String) 
             )
         },
         text = {
-            OutlinedTextField(
-                value = textFieldValue,
-                onValueChange = { textFieldValue = it },
-                placeholder = { 
-                    Text(
-                        stringResource(R.string.rename_new_name_label),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                    ) 
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(16.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
-                ),
-                trailingIcon = {
-                    if (textFieldValue.text.isNotEmpty()) {
-                        IconButton(onClick = { textFieldValue = androidx.compose.ui.text.input.TextFieldValue("") }, modifier = Modifier.size(28.dp)) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Clear",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                modifier = Modifier.size(18.dp)
-                            )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = textFieldValue,
+                    onValueChange = { newValue ->
+                        val sanitizedText = newValue.text.replace("\n", "").replace("\r", "")
+                        if (sanitizedText.toByteArray(Charsets.UTF_8).size <= 255) {
+                            textFieldValue = newValue.copy(text = sanitizedText)
                         }
-                    }
-                },
-                keyboardOptions = KeyboardOptions(
-                    imeAction = ImeAction.Done,
-                    capitalization = KeyboardCapitalization.Words
-                ),
-                keyboardActions = KeyboardActions(
-                    onDone = {
-                        if (textFieldValue.text.isNotBlank()) onRename(textFieldValue.text.trim())
-                    }
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(focusRequester)
-            )
+                    },
+                    placeholder = { 
+                        Text(
+                            stringResource(R.string.rename_new_name_label),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        ) 
+                    },
+                    minLines = 1,
+                    maxLines = 4,
+                    singleLine = false,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
+                    ),
+                    trailingIcon = {
+                        if (textFieldValue.text.isNotEmpty()) {
+                            IconButton(onClick = { textFieldValue = androidx.compose.ui.text.input.TextFieldValue("") }, modifier = Modifier.size(28.dp)) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Clear",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Done,
+                        capitalization = KeyboardCapitalization.Words
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            if (textFieldValue.text.isNotBlank()) onRename(textFieldValue.text.trim())
+                        }
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester)
+                )
+
+                if (textFieldValue.text.length > 40) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "${textFieldValue.text.length} / 255",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(end = 4.dp),
+                        textAlign = TextAlign.End
+                    )
+                }
+            }
         },
         confirmButton = {
             Button(

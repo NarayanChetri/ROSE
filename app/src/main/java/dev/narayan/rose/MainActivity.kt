@@ -1143,7 +1143,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     }
 
     private val markdownExtensions = setOf("md", "markdown", "mdown", "mkdn", "mkd")
-    private val textExtensions = setOf("txt", "text", "log", "ini", "conf", "properties")
+    private val textExtensions = setOf(
+        "txt", "text", "log", "ini", "conf", "properties",
+        "xml", "yml", "yaml", "json", "html", "htm", "css", "js", "ts", "sh", "py", "csv", "ml"
+    )
 
     private fun isMarkdownUri(uri: Uri): Boolean {
         val mimeType = try { contentResolver.getType(uri) } catch (e: Exception) { null }

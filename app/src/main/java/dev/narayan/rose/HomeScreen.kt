@@ -669,7 +669,15 @@ fun HomeScreen(
 
     // Dialogs
     viewModel.propertiesFile?.let { item ->
-        PropertiesDialog(fileItem = item, onDismiss = { viewModel.closeProperties() }, viewModel = viewModel)
+        PropertiesDialog(
+            fileItem = item,
+            onDismiss = { viewModel.closeProperties() },
+            viewModel = viewModel,
+            onOpenLocation = { targetPath, targetItem ->
+                viewModel.closeProperties()
+                onOpenPath(targetPath, targetItem)
+            }
+        )
     }
 
     fileForRename?.let { item ->

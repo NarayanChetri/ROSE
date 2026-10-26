@@ -52,7 +52,7 @@ A fast, modern, beautiful, and privacy-first Android file manager built with **K
 * 🛡️ **Shizuku Integration** — Access restricted `Android/data` and `Android/obb` directories without root.
 * ♻️ **Recycle Bin** — Restore deleted files or erase them permanently with confidence.
 * 💾 **USB OTG & SD Cards** — Comprehensive support for SD cards, USB flash drives, and external storage.
-* 📄 **Markdown Reader** — Preview and read `.md` documents directly inside the app.
+* 📄 **Document & Code Viewer** — Preview and read `.md`, `.txt`, `.xml`, `.yml`, `.yaml`, `.json`, `.html`, `.css`, `.js`, `.ts`, `.sh`, `.py`, `.csv`, and `.log` files directly inside the app.
 * ⚡ **Background Operations** — Run large file copy, move, compress, and extract jobs reliably with progress notifications.
 * 🔒 **Privacy First & Zero Ads** — No ads, no trackers, no telemetry, and 100% open source.
 

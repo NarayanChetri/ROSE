@@ -37,6 +37,7 @@
     <string name="action_open">Open</string>
     <string name="action_open_with">Open with</string>
     <string name="action_open_location">Open location</string>
+    <string name="action_copy_path">Copy path</string>
     <string name="action_select_all">Select All</string>
     <string name="action_unselect_all">Unselect All</string>
     <string name="action_remove">Remove</string>
@@ -188,6 +189,7 @@
     <string name="sort_size">Size</string>
     <string name="sort_date">Date</string>
     <string name="sort_last_modified">Last modified</string>
+    <string name="sort_folders_first">Folders first</string>
     <string name="view_list">List view</string>
     <string name="view_grid">Grid view</string>
 
@@ -305,6 +307,8 @@
     <string name="settings_recent_files_limit">Recent files limit</string>
     <string name="settings_show_list_dividers">Show list dividers</string>
     <string name="settings_show_list_dividers_subtitle">Thin lines between items in Recent files, Quick access, and folder lists</string>
+    <string name="settings_folders_first">Keep folders on top</string>
+    <string name="settings_folders_first_subtitle">Show folders ahead of files when sorting</string>
     <string name="settings_excluded_folders">Excluded folders</string>
     <string name="settings_excluded_folders_subtitle">Select folders to hide from recents and categories</string>
     <string name="settings_section_navigation">Navigation</string>
@@ -567,4 +571,4 @@
     <string name="ftp_server_how_to_connect_mac">macOS: In Finder, press Cmd+K, paste the FTP address, and click Connect.</string>
     <string name="ftp_server_how_to_connect_linux">Linux: Open Files (Nautilus) → Other Locations → Connect to Server.</string>
     <string name="ftp_server_how_to_connect_note">Ensure both your phone and PC are connected to the same Wi-Fi network or Mobile Hotspot.</string>
-</resources>
+</resources>
