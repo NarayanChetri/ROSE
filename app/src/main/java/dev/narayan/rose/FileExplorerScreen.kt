@@ -4014,6 +4014,11 @@ fun WindowsFileDropdownMenu(
                 },
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
             )
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+            )
         }
 
         if (onOpenLocation != null) {
@@ -4025,6 +4030,11 @@ fun WindowsFileDropdownMenu(
                 },
                 leadingIcon = { Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(20.dp)) },
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+            )
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
             )
         }
 
