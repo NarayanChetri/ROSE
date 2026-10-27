@@ -30,11 +30,13 @@ object SafManager {
     /** Document Uri (not tree) for the root - used only as the picker's starting location. */
     private val ROOT_DOCUMENT_URI: Uri = DocumentsContract.buildDocumentUri(AUTHORITY, DOC_ID_ROOT)
 
-    fun isSafUri(path: String): Boolean =
-        path.startsWith("content://") || path.startsWith("content:/") || path.startsWith("/content:/") || path.contains("content:/")
+    fun isSafUri(path: String): Boolean {
+        val p = path.replace('\\', '/')
+        return p.startsWith("content://") || p.startsWith("content:/") || p.startsWith("/content:/") || p.contains("content:/")
+    }
 
     fun normalizeSafPath(path: String): String {
-        val p = path.trim()
+        val p = path.trim().replace('\\', '/')
         if (p.startsWith("/content:/")) {
             return "content://" + p.removePrefix("/content:/").removePrefix("/")
         }
@@ -49,19 +51,22 @@ object SafManager {
     }
 
     fun isCloudUri(path: String): Boolean {
-        val lower = path.lowercase().trim()
+        val clean = path.replace('\\', '/')
+        val lower = clean.lowercase().trim()
         val schemes = listOf("mega", "onedrive", "gdrive", "dropbox", "smb", "ftp", "ftps", "sftp", "webdav", "webdavs")
         if (schemes.any { lower.startsWith("$it://") || lower.startsWith("$it:/") }) {
             return true
         }
-        if (!isSafUri(path)) return false
-        val normalized = normalizeSafPath(path)
+        if (!isSafUri(clean)) return false
+        val normalized = normalizeSafPath(clean)
         val uri = try { Uri.parse(normalized) } catch (e: Exception) { null }
         val authority = uri?.authority ?: ""
         return authority.contains("docs", ignoreCase = true) ||
                 authority.contains("cloud", ignoreCase = true) ||
                 authority.contains("onedrive", ignoreCase = true) ||
                 authority.contains("dropbox", ignoreCase = true) ||
+                authority.contains("google", ignoreCase = true) ||
+                authority.contains("drive", ignoreCase = true) ||
                 (authority.isNotEmpty() &&
                         authority != "com.android.externalstorage.documents" &&
                         authority != "com.android.providers.media.documents" &&
@@ -545,24 +550,36 @@ object SafManager {
     // ---------------------------------------------------------------------
 
     fun createDirectory(context: Context, path: String): Boolean {
-        if (exists(context, path)) return isDirectory(context, path)
-        val parentPath = path.substringBeforeLast("/")
-        val dirName = path.substringAfterLast("/")
+        val normPath = normalizeSafPath(path)
+        if (exists(context, normPath)) return isDirectory(context, normPath)
+        val parentPath = normPath.substringBeforeLast("/")
+        val dirName = normPath.substringAfterLast("/")
         var parentDoc = getDocumentFile(context, parentPath)
         if (parentDoc == null || !parentDoc.exists()) {
             createDirectory(context, parentPath)
             parentDoc = getDocumentFile(context, parentPath)
         }
-        if (parentDoc == null) return false
+        val parentUri = if (isSafUri(parentPath)) Uri.parse(parentPath) else parentDoc?.uri
+        if (parentDoc == null && parentUri == null) return false
         return try {
-            if (parentDoc.uri.authority == AUTHORITY) {
+            if (parentDoc != null && parentDoc.uri.authority == AUTHORITY) {
                 DocumentsContract.createDocument(context.contentResolver, parentDoc.uri, DocumentsContract.Document.MIME_TYPE_DIR, dirName) != null
             } else {
-                parentDoc.createDirectory(dirName) != null
+                val pUri = parentDoc?.uri ?: parentUri!!
+                DocumentsContract.createDocument(context.contentResolver, pUri, DocumentsContract.Document.MIME_TYPE_DIR, dirName) != null
+                    || (parentDoc?.createDirectory(dirName) != null)
             }
         } catch (e: Exception) {
             try {
-                DocumentsContract.createDocument(context.contentResolver, parentDoc.uri, DocumentsContract.Document.MIME_TYPE_DIR, dirName) != null
+                val pUri = parentDoc?.uri ?: parentUri
+                if (pUri != null) {
+                    val authority = pUri.authority
+                    val docId = try { DocumentsContract.getDocumentId(pUri) } catch (ex: Exception) { null }
+                    if (authority != null && docId != null) {
+                        val directUri = DocumentsContract.buildDocumentUri(authority, docId)
+                        DocumentsContract.createDocument(context.contentResolver, directUri, DocumentsContract.Document.MIME_TYPE_DIR, dirName) != null
+                    } else false
+                } else false
             } catch (e2: Exception) {
                 false
             }
@@ -570,7 +587,8 @@ object SafManager {
     }
 
     fun createFileDocument(context: Context, path: String, mimeType: String? = null): DocumentFile? {
-        val fileName = path.substringAfterLast("/")
+        val normPath = normalizeSafPath(path)
+        val fileName = normPath.substringAfterLast("/")
         val extension = fileName.substringAfterLast(".", "")
 
         val resolvedMimeType = mimeType ?: if (extension.isNotEmpty()) {
@@ -579,23 +597,37 @@ object SafManager {
             null
         } ?: "application/octet-stream"
 
-        val parent = getOrCreateParentDocumentFile(context, path) ?: return null
+        val parentPath = normPath.substringBeforeLast("/", "")
+        if (parentPath.isEmpty()) return null
+        val parent = getDocumentFile(context, parentPath)
+        val parentUri = if (isSafUri(parentPath)) Uri.parse(parentPath) else parent?.uri
+        if (parent == null && parentUri == null) return null
 
-        // Only delete when a non-empty file already exists -- avoids 3 wasted Binder
-        // round-trips per file for brand-new paths. ExternalStorageProvider handles collisions.
-        try {
-            val existing = getDocumentFile(context, path)
-            if (existing != null && existing.exists() && existing.length() > 0) {
-                existing.delete()
-            }
-        } catch (ignored: Exception) {}
+        // Only delete when a non-empty file already exists on non-SAF paths
+        if (!isSafUri(normPath)) {
+            try {
+                val existing = getDocumentFile(context, normPath)
+                if (existing != null && existing.exists() && existing.length() > 0) {
+                    existing.delete()
+                }
+            } catch (ignored: Exception) {}
+        }
 
+        val targetParentUri = parent?.uri ?: parentUri!!
         val createdUri = try {
-            DocumentsContract.createDocument(context.contentResolver, parent.uri, resolvedMimeType, fileName)
-                ?: parent.createFile(resolvedMimeType, fileName)?.uri
+            DocumentsContract.createDocument(context.contentResolver, targetParentUri, resolvedMimeType, fileName)
+                ?: parent?.createFile(resolvedMimeType, fileName)?.uri
         } catch (e: Exception) {
             try {
-                parent.createFile(resolvedMimeType, fileName)?.uri
+                parent?.createFile(resolvedMimeType, fileName)?.uri
+                    ?: run {
+                        val authority = targetParentUri.authority
+                        val docId = try { DocumentsContract.getDocumentId(targetParentUri) } catch (ex: Exception) { null }
+                        if (authority != null && docId != null) {
+                            val directUri = DocumentsContract.buildDocumentUri(authority, docId)
+                            DocumentsContract.createDocument(context.contentResolver, directUri, resolvedMimeType, fileName)
+                        } else null
+                    }
             } catch (e2: Exception) {
                 null
             }
@@ -652,8 +684,72 @@ object SafManager {
     }
 
     fun delete(context: Context, path: String): Boolean {
-        val doc = getDocumentFile(context, path) ?: return true // already gone
-        return doc.delete()
+        val normalized = normalizeSafPath(path)
+        val uri = try { Uri.parse(normalized) } catch (e: Exception) { null }
+
+        // 1. Direct DocumentsContract delete on direct document URI (Google Drive and cloud providers require this!)
+        if (uri != null && uri.scheme == "content") {
+            val authority = uri.authority
+            val docId = try { DocumentsContract.getDocumentId(uri) } catch (e: Exception) { null }
+            if (authority != null && docId != null) {
+                try {
+                    val directUri = DocumentsContract.buildDocumentUri(authority, docId)
+                    if (DocumentsContract.deleteDocument(context.contentResolver, directUri)) {
+                        return true
+                    }
+                } catch (e: Exception) {
+                    // fall through
+                }
+            }
+
+            // 1b. Try with original URI (e.g. tree document URI)
+            try {
+                if (DocumentsContract.deleteDocument(context.contentResolver, uri)) {
+                    return true
+                }
+            } catch (e: Exception) {
+                // fall through
+            }
+        }
+
+        // 2. Try DocumentFile deletion
+        val doc = getDocumentFile(context, path)
+        if (doc != null) {
+            try {
+                if (doc.delete()) return true
+            } catch (e: Exception) {
+                // fall through
+            }
+        }
+
+        // 3. Fallback: DocumentsContract.removeDocument with parent DocumentFile or tree root
+        if (uri != null && uri.scheme == "content") {
+            try {
+                val parentDoc = getOrCreateParentDocumentFile(context, path)
+                if (parentDoc != null) {
+                    if (DocumentsContract.removeDocument(context.contentResolver, uri, parentDoc.uri)) {
+                        return true
+                    }
+                }
+            } catch (e: Exception) {
+                // fall through
+            }
+
+            try {
+                val treeId = try { DocumentsContract.getTreeDocumentId(uri) } catch (e: Exception) { null }
+                val authority = uri.authority
+                if (treeId != null && authority != null) {
+                    val treeBaseUri = DocumentsContract.buildTreeDocumentUri(authority, treeId)
+                    val parentTreeUri = DocumentsContract.buildDocumentUriUsingTree(treeBaseUri, treeId)
+                    if (DocumentsContract.removeDocument(context.contentResolver, uri, parentTreeUri)) {
+                        return true
+                    }
+                }
+            } catch (e: Exception) {
+                // fall through
+            }
+        }
+        return false
     }
 
     fun rename(context: Context, path: String, newName: String): Boolean {
@@ -787,7 +883,16 @@ object SafManager {
 
     fun openOutputStreamForNewFile(context: Context, path: String, mimeType: String? = null): OutputStream? {
         val doc = createFileDocument(context, path, mimeType) ?: return null
-        return context.contentResolver.openOutputStream(doc.uri)
+        return try {
+            context.contentResolver.openOutputStream(doc.uri, "wt")
+                ?: context.contentResolver.openOutputStream(doc.uri)
+        } catch (e: Exception) {
+            try {
+                context.contentResolver.openOutputStream(doc.uri)
+            } catch (e2: Exception) {
+                null
+            }
+        }
     }
 
     /**

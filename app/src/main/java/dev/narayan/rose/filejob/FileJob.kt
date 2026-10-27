@@ -680,7 +680,32 @@ object FileOperationRunner {
             displayName to ""
         }
 
-        var target = targetDir.resolve(displayName)
+        val targetDirStr = SafManager.normalizeSafPath(targetDir.toString())
+        val isSaf = SafManager.isSafUri(targetDirStr)
+
+        fun resolveCandidate(candidateName: String): Path {
+            return if (isSaf) {
+                val cleanBase = targetDirStr.trimEnd('/')
+                Paths.get("$cleanBase/$candidateName")
+            } else {
+                targetDir.resolve(candidateName)
+            }
+        }
+
+        fun existsCandidate(candidatePath: Path, candidateName: String): Boolean {
+            val candidatePathStr = SafManager.normalizeSafPath(candidatePath.toString())
+            return if (isSaf) {
+                try {
+                    SafManager.listFiles(context, targetDirStr).any { it.name.equals(candidateName, ignoreCase = true) }
+                } catch (e: Exception) {
+                    checkExists(context, candidatePathStr)
+                }
+            } else {
+                checkExists(context, candidatePathStr)
+            }
+        }
+
+        var target = resolveCandidate(displayName)
 
         // If move and target is same as source, it's a no-op
         if (!isCopy && sourcePath != null && (sourcePath == target.toString() || SafManager.isSamePath(sourcePath, target.toString()))) {
@@ -692,11 +717,13 @@ object FileOperationRunner {
             sourcePath == target.toString() || SafManager.isSamePath(sourcePath, target.toString())
         )
 
-        if (isSameAsSource || checkExists(context, target.toString())) {
-            target = targetDir.resolve("$name ($count)$ext")
+        if (isSameAsSource || existsCandidate(target, displayName)) {
+            var candidateName = "$name ($count)$ext"
+            target = resolveCandidate(candidateName)
             count++
-            while (checkExists(context, target.toString())) {
-                target = targetDir.resolve("$name ($count)$ext")
+            while (existsCandidate(target, candidateName)) {
+                candidateName = "$name ($count)$ext"
+                target = resolveCandidate(candidateName)
                 count++
             }
         }
@@ -1057,7 +1084,7 @@ object FileOperationRunner {
             }
         }
 
-        val targetPath = target.toString()
+        val targetPath = SafManager.normalizeSafPath(target.toString())
         val sourceIsDir = knownIsDir ?: isDirectory(context, sourcePath)
 
         if (sourceIsDir && SafManager.isSubdirectoryOrSame(targetPath, sourcePath)) {
@@ -1444,7 +1471,7 @@ object FileOperationRunner {
                         val currentRx = android.net.TrafficStats.getTotalRxBytes()
                         if (currentRx >= initialRx) {
                             val netDelta = currentRx - initialRx
-                            // Reserve 2% for the local copy commit
+                            // Reserve 2% for the local copy commit; clamp strictly to file size to prevent runaway data
                             val progressBytes = netDelta.coerceIn(0L, (fileSize * 0.98).toLong())
                             if (progressBytes > simulatedNetworkBytes) {
                                 simulatedNetworkBytes = progressBytes
@@ -1456,17 +1483,12 @@ object FileOperationRunner {
                                 onProgress?.invoke(job)
                             }
                         }
-                    } else if (fileSize <= 0L && hasTrafficStats) {
-                        val currentRx = android.net.TrafficStats.getTotalRxBytes()
-                        if (currentRx >= initialRx) {
-                            val netDelta = currentRx - initialRx
-                            if (netDelta > simulatedNetworkBytes) {
-                                simulatedNetworkBytes = netDelta
-                                job.processedBytes = baseProcessedBytes + netDelta
-                                job.isIndeterminate = true
-                                JobManager.updateJob(job)
-                                onProgress?.invoke(job)
-                            }
+                    } else if (fileSize <= 0L) {
+                        // For unknown file sizes, keep job indeterminate without adding device-wide network data to processedBytes
+                        if (!job.isIndeterminate) {
+                            job.isIndeterminate = true
+                            JobManager.updateJob(job)
+                            onProgress?.invoke(job)
                         }
                     }
                 }
@@ -1565,7 +1587,7 @@ object FileOperationRunner {
             }
         }
 
-        val targetPath = target.toString()
+        val targetPath = SafManager.normalizeSafPath(target.toString())
         if (isDirectory(context, sourcePath) && SafManager.isSubdirectoryOrSame(targetPath, sourcePath)) {
             return false
         }
@@ -1698,9 +1720,9 @@ object FileOperationRunner {
             }
         }
 
-        val pathStr = path.toString()
+        val pathStr = SafManager.normalizeSafPath(path.toString())
         val file = path.toFile()
-        val size = if (file.isFile) file.length() else 0L
+        val size = if (file.isFile) file.length() else if (SafManager.isSafUri(pathStr)) SafManager.getReliableSize(context, pathStr) else 0L
 
         if ((pathStr == "/" || dev.narayan.rose.RootManager.isRootPath(pathStr)) && dev.narayan.rose.RootManager.isRootAvailable()) {
             val success = dev.narayan.rose.RootManager.delete(pathStr)
@@ -1720,13 +1742,13 @@ object FileOperationRunner {
             }
         }
 
-        if (SafManager.isRestrictedPath(pathStr)) {
-            val success = if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(pathStr)) {
+        if (SafManager.isRestrictedPath(pathStr) || SafManager.isCloudUri(pathStr) || SafManager.isSafUri(pathStr)) {
+            val success = if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(pathStr) && !SafManager.isCloudUri(pathStr)) {
                 val clean = dev.narayan.rose.ShizukuManager.normalize(pathStr)
                 dev.narayan.rose.ShizukuManager.runCommandSync(
                     "rm -rf ${dev.narayan.rose.ShizukuManager.shellEscape(clean)}"
                 ) == 0
-            } else if (SafManager.hasPermission(context, pathStr)) {
+            } else if (SafManager.isCloudUri(pathStr) || SafManager.hasPermission(context, pathStr)) {
                 SafManager.delete(context, pathStr)
             } else {
                 false

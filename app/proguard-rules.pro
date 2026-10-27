@@ -20,3 +20,6 @@
     public <init>(java.util.concurrent.Executor);
     public <init>();
 }
+
+# Haze blur library for frosted glass navigation bar in release builds
+-keep class dev.chrisbanes.haze.** { *; }

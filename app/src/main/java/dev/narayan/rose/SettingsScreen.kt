@@ -152,6 +152,22 @@ fun SettingsScreen(
                         onCheckedChange = { viewModel.setShowListDividers(it) }
                     )
                     SettingsDivider()
+                    SettingsSwitchRow(
+                        icon = Icons.Default.Folder,
+                        title = stringResource(R.string.settings_folders_first),
+                        subtitle = stringResource(R.string.settings_folders_first_subtitle),
+                        checked = viewModel.foldersFirst,
+                        onCheckedChange = { viewModel.setFoldersFirst(it) }
+                    )
+                    SettingsDivider()
+                    SettingsSwitchRow(
+                        icon = Icons.Default.FolderOpen,
+                        title = stringResource(R.string.settings_show_folder_size),
+                        subtitle = stringResource(R.string.settings_show_folder_size_subtitle),
+                        checked = viewModel.showFolderSize,
+                        onCheckedChange = { viewModel.setShowFolderSize(it) }
+                    )
+                    SettingsDivider()
                     SettingsActionRow(
                         icon = Icons.Default.VisibilityOff,
                         iconTint = MaterialTheme.colorScheme.primary,

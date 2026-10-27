@@ -125,6 +125,8 @@ fun HomeScreen(
     onSearchActiveChange: (Boolean) -> Unit = {},
     canSwipeToRecent: Boolean = true
 ) {
+    val coroutineScope = rememberCoroutineScope()
+
     LaunchedEffect(Unit) {
         // Refresh everything when coming back to home screen
         viewModel.loadStorageInfo()
@@ -343,7 +345,10 @@ fun HomeScreen(
         floatingActionButton = {
             Column(
                 horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .padding(bottom = 12.dp, end = 4.dp)
             ) {
                 // Extract Here FAB
                 AnimatedVisibility(
@@ -511,10 +516,11 @@ fun HomeScreen(
                             },
                             onOpenLocation = { onOpenPath(item.file.parent ?: item.file.absolutePath, item) },
                             onCopy = {
-                                viewModel.toggleSelection(item)
-                                viewModel.copySelected()
-                                // Navigate to file explorer to allow pasting
-                                onOpenPath(Environment.getExternalStorageDirectory().absolutePath, null)
+                                viewModel.copySingle(item)
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.yield()
+                                    onOpenPath(Environment.getExternalStorageDirectory().absolutePath, null)
+                                }
                                 isSearching = false
                                 searchQuery = ""
                                 viewModel.searchFiles("")
@@ -522,10 +528,11 @@ fun HomeScreen(
                                 viewModel.activeSearchFilter = SearchFilter.ALL
                             },
                             onCut = {
-                                viewModel.toggleSelection(item)
-                                viewModel.moveSelected()
-                                // Navigate to file explorer to allow pasting
-                                onOpenPath(Environment.getExternalStorageDirectory().absolutePath, null)
+                                viewModel.moveSingle(item)
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.yield()
+                                    onOpenPath(Environment.getExternalStorageDirectory().absolutePath, null)
+                                }
                                 isSearching = false
                                 searchQuery = ""
                                 viewModel.searchFiles("")
@@ -536,7 +543,12 @@ fun HomeScreen(
                                 viewModel.prepareExtraction(item.file)
                                 android.widget.Toast.makeText(context, context.getString(R.string.toast_archive_ready_extract), android.widget.Toast.LENGTH_SHORT).show()
                             },
-                            onOpenArchive = { onOpenPath(item.file.absolutePath, null) }
+                            onOpenArchive = { onOpenPath(item.file.absolutePath, null) },
+                            viewModel = viewModel,
+                            onShare = { onShareClick(item) },
+                            onDelete = { fileForDelete = item },
+                            onRename = { fileForRename = item },
+                            onProperties = { viewModel.showProperties(item) }
                         )
                         if (viewModel.showListDividers && index != currentSearchResults.lastIndex) {
                             HorizontalDivider(
@@ -576,9 +588,10 @@ fun HomeScreen(
                             onAnimationFinished = { viewModel.hasRunCategoryCountAnimation = true },
                             onCategoryClick = { category ->
                                 val now = System.currentTimeMillis()
-                                if (now - viewModel.lastNavigationTimestamp < 500L || animatedVisibilityScope.transition.isRunning) {
+                                if (now - viewModel.lastNavigationTimestamp < 200L || animatedVisibilityScope.transition.isRunning) {
                                     return@CategoryGrid
                                 }
+                                viewModel.lastNavigationTimestamp = now
                                 viewModel.hasRunCategoryCountAnimation = true
                                 if (category.isFavourites) {
                                     onOpenFavourites()
@@ -613,6 +626,9 @@ fun HomeScreen(
                                 onFileClick = onFileClick,
                                 onOpenWithClick = onOpenWithClick,
                                 onShareClick = onShareClick,
+                                onRenameClick = { fileForRename = it },
+                                onDeleteClick = { fileForDelete = it },
+                                onPropertiesClick = { viewModel.showProperties(it) },
                                 onExtractClick = {
                                     viewModel.prepareExtraction(it.file)
                                     android.widget.Toast.makeText(context, context.getString(R.string.toast_archive_ready_extract), android.widget.Toast.LENGTH_SHORT).show()
@@ -669,7 +685,15 @@ fun HomeScreen(
 
     // Dialogs
     viewModel.propertiesFile?.let { item ->
-        PropertiesDialog(fileItem = item, onDismiss = { viewModel.closeProperties() }, viewModel = viewModel)
+        PropertiesDialog(
+            fileItem = item,
+            onDismiss = { viewModel.closeProperties() },
+            viewModel = viewModel,
+            onOpenLocation = { targetPath, targetItem ->
+                viewModel.closeProperties()
+                onOpenPath(targetPath, targetItem)
+            }
+        )
     }
 
     fileForRename?.let { item ->
@@ -827,11 +851,16 @@ fun HomeScreen(
 @Composable
 private fun SearchResultItem(
     item: FileItem,
+    viewModel: RoseViewModel,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onOpenLocation: () -> Unit,
     onCopy: () -> Unit,
     onCut: () -> Unit,
+    onShare: () -> Unit,
+    onDelete: () -> Unit,
+    onRename: () -> Unit,
+    onProperties: () -> Unit,
     onExtract: () -> Unit = {},
     onOpenArchive: () -> Unit = {}
 ) {
@@ -867,43 +896,22 @@ private fun SearchResultItem(
                 IconButton(onClick = { showMenu = true }) {
                     Icon(Icons.Default.MoreVert, null)
                 }
-                DropdownMenu(
+                WindowsFileDropdownMenu(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false },
-                    shape = RoundedCornerShape(16.dp),
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    fileItem = item,
+                    viewModel = viewModel,
+                    isVirtual = false,
+                    onCopy = onCopy,
+                    onCut = onCut,
+                    onDelete = onDelete,
+                    onShare = onShare,
+                    onProperties = onProperties,
+                    onRenameRequest = onRename,
+                    onOpenLocation = onOpenLocation,
+                    onExtract = if (item.fileType == FileType.ZIP) { onExtract } else null,
                     offset = androidx.compose.ui.unit.DpOffset(x = (-8).dp, y = 0.dp)
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.action_open_location), modifier = Modifier.padding(vertical = 4.dp)) },
-                        onClick = { showMenu = false; onOpenLocation() },
-                        leadingIcon = { Icon(Icons.Default.FolderOpen, null) },
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.action_copy), modifier = Modifier.padding(vertical = 4.dp)) },
-                        onClick = { showMenu = false; onCopy() },
-                        leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.action_move), modifier = Modifier.padding(vertical = 4.dp)) },
-                        onClick = { showMenu = false; onCut() },
-                        leadingIcon = { Icon(Icons.Default.ContentCut, null) },
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                    )
-                    if (item.fileType == FileType.ZIP) {
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.action_extract), modifier = Modifier.padding(vertical = 4.dp)) },
-                            onClick = { showMenu = false; onExtract() },
-                            leadingIcon = { Icon(Icons.Outlined.Unarchive, null) },
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                        )
-                    }
-                }
+                )
             }
         },
         modifier = modifier
@@ -1439,6 +1447,7 @@ private fun RecentFilesSection(
     if (recents.isEmpty()) return
 
     val context = androidx.compose.ui.platform.LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     Column {
         Row(
@@ -1547,77 +1556,35 @@ private fun RecentFilesSection(
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-                                DropdownMenu(
+                                WindowsFileDropdownMenu(
                                     expanded = showFileMenu,
                                     onDismissRequest = { showFileMenu = false },
-                                    shape = RoundedCornerShape(16.dp),
-                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    fileItem = item,
+                                    viewModel = viewModel,
+                                    isVirtual = false,
+                                    onCopy = {
+                                        viewModel.copySingle(item)
+                                        coroutineScope.launch {
+                                            kotlinx.coroutines.yield()
+                                            onOpenPath(Environment.getExternalStorageDirectory().absolutePath, null)
+                                        }
+                                    },
+                                    onCut = {
+                                        viewModel.moveSingle(item)
+                                        coroutineScope.launch {
+                                            kotlinx.coroutines.yield()
+                                            onOpenPath(Environment.getExternalStorageDirectory().absolutePath, null)
+                                        }
+                                    },
+                                    onDelete = { onDeleteClick(item) },
+                                    onShare = { onShareClick(item) },
+                                    onProperties = { onPropertiesClick(item) },
+                                    onRenameRequest = { onRenameClick(item) },
+                                    onOpenWith = { onOpenWithClick(item) },
+                                    onOpenLocation = { onOpenPath(item.file.parent ?: item.file.absolutePath, item) },
+                                    onExtract = if (item.fileType == FileType.ZIP) { { onExtractClick(item) } } else null,
                                     offset = androidx.compose.ui.unit.DpOffset(x = (-8).dp, y = 0.dp)
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.action_open_location), modifier = Modifier.padding(vertical = 4.dp)) },
-                                        onClick = {
-                                            showFileMenu = false
-                                            onOpenPath(item.file.parent ?: item.file.absolutePath, item)
-                                        },
-                                        leadingIcon = { Icon(Icons.Default.FolderOpen, null) },
-                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                                    )
-                                    HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.action_open_with), modifier = Modifier.padding(vertical = 4.dp)) },
-                                        onClick = { showFileMenu = false; onOpenWithClick(item) },
-                                        leadingIcon = { Icon(Icons.Default.OpenInNew, null) },
-                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                                    )
-                                    HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.action_share), modifier = Modifier.padding(vertical = 4.dp)) },
-                                        onClick = { showFileMenu = false; onShareClick(item) },
-                                        leadingIcon = { Icon(Icons.Default.Share, null) },
-                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                                    )
-                                    if (!item.isDirectory && viewModel.currentZipFile == null) {
-                                        val isFav = viewModel.isFileInFavourites(item.file.absolutePath)
-                                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                                        DropdownMenuItem(
-                                            text = {
-                                                Text(
-                                                    if (isFav) stringResource(R.string.action_remove_from_favourites)
-                                                    else stringResource(R.string.action_add_to_favourites),
-                                                    modifier = Modifier.padding(vertical = 4.dp)
-                                                )
-                                            },
-                                            onClick = {
-                                                showFileMenu = false
-                                                if (isFav) {
-                                                    viewModel.removeFavouriteFile(item.file.absolutePath)
-                                                    android.widget.Toast.makeText(context, context.getString(R.string.toast_removed_from_favourites), android.widget.Toast.LENGTH_SHORT).show()
-                                                } else {
-                                                    viewModel.addFavouriteFile(item.file.absolutePath)
-                                                    android.widget.Toast.makeText(context, context.getString(R.string.toast_added_to_favourites), android.widget.Toast.LENGTH_SHORT).show()
-                                                }
-                                            },
-                                            leadingIcon = {
-                                                Icon(
-                                                    if (isFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                                    null,
-                                                    tint = Color(0xFFE11D48)
-                                                )
-                                            },
-                                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                                        )
-                                    }
-                                    if (item.fileType == FileType.ZIP) {
-                                        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp).alpha(0.3f))
-                                        DropdownMenuItem(
-                                            text = { Text(stringResource(R.string.action_extract), modifier = Modifier.padding(vertical = 4.dp)) },
-                                            onClick = { showFileMenu = false; onExtractClick(item) },
-                                            leadingIcon = { Icon(Icons.Outlined.Unarchive, null) },
-                                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                                        )
-                                    }
-                                }
+                                )
                             }
                         }
                         if (showDividers && index != recents.lastIndex) {

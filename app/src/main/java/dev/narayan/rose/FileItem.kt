@@ -44,9 +44,9 @@ data class FileItem(
                 mimeType?.startsWith("video/") == true -> FileType.VIDEO
         extension in listOf("mp3", "wav", "ogg", "flac", "m4a", "aac", "wma") ||
                 mimeType?.startsWith("audio/") == true -> FileType.AUDIO
-        extension in listOf("txt", "md", "markdown", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "html", "htm", "xml", "json") ||
+        extension in listOf("txt", "md", "markdown", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "html", "htm", "xml", "json", "yml", "yaml", "css", "js", "ts", "sh", "py", "csv", "ml", "cpp", "c", "h", "hpp", "cc", "cxx", "java", "kt", "kts", "rs", "go", "rb", "php", "swift", "lua", "sql") ||
                 mimeType?.startsWith("text/") == true ||
-                mimeType in listOf("text/markdown", "text/x-markdown", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") -> FileType.DOCUMENT
+                mimeType in listOf("text/markdown", "text/x-markdown", "text/csv", "application/json", "application/xml", "application/javascript", "text/javascript", "application/x-sh", "application/x-yaml", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") -> FileType.DOCUMENT
         else -> FileType.OTHER
     }
 }

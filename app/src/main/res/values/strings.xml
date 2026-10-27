@@ -10,6 +10,9 @@
     <string name="about_github_subtitle">Source Code Repository</string>
     <string name="about_contact">Contact</string>
     <string name="about_contact_email">Narayanchetri.dev@gmail.com</string>
+    <string name="about_star_github">Star on GitHub</string>
+    <string name="about_star_github_desc">Enjoying ROSE? Starring the repository helps a lot!</string>
+    <string name="about_repo_url">https://github.com/NarayanChetri/ROSE</string>
     <string name="about_check_for_updates">Check for updates</string>
     <string name="about_checking_for_updates">Checking for updates…</string>
 
@@ -22,6 +25,7 @@
     <string name="action_delete">Delete</string>
     <string name="action_rename">Rename</string>
     <string name="action_copy">Copy</string>
+    <string name="action_cut">Cut</string>
     <string name="action_move">Move</string>
     <string name="action_share">Share</string>
     <string name="action_properties">Properties</string>
@@ -37,6 +41,7 @@
     <string name="action_open">Open</string>
     <string name="action_open_with">Open with</string>
     <string name="action_open_location">Open location</string>
+    <string name="action_copy_path">Copy as path</string>
     <string name="action_select_all">Select All</string>
     <string name="action_unselect_all">Unselect All</string>
     <string name="action_remove">Remove</string>
@@ -174,7 +179,9 @@
     <string name="total_items_in_total">%1$d items in total</string>
     <string name="total_items_count">%1$d items total</string>
     <string name="items_count">%1$d items</string>
+    <string name="items_count_and_size">%1$d items | %2$s</string>
     <string name="item_count_and_date">%1$d items | %2$s</string>
+    <string name="item_folder_size_count_and_date">%1$d items | %2$s | %3$s</string>
     <string name="item_size_and_date">%1$s | %2$s</string>
     <string name="action_extract_here">Extract Here</string>
     <string name="action_paste_here">Paste Here</string>
@@ -188,6 +195,7 @@
     <string name="sort_size">Size</string>
     <string name="sort_date">Date</string>
     <string name="sort_last_modified">Last modified</string>
+    <string name="sort_folders_first">Folders first</string>
     <string name="view_list">List view</string>
     <string name="view_grid">Grid view</string>
 
@@ -305,6 +313,10 @@
     <string name="settings_recent_files_limit">Recent files limit</string>
     <string name="settings_show_list_dividers">Show list dividers</string>
     <string name="settings_show_list_dividers_subtitle">Thin lines between items in Recent files, Quick access, and folder lists</string>
+    <string name="settings_folders_first">Keep folders on top</string>
+    <string name="settings_folders_first_subtitle">Show folders ahead of files when sorting</string>
+    <string name="settings_show_folder_size">Show folder size</string>
+    <string name="settings_show_folder_size_subtitle">Calculate and display folder size in All files</string>
     <string name="settings_excluded_folders">Excluded folders</string>
     <string name="settings_excluded_folders_subtitle">Select folders to hide from recents and categories</string>
     <string name="settings_section_navigation">Navigation</string>
@@ -451,6 +463,7 @@
     <string name="toast_archive_ready_extract">Archive ready. Navigate to a folder to extract.</string>
     <string name="toast_shizuku_not_running">Shizuku not running. Please start it first.</string>
     <string name="toast_added_to_quick_access">Added to Quick access</string>
+    <string name="toast_path_copied">Path copied to clipboard</string>
     <string name="toast_up_to_date">You\'re on the latest version</string>
     <string name="toast_cannot_paste_here" tools:ignore="MissingTranslation">Cannot paste here</string>
     <string name="toast_cannot_paste_in_archive" tools:ignore="MissingTranslation">Cannot paste inside an archive</string>
@@ -567,4 +580,4 @@
     <string name="ftp_server_how_to_connect_mac">macOS: In Finder, press Cmd+K, paste the FTP address, and click Connect.</string>
     <string name="ftp_server_how_to_connect_linux">Linux: Open Files (Nautilus) → Other Locations → Connect to Server.</string>
     <string name="ftp_server_how_to_connect_note">Ensure both your phone and PC are connected to the same Wi-Fi network or Mobile Hotspot.</string>
-</resources>
+</resources>
