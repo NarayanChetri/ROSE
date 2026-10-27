@@ -55,6 +55,8 @@ import dev.narayan.rose.update.UpdateBottomSheet
 import dev.narayan.rose.ftpserver.FtpServerScreen
 import dev.narayan.rose.ftpserver.FtpServerNotification
 import dev.narayan.rose.ui.TintedGlassNavigationBar
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3Api::class)
 class MainActivity : androidx.fragment.app.FragmentActivity() {
@@ -161,7 +163,20 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = androidx.activity.SystemBarStyle.auto(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT
+            ),
+            navigationBarStyle = androidx.activity.SystemBarStyle.auto(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT
+            )
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
 
         ShizukuManager.init(this)
         Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
@@ -497,11 +512,13 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             }
                         }
 
+                        val hazeState = remember { HazeState() }
+
                         Box(modifier = Modifier.fillMaxSize()) {
                             SharedTransitionLayout {
                                 AnimatedContent(
                                     targetState = screen,
-                                    modifier = Modifier.fillMaxSize(),
+                                    modifier = Modifier.fillMaxSize().hazeSource(state = hazeState),
                                     transitionSpec = {
                                         val target = targetState
                                         val initial = initialState
@@ -944,7 +961,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             // Tinted glass navigation bar behind system navigation buttons
                             // only active when 3-button / 2-button navigation is used and not in selection mode
                             if (!viewModel.isSelectionMode) {
-                                TintedGlassNavigationBar()
+                                TintedGlassNavigationBar(hazeState = hazeState)
                             }
 
                             // Global mini bar + detailed dialog for in-flight jobs - lives

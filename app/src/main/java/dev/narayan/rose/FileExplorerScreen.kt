@@ -2258,18 +2258,22 @@ fun FileExplorerScreen(
             is PendingDelete.Single -> viewModel.isRemovableStorage(pending.fileItem.file.absolutePath)
             is PendingDelete.Selection -> viewModel.isCurrentPathRemovable()
         }
+        val isCloud = when (pending) {
+            is PendingDelete.Single -> viewModel.isCloudStorage(pending.fileItem.file.absolutePath) || SafManager.isCloudUri(pending.fileItem.file.absolutePath)
+            is PendingDelete.Selection -> viewModel.isCloudStorage(viewModel.currentPath) || SafManager.isCloudUri(viewModel.currentPath)
+        }
         DeleteConfirmationDialog(
-            useRecycleBin = viewModel.useRecycleBin,
+            useRecycleBin = viewModel.useRecycleBin && !isCloud,
             pending = pending,
             onDismiss = { pendingDelete = null },
             onConfirm = { permanently ->
                 when (pending) {
-                    is PendingDelete.Single -> viewModel.deleteFile(pending.fileItem, permanently)
-                    is PendingDelete.Selection -> viewModel.deleteSelected(permanently)
+                    is PendingDelete.Single -> viewModel.deleteFile(pending.fileItem, permanently || isCloud)
+                    is PendingDelete.Selection -> viewModel.deleteSelected(permanently || isCloud)
                 }
                 pendingDelete = null
             },
-            isOnRemovableStorage = isOnRemovable
+            isOnRemovableStorage = isOnRemovable || isCloud
         )
     }
 }
@@ -3909,11 +3913,11 @@ fun WindowsFileDropdownMenu(
         offset = offset,
         modifier = Modifier.widthIn(min = 280.dp, max = 315.dp)
     ) {
-        // Windows 11-style Quick Actions Top Row: Cut, Copy, Rename, Share, Delete
+        // Windows 11-style Quick Actions Top Row: Cut, Copy, Rename, Share, Delete with vertical dividers
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 6.dp, vertical = 4.dp),
+                .padding(horizontal = 4.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -3926,6 +3930,11 @@ fun WindowsFileDropdownMenu(
                     onCut()
                 }
             )
+            VerticalDivider(
+                modifier = Modifier.height(26.dp),
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+            )
             WindowsMenuHeaderAction(
                 icon = Icons.Default.ContentCopy,
                 label = stringResource(R.string.action_copy),
@@ -3934,6 +3943,11 @@ fun WindowsFileDropdownMenu(
                     onDismissRequest()
                     onCopy()
                 }
+            )
+            VerticalDivider(
+                modifier = Modifier.height(26.dp),
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
             )
             WindowsMenuHeaderAction(
                 icon = Icons.Default.DriveFileRenameOutline,
@@ -3944,6 +3958,11 @@ fun WindowsFileDropdownMenu(
                     onRenameRequest?.invoke()
                 }
             )
+            VerticalDivider(
+                modifier = Modifier.height(26.dp),
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+            )
             WindowsMenuHeaderAction(
                 icon = Icons.Default.Share,
                 label = stringResource(R.string.action_share),
@@ -3952,6 +3971,11 @@ fun WindowsFileDropdownMenu(
                     onDismissRequest()
                     onShare()
                 }
+            )
+            VerticalDivider(
+                modifier = Modifier.height(26.dp),
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
             )
             WindowsMenuHeaderAction(
                 icon = Icons.Default.DeleteOutline,
@@ -3966,24 +3990,12 @@ fun WindowsFileDropdownMenu(
         }
 
         HorizontalDivider(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
             thickness = 0.5.dp,
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
         )
 
-        // Stacked Menu Options
-        if (onOpenLocation != null) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.action_open_location)) },
-                onClick = {
-                    onDismissRequest()
-                    onOpenLocation()
-                },
-                leadingIcon = { Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
-            )
-        }
-
+        // Stacked Menu Options - Group 1: Navigation & Launch Actions
         if (onOpenWith != null && !fileItem.isDirectory) {
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.action_open_with)) },
@@ -4004,6 +4016,18 @@ fun WindowsFileDropdownMenu(
             )
         }
 
+        if (onOpenLocation != null) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.action_open_location)) },
+                onClick = {
+                    onDismissRequest()
+                    onOpenLocation()
+                },
+                leadingIcon = { Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+            )
+        }
+
         DropdownMenuItem(
             text = { Text(stringResource(R.string.action_copy_path)) },
             onClick = {
@@ -4015,102 +4039,117 @@ fun WindowsFileDropdownMenu(
             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
         )
 
-        if (!isCloud && !isVirtual && !fileItem.isDirectory && viewModel.currentZipFile == null) {
-            val isFav = viewModel.isFileInFavourites(fileItem.file.absolutePath)
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        if (isFav) stringResource(R.string.action_remove_from_favourites)
-                        else stringResource(R.string.action_add_to_favourites)
-                    )
-                },
-                onClick = {
-                    onDismissRequest()
-                    if (isFav) {
-                        viewModel.removeFavouriteFile(fileItem.file.absolutePath)
-                        Toast.makeText(context, context.getString(R.string.toast_removed_from_favourites), Toast.LENGTH_SHORT).show()
-                    } else {
-                        viewModel.addFavouriteFile(fileItem.file.absolutePath)
-                        Toast.makeText(context, context.getString(R.string.toast_added_to_favourites), Toast.LENGTH_SHORT).show()
-                    }
-                },
-                leadingIcon = {
-                    Icon(
-                        if (isFav) Icons.Default.Star else Icons.Default.StarOutline,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = if (isFav) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
-            )
-        }
+        val hasMiddleGroup = (!isCloud && !isVirtual && !fileItem.isDirectory && viewModel.currentZipFile == null) ||
+                canSaveOffline ||
+                (fileItem.isDirectory && viewModel.currentZipFile == null && !isVirtual && !viewModel.isFolderInQuickAccess(fileItem.file.absolutePath)) ||
+                ((fileItem.fileType == FileType.ZIP || isVirtual) && !isVirtual && onExtract != null)
 
-        if (canSaveOffline) {
-            val isOffline = viewModel.isFileOffline(fileItem.file.absolutePath)
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        if (isOffline) stringResource(R.string.action_remove_offline)
-                        else stringResource(R.string.action_save_offline)
-                    )
-                },
-                onClick = {
-                    onDismissRequest()
-                    viewModel.toggleOfflineStatus(fileItem)
-                    val msg = if (isOffline) {
-                        context.getString(R.string.toast_removed_from_offline)
-                    } else {
-                        context.getString(R.string.toast_saving_offline)
-                    }
-                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                },
-                leadingIcon = {
-                    Icon(
-                        if (isOffline) Icons.Default.CloudDone else Icons.Default.Download,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = if (isOffline) Color(0xFF10B981) else MaterialTheme.colorScheme.primary
-                    )
-                },
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+        if (hasMiddleGroup) {
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
             )
-        }
 
-        if (fileItem.isDirectory && viewModel.currentZipFile == null && !isVirtual) {
-            val isAlreadyInQuickAccess = viewModel.isFolderInQuickAccess(fileItem.file.absolutePath)
-            if (!isAlreadyInQuickAccess) {
+            // Group 2: Organization, Cloud & Archive Actions
+            if (!isCloud && !isVirtual && !fileItem.isDirectory && viewModel.currentZipFile == null) {
+                val isFav = viewModel.isFileInFavourites(fileItem.file.absolutePath)
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.action_add_to_quick_access)) },
+                    text = {
+                        Text(
+                            if (isFav) stringResource(R.string.action_remove_from_favourites)
+                            else stringResource(R.string.action_add_to_favourites)
+                        )
+                    },
                     onClick = {
                         onDismissRequest()
-                        viewModel.addQuickAccessFolder(fileItem.file.absolutePath)
-                        Toast.makeText(context, context.getString(R.string.toast_added_to_quick_access), Toast.LENGTH_SHORT).show()
+                        if (isFav) {
+                            viewModel.removeFavouriteFile(fileItem.file.absolutePath)
+                            Toast.makeText(context, context.getString(R.string.toast_removed_from_favourites), Toast.LENGTH_SHORT).show()
+                        } else {
+                            viewModel.addFavouriteFile(fileItem.file.absolutePath)
+                            Toast.makeText(context, context.getString(R.string.toast_added_to_favourites), Toast.LENGTH_SHORT).show()
+                        }
                     },
-                    leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                    leadingIcon = {
+                        Icon(
+                            if (isFav) Icons.Default.Star else Icons.Default.StarOutline,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = if (isFav) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+                )
+            }
+
+            if (canSaveOffline) {
+                val isOffline = viewModel.isFileOffline(fileItem.file.absolutePath)
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            if (isOffline) stringResource(R.string.action_remove_offline)
+                            else stringResource(R.string.action_save_offline)
+                        )
+                    },
+                    onClick = {
+                        onDismissRequest()
+                        viewModel.toggleOfflineStatus(fileItem)
+                        val msg = if (isOffline) {
+                            context.getString(R.string.toast_removed_from_offline)
+                        } else {
+                            context.getString(R.string.toast_saving_offline)
+                        }
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    },
+                    leadingIcon = {
+                        Icon(
+                            if (isOffline) Icons.Default.CloudDone else Icons.Default.Download,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = if (isOffline) Color(0xFF10B981) else MaterialTheme.colorScheme.primary
+                        )
+                    },
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+                )
+            }
+
+            if (fileItem.isDirectory && viewModel.currentZipFile == null && !isVirtual) {
+                val isAlreadyInQuickAccess = viewModel.isFolderInQuickAccess(fileItem.file.absolutePath)
+                if (!isAlreadyInQuickAccess) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.action_add_to_quick_access)) },
+                        onClick = {
+                            onDismissRequest()
+                            viewModel.addQuickAccessFolder(fileItem.file.absolutePath)
+                            Toast.makeText(context, context.getString(R.string.toast_added_to_quick_access), Toast.LENGTH_SHORT).show()
+                        },
+                        leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            if ((fileItem.fileType == FileType.ZIP || isVirtual) && !isVirtual && onExtract != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.action_extract)) },
+                    onClick = {
+                        onDismissRequest()
+                        onExtract()
+                    },
+                    leadingIcon = { Icon(Icons.Outlined.Unarchive, contentDescription = null, modifier = Modifier.size(20.dp)) },
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
                 )
             }
         }
 
-        if ((fileItem.fileType == FileType.ZIP || isVirtual) && !isVirtual && onExtract != null) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.action_extract)) },
-                onClick = {
-                    onDismissRequest()
-                    onExtract()
-                },
-                leadingIcon = { Icon(Icons.Outlined.Unarchive, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
-            )
-        }
-
         HorizontalDivider(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
             thickness = 0.5.dp,
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
         )
 
+        // Group 3: Properties
         DropdownMenuItem(
             text = { Text(stringResource(R.string.action_properties)) },
             onClick = {
@@ -4812,85 +4851,36 @@ fun PropertiesDialog(
                     Text(
                         stringResource(R.string.prop_path),
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
+                    val parentPath = if (fileItem.isDirectory) {
+                        fileItem.file.parent ?: fileItem.file.absolutePath
+                    } else {
+                        fileItem.file.parent ?: fileItem.file.absolutePath
+                    }
                     Text(
-                        fileItem.file.absolutePath,
+                        text = fileItem.file.absolutePath,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    clipboardManager.setText(AnnotatedString(fileItem.file.absolutePath))
-                                    Toast.makeText(context, context.getString(R.string.toast_path_copied), Toast.LENGTH_SHORT).show()
-                                }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.ContentCopy,
-                                    contentDescription = stringResource(R.string.action_copy_path),
-                                    modifier = Modifier.size(14.dp),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                                Text(
-                                    stringResource(R.string.action_copy_path),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-
-                        if (onOpenLocation != null) {
-                            val parentPath = if (fileItem.isDirectory) {
-                                fileItem.file.parent ?: fileItem.file.absolutePath
-                            } else {
-                                fileItem.file.parent ?: fileItem.file.absolutePath
-                            }
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable {
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .combinedClickable(
+                                onClick = {
+                                    if (onOpenLocation != null) {
                                         onDismiss()
                                         onOpenLocation(parentPath, fileItem)
                                     }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.FolderOpen,
-                                        contentDescription = stringResource(R.string.action_open_location),
-                                        modifier = Modifier.size(14.dp),
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                    Text(
-                                        stringResource(R.string.action_open_location),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
+                                },
+                                onLongClick = {
+                                    clipboardManager.setText(AnnotatedString(fileItem.file.absolutePath))
+                                    Toast.makeText(context, context.getString(R.string.toast_path_copied), Toast.LENGTH_SHORT).show()
                                 }
-                            }
-                        }
-                    }
+                            )
+                            .padding(vertical = 4.dp, horizontal = 2.dp)
+                    )
                 }
                 PropertyRow(stringResource(R.string.prop_modified), SimpleDateFormat("MMM dd, yyyy HH:mm:ss", Locale.getDefault()).format(Date(fileItem.lastModified)))
             }

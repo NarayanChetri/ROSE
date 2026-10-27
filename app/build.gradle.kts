@@ -131,6 +131,7 @@ dependencies {
     implementation(libs.ftpserver.core)
     implementation(libs.mina.core)
     implementation(libs.slf4j.android)
+    implementation("dev.chrisbanes.haze:haze:1.3.1")
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

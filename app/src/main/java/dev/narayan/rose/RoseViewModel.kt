@@ -2751,11 +2751,11 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         val sources = itemsToDelete.map { it.file.absolutePath }
         val names = itemsToDelete.map { it.name }
 
-        // If any selected file is in a root path, route directly to permanent delete
+        val isCloud = sources.any { isCloudStorage(it) || SafManager.isCloudUri(it) }
         val hasRoot = sources.any { it == "/" || RootManager.isRootPath(it) }
         val hasRestricted = sources.any { SafManager.isRestrictedPath(it) }
         val canRecycleRestricted = ShizukuManager.isAvailable() && ShizukuManager.hasPermission()
-        if (!hasRoot && useRecycleBin && !permanently && (!hasRestricted || canRecycleRestricted)) {
+        if (!isCloud && !hasRoot && useRecycleBin && !permanently && (!hasRestricted || canRecycleRestricted)) {
             dev.narayan.rose.filejob.FileJobService.startRecycle(getApplication(), sources, names)
         } else {
             dev.narayan.rose.filejob.FileJobService.startDelete(getApplication(), sources, names)
@@ -2765,10 +2765,26 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteFile(fileItem: FileItem, permanently: Boolean = false) {
         val path = fileItem.file.absolutePath
+        val isCloud = isCloudStorage(path) || SafManager.isCloudUri(path)
 
         val isRoot = path == "/" || RootManager.isRootPath(path)
         if (isRoot) {
             dev.narayan.rose.filejob.FileJobService.startDelete(getApplication(), listOf(path), listOf(fileItem.name))
+            return
+        }
+
+        if (isCloud) {
+            viewModelScope.launch(Dispatchers.IO) {
+                val success = SafManager.delete(getApplication(), path)
+                withContext(Dispatchers.Main) {
+                    if (success) {
+                        invalidateDirectoryCache(currentPath)
+                        loadFiles(currentPath, isManualRefresh = true, showLoading = false)
+                    } else {
+                        errorMessage = "Couldn't delete from cloud storage."
+                    }
+                }
+            }
             return
         }
 

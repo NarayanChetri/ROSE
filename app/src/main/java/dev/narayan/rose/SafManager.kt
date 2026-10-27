@@ -652,8 +652,57 @@ object SafManager {
     }
 
     fun delete(context: Context, path: String): Boolean {
-        val doc = getDocumentFile(context, path) ?: return true // already gone
-        return doc.delete()
+        val normalized = normalizeSafPath(path)
+        val uri = try { Uri.parse(normalized) } catch (e: Exception) { null }
+
+        // 1. Try DocumentFile deletion
+        val doc = getDocumentFile(context, path)
+        if (doc != null) {
+            try {
+                if (doc.delete()) return true
+            } catch (e: Exception) {
+                // fall through to alternative deletion methods
+            }
+        }
+
+        // 2. Direct DocumentsContract.deleteDocument
+        if (uri != null) {
+            try {
+                if (DocumentsContract.deleteDocument(context.contentResolver, uri)) {
+                    return true
+                }
+            } catch (e: Exception) {
+                // fall through
+            }
+
+            // 3. Fallback: DocumentsContract.removeDocument with parent DocumentFile
+            try {
+                val parentDoc = getOrCreateParentDocumentFile(context, path)
+                if (parentDoc != null) {
+                    if (DocumentsContract.removeDocument(context.contentResolver, uri, parentDoc.uri)) {
+                        return true
+                    }
+                }
+            } catch (e: Exception) {
+                // fall through
+            }
+
+            // 4. Fallback: DocumentsContract.removeDocument with tree root URI
+            try {
+                val treeId = DocumentsContract.getTreeDocumentId(uri)
+                val authority = uri.authority
+                if (treeId != null && authority != null) {
+                    val treeBaseUri = DocumentsContract.buildTreeDocumentUri(authority, treeId)
+                    val parentTreeUri = DocumentsContract.buildDocumentUriUsingTree(treeBaseUri, treeId)
+                    if (DocumentsContract.removeDocument(context.contentResolver, uri, parentTreeUri)) {
+                        return true
+                    }
+                }
+            } catch (e: Exception) {
+                // fall through
+            }
+        }
+        return false
     }
 
     fun rename(context: Context, path: String, newName: String): Boolean {
@@ -787,7 +836,16 @@ object SafManager {
 
     fun openOutputStreamForNewFile(context: Context, path: String, mimeType: String? = null): OutputStream? {
         val doc = createFileDocument(context, path, mimeType) ?: return null
-        return context.contentResolver.openOutputStream(doc.uri)
+        return try {
+            context.contentResolver.openOutputStream(doc.uri, "wt")
+                ?: context.contentResolver.openOutputStream(doc.uri)
+        } catch (e: Exception) {
+            try {
+                context.contentResolver.openOutputStream(doc.uri)
+            } catch (e2: Exception) {
+                null
+            }
+        }
     }
 
     /**

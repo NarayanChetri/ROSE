@@ -1444,7 +1444,7 @@ object FileOperationRunner {
                         val currentRx = android.net.TrafficStats.getTotalRxBytes()
                         if (currentRx >= initialRx) {
                             val netDelta = currentRx - initialRx
-                            // Reserve 2% for the local copy commit
+                            // Reserve 2% for the local copy commit; clamp strictly to file size to prevent runaway data
                             val progressBytes = netDelta.coerceIn(0L, (fileSize * 0.98).toLong())
                             if (progressBytes > simulatedNetworkBytes) {
                                 simulatedNetworkBytes = progressBytes
@@ -1456,17 +1456,12 @@ object FileOperationRunner {
                                 onProgress?.invoke(job)
                             }
                         }
-                    } else if (fileSize <= 0L && hasTrafficStats) {
-                        val currentRx = android.net.TrafficStats.getTotalRxBytes()
-                        if (currentRx >= initialRx) {
-                            val netDelta = currentRx - initialRx
-                            if (netDelta > simulatedNetworkBytes) {
-                                simulatedNetworkBytes = netDelta
-                                job.processedBytes = baseProcessedBytes + netDelta
-                                job.isIndeterminate = true
-                                JobManager.updateJob(job)
-                                onProgress?.invoke(job)
-                            }
+                    } else if (fileSize <= 0L) {
+                        // For unknown file sizes, keep job indeterminate without adding device-wide network data to processedBytes
+                        if (!job.isIndeterminate) {
+                            job.isIndeterminate = true
+                            JobManager.updateJob(job)
+                            onProgress?.invoke(job)
                         }
                     }
                 }
@@ -1720,13 +1715,13 @@ object FileOperationRunner {
             }
         }
 
-        if (SafManager.isRestrictedPath(pathStr)) {
-            val success = if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(pathStr)) {
+        if (SafManager.isRestrictedPath(pathStr) || SafManager.isCloudUri(pathStr) || SafManager.isSafUri(pathStr)) {
+            val success = if (dev.narayan.rose.ShizukuManager.isAvailable() && dev.narayan.rose.ShizukuManager.hasPermission() && !SafManager.isSafUri(pathStr) && !SafManager.isCloudUri(pathStr)) {
                 val clean = dev.narayan.rose.ShizukuManager.normalize(pathStr)
                 dev.narayan.rose.ShizukuManager.runCommandSync(
                     "rm -rf ${dev.narayan.rose.ShizukuManager.shellEscape(clean)}"
                 ) == 0
-            } else if (SafManager.hasPermission(context, pathStr)) {
+            } else if (SafManager.isCloudUri(pathStr) || SafManager.hasPermission(context, pathStr)) {
                 SafManager.delete(context, pathStr)
             } else {
                 false

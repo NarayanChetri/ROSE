@@ -1,5 +1,6 @@
 package dev.narayan.rose.ui
 
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -11,16 +12,23 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.tappableElement
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeEffect
 
 /**
  * Renders a frosted/tinted glass background behind the system navigation bar,
@@ -31,6 +39,7 @@ import androidx.compose.ui.unit.dp
  */
 @Composable
 fun BoxScope.TintedGlassNavigationBar(
+    hazeState: HazeState,
     modifier: Modifier = Modifier
 ) {
     val layoutDirection = LocalLayoutDirection.current
@@ -39,39 +48,62 @@ fun BoxScope.TintedGlassNavigationBar(
     val navBarEnd = navBarInsets.calculateEndPadding(layoutDirection)
     val navBarStart = navBarInsets.calculateStartPadding(layoutDirection)
 
-    val hasBottom = navBarBottom > 0.dp
-    val hasEnd = navBarEnd > 0.dp
-    val hasStart = navBarStart > 0.dp
+    val tappableInsets = WindowInsets.tappableElement.asPaddingValues()
+    val tappableBottom = tappableInsets.calculateBottomPadding()
+    val tappableEnd = tappableInsets.calculateEndPadding(layoutDirection)
+    val tappableStart = tappableInsets.calculateStartPadding(layoutDirection)
 
-    if (!hasBottom && !hasEnd && !hasStart) return
+    val context = LocalContext.current
+    val isButtonNavSetting = remember {
+        try {
+            val mode = Settings.Secure.getInt(
+                context.contentResolver,
+                "navigation_mode",
+                -1
+            )
+            mode == 0 || mode == 1
+        } catch (_: Exception) {
+            false
+        }
+    }
 
-    // Tint color: dark translucent smoke tint in dark/amoled mode, clean light translucent tint in light mode
+    // Determine if navigation is button-based.
+    // In Android:
+    // - With gesture navigation, tappableElement insets are 0.dp and navigationBars is thin (<= 24.dp).
+    // - With 3-button navigation, tappableElement insets match navigationBars (typically 48.dp, >= 40.dp) or navigation_mode == 0.
+    val isButtonBottom = navBarBottom > 0.dp && (tappableBottom > 0.dp || navBarBottom > 32.dp || isButtonNavSetting)
+    val isButtonEnd = navBarEnd > 0.dp && (tappableEnd > 0.dp || navBarEnd > 32.dp || isButtonNavSetting)
+    val isButtonStart = navBarStart > 0.dp && (tappableStart > 0.dp || navBarStart > 32.dp || isButtonNavSetting)
+
+    if (!isButtonBottom && !isButtonEnd && !isButtonStart) return
+
     val backgroundColor = MaterialTheme.colorScheme.background
     val isDark = backgroundColor.luminance() < 0.5f
+    val glassTint = if (isDark) {
+        backgroundColor.copy(alpha = 0.52f)
+    } else {
+        backgroundColor.copy(alpha = 0.70f)
+    }
 
-    val glassBackground = Brush.verticalGradient(
-        colors = if (isDark) {
-            listOf(
-                backgroundColor.copy(alpha = 0.72f),
-                backgroundColor.copy(alpha = 0.90f)
-            )
-        } else {
-            listOf(
-                backgroundColor.copy(alpha = 0.82f),
-                backgroundColor.copy(alpha = 0.95f)
-            )
-        }
+    val hazeStyle = HazeStyle(
+        backgroundColor = backgroundColor,
+        tint = HazeTint(glassTint),
+        blurRadius = 24.dp,
+        noiseFactor = 0.04f
     )
 
     val outlineColor = MaterialTheme.colorScheme.outlineVariant
 
-    if (hasBottom) {
+    if (isButtonBottom) {
         Box(
             modifier = modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .height(navBarBottom)
-                .background(glassBackground)
+                .hazeEffect(
+                    state = hazeState,
+                    style = hazeStyle
+                )
         ) {
             // Subtle frosted glass top border / specular highlight line
             Box(
@@ -81,28 +113,23 @@ fun BoxScope.TintedGlassNavigationBar(
                     .background(
                         Brush.horizontalGradient(
                             colors = listOf(
-                                outlineColor.copy(alpha = 0.10f),
-                                outlineColor.copy(alpha = 0.32f),
-                                outlineColor.copy(alpha = 0.10f)
+                                outlineColor.copy(alpha = 0.12f),
+                                outlineColor.copy(alpha = 0.35f),
+                                outlineColor.copy(alpha = 0.12f)
                             )
                         )
                     )
             )
         }
-    } else if (hasEnd) {
+    } else if (isButtonEnd) {
         Box(
             modifier = modifier
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
                 .width(navBarEnd)
-                .background(
-                    Brush.horizontalGradient(
-                        colors = if (isDark) {
-                            listOf(backgroundColor.copy(alpha = 0.72f), backgroundColor.copy(alpha = 0.90f))
-                        } else {
-                            listOf(backgroundColor.copy(alpha = 0.82f), backgroundColor.copy(alpha = 0.95f))
-                        }
-                    )
+                .hazeEffect(
+                    state = hazeState,
+                    style = hazeStyle
                 )
         ) {
             Box(
@@ -112,28 +139,23 @@ fun BoxScope.TintedGlassNavigationBar(
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
-                                outlineColor.copy(alpha = 0.10f),
-                                outlineColor.copy(alpha = 0.32f),
-                                outlineColor.copy(alpha = 0.10f)
+                                outlineColor.copy(alpha = 0.12f),
+                                outlineColor.copy(alpha = 0.35f),
+                                outlineColor.copy(alpha = 0.12f)
                             )
                         )
                     )
             )
         }
-    } else if (hasStart) {
+    } else if (isButtonStart) {
         Box(
             modifier = modifier
                 .align(Alignment.CenterStart)
                 .fillMaxHeight()
                 .width(navBarStart)
-                .background(
-                    Brush.horizontalGradient(
-                        colors = if (isDark) {
-                            listOf(backgroundColor.copy(alpha = 0.90f), backgroundColor.copy(alpha = 0.72f))
-                        } else {
-                            listOf(backgroundColor.copy(alpha = 0.95f), backgroundColor.copy(alpha = 0.82f))
-                        }
-                    )
+                .hazeEffect(
+                    state = hazeState,
+                    style = hazeStyle
                 )
         ) {
             Box(
@@ -144,9 +166,9 @@ fun BoxScope.TintedGlassNavigationBar(
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
-                                outlineColor.copy(alpha = 0.10f),
-                                outlineColor.copy(alpha = 0.32f),
-                                outlineColor.copy(alpha = 0.10f)
+                                outlineColor.copy(alpha = 0.12f),
+                                outlineColor.copy(alpha = 0.35f),
+                                outlineColor.copy(alpha = 0.12f)
                             )
                         )
                     )
