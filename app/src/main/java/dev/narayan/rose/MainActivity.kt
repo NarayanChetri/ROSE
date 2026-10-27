@@ -546,20 +546,20 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                 (target is AppScreen.Files && (target.category != null || target.favourites)) ||
                                                 target is AppScreen.FtpServer
                                         )) {
-                                            // Category container transform: Expands smoothly from the clicked card
-                                            (fadeIn(animationSpec = tween(300, easing = FastOutSlowInEasing)))
+                                            // Category container transform: Fast, responsive and smooth expansion
+                                            (fadeIn(animationSpec = tween(200, easing = FastOutSlowInEasing)))
                                                 .togetherWith(
-                                                    fadeOut(animationSpec = tween(220, easing = FastOutSlowInEasing))
+                                                    fadeOut(animationSpec = tween(160, easing = FastOutSlowInEasing))
                                                 )
                                                 .using(SizeTransform(clip = false))
                                         } else if (target is AppScreen.Home && (
                                                 (initial is AppScreen.Files && (initial.category != null || initial.favourites)) ||
                                                 initial is AppScreen.FtpServer
                                         )) {
-                                            // Return from Category to Home: Minimizes back into the category card
-                                            (fadeIn(animationSpec = tween(220, easing = FastOutSlowInEasing)))
+                                            // Return from Category to Home: Snappy minimize back into card
+                                            (fadeIn(animationSpec = tween(160, easing = FastOutSlowInEasing)))
                                                 .togetherWith(
-                                                    fadeOut(animationSpec = tween(280, easing = FastOutSlowInEasing))
+                                                    fadeOut(animationSpec = tween(200, easing = FastOutSlowInEasing))
                                                 )
                                                 .using(SizeTransform(clip = false))
                                         } else if (initial is AppScreen.Home && (
@@ -730,7 +730,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                             },
                                                             onFileClick = { fileItem ->
                                                                 val now = System.currentTimeMillis()
-                                                                if (now - viewModel.lastSwipeToHomeTimestamp > 500L && now - viewModel.lastNavigationTimestamp > 500L) {
+                                                                if (now - viewModel.lastSwipeToHomeTimestamp > 200L && now - viewModel.lastNavigationTimestamp > 200L) {
                                                                     if (fileItem.fileType == FileType.ZIP) {
                                                                         viewModel.resetFiles()
                                                                         screen = AppScreen.Files(
@@ -802,7 +802,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                             canSwipeToRecent = canSwipe,
                                                             onFileClick = { fileItem ->
                                                                 val now = System.currentTimeMillis()
-                                                                if (now - viewModel.lastSwipeToHomeTimestamp > 500L && now - viewModel.lastNavigationTimestamp > 500L) {
+                                                                if (now - viewModel.lastSwipeToHomeTimestamp > 200L && now - viewModel.lastNavigationTimestamp > 200L) {
                                                                     if (fileItem.fileType == FileType.ZIP) {
                                                                         viewModel.resetFiles()
                                                                         screen = AppScreen.Files(
@@ -863,7 +863,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                             },
                                             onFileClick = { fileItem ->
                                                 val now = System.currentTimeMillis()
-                                                if (now - viewModel.lastSwipeToHomeTimestamp > 500L && now - viewModel.lastNavigationTimestamp > 500L) {
+                                                if (now - viewModel.lastSwipeToHomeTimestamp > 200L && now - viewModel.lastNavigationTimestamp > 200L) {
                                                     openFile(fileItem)
                                                 }
                                             },
@@ -1162,7 +1162,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     private val markdownExtensions = setOf("md", "markdown", "mdown", "mkdn", "mkd")
     private val textExtensions = setOf(
         "txt", "text", "log", "ini", "conf", "properties",
-        "xml", "yml", "yaml", "json", "html", "htm", "css", "js", "ts", "sh", "py", "csv", "ml"
+        "xml", "yml", "yaml", "json", "html", "htm", "css", "js", "ts", "sh", "py", "csv", "ml",
+        "cpp", "c", "h", "hpp", "cc", "cxx", "java", "kt", "kts", "rs", "go", "rb", "php", "swift", "lua", "sql"
     )
 
     private fun isMarkdownUri(uri: Uri): Boolean {

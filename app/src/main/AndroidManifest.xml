@@ -147,6 +147,28 @@
                 <data android:scheme="file" />
                 <data android:scheme="content" />
                 <data android:mimeType="text/plain" />
+                <data android:mimeType="text/*" />
+                <data android:mimeType="application/json" />
+                <data android:mimeType="application/javascript" />
+                <data android:mimeType="text/javascript" />
+                <data android:mimeType="text/html" />
+                <data android:mimeType="text/css" />
+                <data android:mimeType="text/csv" />
+                <data android:mimeType="text/x-python" />
+                <data android:mimeType="text/x-c" />
+                <data android:mimeType="text/x-c++" />
+                <data android:mimeType="text/x-c++src" />
+                <data android:mimeType="text/x-c++hdr" />
+                <data android:mimeType="text/x-java-source" />
+                <data android:mimeType="text/x-kotlin" />
+                <data android:mimeType="application/x-sh" />
+                <data android:mimeType="text/x-sh" />
+                <data android:mimeType="application/xml" />
+                <data android:mimeType="text/xml" />
+                <data android:mimeType="application/x-yaml" />
+                <data android:mimeType="text/yaml" />
+                <data android:mimeType="text/x-yaml" />
+                <data android:mimeType="application/yaml" />
             </intent-filter>
 
             <!-- Pattern-based Document Viewer for file managers without exact MIME -->
@@ -162,6 +184,48 @@
                 <data android:pathPattern=".*\\.MARKDOWN" />
                 <data android:pathPattern=".*\\.txt" />
                 <data android:pathPattern=".*\\.TXT" />
+                <data android:pathPattern=".*\\.py" />
+                <data android:pathPattern=".*\\.PY" />
+                <data android:pathPattern=".*\\.cpp" />
+                <data android:pathPattern=".*\\.CPP" />
+                <data android:pathPattern=".*\\.c" />
+                <data android:pathPattern=".*\\.C" />
+                <data android:pathPattern=".*\\.h" />
+                <data android:pathPattern=".*\\.H" />
+                <data android:pathPattern=".*\\.hpp" />
+                <data android:pathPattern=".*\\.HPP" />
+                <data android:pathPattern=".*\\.java" />
+                <data android:pathPattern=".*\\.JAVA" />
+                <data android:pathPattern=".*\\.kt" />
+                <data android:pathPattern=".*\\.KT" />
+                <data android:pathPattern=".*\\.json" />
+                <data android:pathPattern=".*\\.JSON" />
+                <data android:pathPattern=".*\\.html" />
+                <data android:pathPattern=".*\\.HTML" />
+                <data android:pathPattern=".*\\.htm" />
+                <data android:pathPattern=".*\\.HTM" />
+                <data android:pathPattern=".*\\.css" />
+                <data android:pathPattern=".*\\.CSS" />
+                <data android:pathPattern=".*\\.js" />
+                <data android:pathPattern=".*\\.JS" />
+                <data android:pathPattern=".*\\.ts" />
+                <data android:pathPattern=".*\\.TS" />
+                <data android:pathPattern=".*\\.sh" />
+                <data android:pathPattern=".*\\.SH" />
+                <data android:pathPattern=".*\\.yml" />
+                <data android:pathPattern=".*\\.YML" />
+                <data android:pathPattern=".*\\.yaml" />
+                <data android:pathPattern=".*\\.YAML" />
+                <data android:pathPattern=".*\\.xml" />
+                <data android:pathPattern=".*\\.XML" />
+                <data android:pathPattern=".*\\.csv" />
+                <data android:pathPattern=".*\\.CSV" />
+                <data android:pathPattern=".*\\.ml" />
+                <data android:pathPattern=".*\\.ML" />
+                <data android:pathPattern=".*\\.log" />
+                <data android:pathPattern=".*\\.LOG" />
+                <data android:pathPattern=".*\\.sql" />
+                <data android:pathPattern=".*\\.SQL" />
             </intent-filter>
 
             <!-- Markdown Share (SEND) -->

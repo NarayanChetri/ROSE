@@ -680,7 +680,32 @@ object FileOperationRunner {
             displayName to ""
         }
 
-        var target = targetDir.resolve(displayName)
+        val targetDirStr = SafManager.normalizeSafPath(targetDir.toString())
+        val isSaf = SafManager.isSafUri(targetDirStr)
+
+        fun resolveCandidate(candidateName: String): Path {
+            return if (isSaf) {
+                val cleanBase = targetDirStr.trimEnd('/')
+                Paths.get("$cleanBase/$candidateName")
+            } else {
+                targetDir.resolve(candidateName)
+            }
+        }
+
+        fun existsCandidate(candidatePath: Path, candidateName: String): Boolean {
+            val candidatePathStr = SafManager.normalizeSafPath(candidatePath.toString())
+            return if (isSaf) {
+                try {
+                    SafManager.listFiles(context, targetDirStr).any { it.name.equals(candidateName, ignoreCase = true) }
+                } catch (e: Exception) {
+                    checkExists(context, candidatePathStr)
+                }
+            } else {
+                checkExists(context, candidatePathStr)
+            }
+        }
+
+        var target = resolveCandidate(displayName)
 
         // If move and target is same as source, it's a no-op
         if (!isCopy && sourcePath != null && (sourcePath == target.toString() || SafManager.isSamePath(sourcePath, target.toString()))) {
@@ -692,11 +717,13 @@ object FileOperationRunner {
             sourcePath == target.toString() || SafManager.isSamePath(sourcePath, target.toString())
         )
 
-        if (isSameAsSource || checkExists(context, target.toString())) {
-            target = targetDir.resolve("$name ($count)$ext")
+        if (isSameAsSource || existsCandidate(target, displayName)) {
+            var candidateName = "$name ($count)$ext"
+            target = resolveCandidate(candidateName)
             count++
-            while (checkExists(context, target.toString())) {
-                target = targetDir.resolve("$name ($count)$ext")
+            while (existsCandidate(target, candidateName)) {
+                candidateName = "$name ($count)$ext"
+                target = resolveCandidate(candidateName)
                 count++
             }
         }
@@ -1057,7 +1084,7 @@ object FileOperationRunner {
             }
         }
 
-        val targetPath = target.toString()
+        val targetPath = SafManager.normalizeSafPath(target.toString())
         val sourceIsDir = knownIsDir ?: isDirectory(context, sourcePath)
 
         if (sourceIsDir && SafManager.isSubdirectoryOrSame(targetPath, sourcePath)) {
@@ -1560,7 +1587,7 @@ object FileOperationRunner {
             }
         }
 
-        val targetPath = target.toString()
+        val targetPath = SafManager.normalizeSafPath(target.toString())
         if (isDirectory(context, sourcePath) && SafManager.isSubdirectoryOrSame(targetPath, sourcePath)) {
             return false
         }
@@ -1693,9 +1720,9 @@ object FileOperationRunner {
             }
         }
 
-        val pathStr = path.toString()
+        val pathStr = SafManager.normalizeSafPath(path.toString())
         val file = path.toFile()
-        val size = if (file.isFile) file.length() else 0L
+        val size = if (file.isFile) file.length() else if (SafManager.isSafUri(pathStr)) SafManager.getReliableSize(context, pathStr) else 0L
 
         if ((pathStr == "/" || dev.narayan.rose.RootManager.isRootPath(pathStr)) && dev.narayan.rose.RootManager.isRootAvailable()) {
             val success = dev.narayan.rose.RootManager.delete(pathStr)

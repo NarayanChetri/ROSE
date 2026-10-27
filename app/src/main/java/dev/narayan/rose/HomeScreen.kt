@@ -588,9 +588,10 @@ fun HomeScreen(
                             onAnimationFinished = { viewModel.hasRunCategoryCountAnimation = true },
                             onCategoryClick = { category ->
                                 val now = System.currentTimeMillis()
-                                if (now - viewModel.lastNavigationTimestamp < 500L || animatedVisibilityScope.transition.isRunning) {
+                                if (now - viewModel.lastNavigationTimestamp < 200L || animatedVisibilityScope.transition.isRunning) {
                                     return@CategoryGrid
                                 }
+                                viewModel.lastNavigationTimestamp = now
                                 viewModel.hasRunCategoryCountAnimation = true
                                 if (category.isFavourites) {
                                     onOpenFavourites()

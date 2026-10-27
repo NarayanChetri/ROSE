@@ -347,9 +347,9 @@ fun FileExplorerScreen(
         val now = System.currentTimeMillis()
         val notTransitioning = animatedVisibilityScope == null || !animatedVisibilityScope.transition.isRunning
         notTransitioning &&
-            (now - screenEnterTime > 450L) &&
-            (now - viewModel.lastNavigationTimestamp > 450L) &&
-            (now - viewModel.lastSwipeToHomeTimestamp > 500L)
+            (now - screenEnterTime > 200L) &&
+            (now - viewModel.lastNavigationTimestamp > 200L) &&
+            (now - viewModel.lastSwipeToHomeTimestamp > 200L)
     }
 
     val coroutineScope = rememberCoroutineScope()
@@ -2506,12 +2506,16 @@ fun AboutScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
+                .padding(horizontal = 20.dp, vertical = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // App Hero Icon & Badge
             Surface(
-                modifier = Modifier.size(56.dp),
-                shape = RoundedCornerShape(16.dp)
+                modifier = Modifier.size(60.dp),
+                shape = RoundedCornerShape(18.dp),
+                shadowElevation = 3.dp,
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                color = MaterialTheme.colorScheme.surfaceContainerHighest
             ) {
                 Image(
                     painter = painterResource(id = R.drawable.ic_launcher_foreground_base),
@@ -2534,27 +2538,26 @@ fun AboutScreen(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
                 ) {
                     Text(
                         "v${BuildConfig.VERSION_NAME}",
                         style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.5.dp)
                     )
                 }
             }
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.height(3.dp))
             Text(
                 stringResource(R.string.app_description),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.SemiBold
             )
-
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 stringResource(R.string.about_app_description),
                 style = MaterialTheme.typography.bodySmall,
@@ -2562,10 +2565,10 @@ fun AboutScreen(
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 8.dp)
+                modifier = Modifier.padding(horizontal = 12.dp)
             )
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Prominent GitHub Star Invitation Card
             Card(
@@ -2577,7 +2580,7 @@ fun AboutScreen(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                 ),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.35f))
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.45f))
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -2585,15 +2588,15 @@ fun AboutScreen(
                 ) {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFFF59E0B).copy(alpha = 0.15f),
-                        modifier = Modifier.size(40.dp)
+                        color = Color(0xFFF59E0B).copy(alpha = 0.16f),
+                        modifier = Modifier.size(42.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 Icons.Default.Star,
                                 contentDescription = null,
                                 tint = Color(0xFFF59E0B),
-                                modifier = Modifier.size(22.dp)
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     }
@@ -2618,20 +2621,24 @@ fun AboutScreen(
                     Icon(
                         Icons.AutoMirrored.Filled.OpenInNew,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.size(18.dp)
+                        tint = Color(0xFFF59E0B),
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Compact Information Section
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                ),
+                border = androidx.compose.foundation.BorderStroke(
+                    0.5.dp,
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
                 )
             ) {
                 Column(modifier = Modifier.padding(vertical = 4.dp)) {
@@ -2639,7 +2646,15 @@ fun AboutScreen(
                     HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 16.dp),
                         thickness = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                    )
+                    AboutItem(Icons.Default.Code, "Source Code", "github.com/NarayanChetri/ROSE") {
+                        uriHandler.openUri("https://github.com/NarayanChetri/ROSE")
+                    }
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                     )
                     AboutItem(Icons.Default.Email, stringResource(R.string.about_contact), stringResource(R.string.about_contact_email)) {
                         uriHandler.openUri("mailto:Narayanchetri.dev@gmail.com")
@@ -2649,40 +2664,34 @@ fun AboutScreen(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // Update Check Button
-            Card(
+            // Update Check Button (Single screen fit, safe with navigation bars)
+            Button(
+                onClick = { viewModel.checkForUpdates() },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .clickable { viewModel.checkForUpdates() },
+                    .navigationBarsPadding(),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
+                colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 )
             ) {
-                Row(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    if (updateResult is UpdateCheckResult.Checking) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(stringResource(R.string.about_checking_for_updates), style = MaterialTheme.typography.labelLarge)
-                    } else {
-                        Icon(Icons.Default.Update, null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(stringResource(R.string.about_check_for_updates), style = MaterialTheme.typography.labelLarge)
-                    }
+                if (updateResult is UpdateCheckResult.Checking) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(stringResource(R.string.about_checking_for_updates), style = MaterialTheme.typography.labelLarge)
+                } else {
+                    Icon(Icons.Default.Update, null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(stringResource(R.string.about_check_for_updates), style = MaterialTheme.typography.labelLarge)
                 }
             }
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(4.dp))
         }
     }
 }
@@ -4063,16 +4072,7 @@ fun WindowsFileDropdownMenu(
             )
         }
 
-        DropdownMenuItem(
-            text = { Text(stringResource(R.string.action_copy_path)) },
-            onClick = {
-                onDismissRequest()
-                clipboardManager.setText(AnnotatedString(fileItem.file.absolutePath))
-                Toast.makeText(context, context.getString(R.string.toast_path_copied), Toast.LENGTH_SHORT).show()
-            },
-            leadingIcon = { Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(20.dp)) },
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
-        )
+
 
         val hasMiddleGroup = (!isCloud && !isVirtual && !fileItem.isDirectory && viewModel.currentZipFile == null) ||
                 canSaveOffline ||
