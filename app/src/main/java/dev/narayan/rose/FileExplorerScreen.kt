@@ -3994,17 +3994,17 @@ private fun RowScope.WindowsMenuHeaderAction(
             .weight(1f)
             .clip(RoundedCornerShape(8.dp))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 8.dp, horizontal = 2.dp),
+            .padding(vertical = 5.dp, horizontal = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Icon(
             imageVector = icon,
             contentDescription = label,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(19.dp),
             tint = contentColor
         )
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
@@ -4049,13 +4049,13 @@ fun WindowsFileDropdownMenu(
         tonalElevation = 6.dp,
         shadowElevation = 10.dp,
         offset = offset,
-        modifier = Modifier.widthIn(min = 230.dp, max = 260.dp)
+        modifier = Modifier.widthIn(min = 220.dp, max = 250.dp)
     ) {
         // Windows 11-style Quick Actions Top Row: Cut, Copy, Share, Delete with vertical dividers
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 4.dp),
+                .padding(horizontal = 4.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -4069,7 +4069,7 @@ fun WindowsFileDropdownMenu(
                 }
             )
             VerticalDivider(
-                modifier = Modifier.height(26.dp),
+                modifier = Modifier.height(22.dp),
                 thickness = 0.5.dp,
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
             )
@@ -4083,7 +4083,7 @@ fun WindowsFileDropdownMenu(
                 }
             )
             VerticalDivider(
-                modifier = Modifier.height(26.dp),
+                modifier = Modifier.height(22.dp),
                 thickness = 0.5.dp,
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
             )
@@ -4097,7 +4097,7 @@ fun WindowsFileDropdownMenu(
                 }
             )
             VerticalDivider(
-                modifier = Modifier.height(26.dp),
+                modifier = Modifier.height(22.dp),
                 thickness = 0.5.dp,
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
             )
@@ -4114,7 +4114,7 @@ fun WindowsFileDropdownMenu(
         }
 
         HorizontalDivider(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 1.5.dp),
             thickness = 0.5.dp,
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
         )
@@ -4122,12 +4122,12 @@ fun WindowsFileDropdownMenu(
         // Stacked Menu Options - Group 1: Navigation & Launch Actions
         if (onOpenWith != null && !fileItem.isDirectory) {
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.action_open_with)) },
+                text = { Text(stringResource(R.string.action_open_with), style = MaterialTheme.typography.bodyMedium) },
                 onClick = {
                     onDismissRequest()
                     onOpenWith()
                 },
-                leadingIcon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                leadingIcon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(19.dp)) },
                 trailingIcon = {
                     Icon(
                         Icons.Default.ChevronRight,
@@ -4136,10 +4136,11 @@ fun WindowsFileDropdownMenu(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                     )
                 },
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                modifier = Modifier.heightIn(min = 38.dp)
             )
             HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 1.5.dp),
                 thickness = 0.5.dp,
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
             )
@@ -4147,16 +4148,17 @@ fun WindowsFileDropdownMenu(
 
         if (onOpenLocation != null) {
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.action_open_location)) },
+                text = { Text(stringResource(R.string.action_open_location), style = MaterialTheme.typography.bodyMedium) },
                 onClick = {
                     onDismissRequest()
                     onOpenLocation()
                 },
-                leadingIcon = { Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+                leadingIcon = { Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(19.dp)) },
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                modifier = Modifier.heightIn(min = 38.dp)
             )
             HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 1.5.dp),
                 thickness = 0.5.dp,
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
             )
@@ -4164,17 +4166,16 @@ fun WindowsFileDropdownMenu(
 
         if (!isVirtual && onRenameRequest != null) {
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.action_rename)) },
+                text = { Text(stringResource(R.string.action_rename), style = MaterialTheme.typography.bodyMedium) },
                 onClick = {
                     onDismissRequest()
                     onRenameRequest.invoke()
                 },
-                leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+                leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, contentDescription = null, modifier = Modifier.size(19.dp)) },
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                modifier = Modifier.heightIn(min = 38.dp)
             )
         }
-
-
 
         val hasMiddleGroup = (!isCloud && !isVirtual && !fileItem.isDirectory && viewModel.currentZipFile == null) ||
                 canSaveOffline ||
@@ -4183,7 +4184,7 @@ fun WindowsFileDropdownMenu(
 
         if (hasMiddleGroup) {
             HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 1.5.dp),
                 thickness = 0.5.dp,
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
             )
@@ -4195,7 +4196,8 @@ fun WindowsFileDropdownMenu(
                     text = {
                         Text(
                             if (isFav) stringResource(R.string.action_remove_from_favourites)
-                            else stringResource(R.string.action_add_to_favourites)
+                            else stringResource(R.string.action_add_to_favourites),
+                            style = MaterialTheme.typography.bodyMedium
                         )
                     },
                     onClick = {
@@ -4212,11 +4214,12 @@ fun WindowsFileDropdownMenu(
                         Icon(
                             if (isFav) Icons.Default.Star else Icons.Default.StarOutline,
                             contentDescription = null,
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(19.dp),
                             tint = if (isFav) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                    modifier = Modifier.heightIn(min = 38.dp)
                 )
             }
 
@@ -4226,7 +4229,8 @@ fun WindowsFileDropdownMenu(
                     text = {
                         Text(
                             if (isOffline) stringResource(R.string.action_remove_offline)
-                            else stringResource(R.string.action_save_offline)
+                            else stringResource(R.string.action_save_offline),
+                            style = MaterialTheme.typography.bodyMedium
                         )
                     },
                     onClick = {
@@ -4243,11 +4247,12 @@ fun WindowsFileDropdownMenu(
                         Icon(
                             if (isOffline) Icons.Default.CloudDone else Icons.Default.Download,
                             contentDescription = null,
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(19.dp),
                             tint = if (isOffline) Color(0xFF10B981) else MaterialTheme.colorScheme.primary
                         )
                     },
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                    modifier = Modifier.heightIn(min = 38.dp)
                 )
             }
 
@@ -4255,46 +4260,49 @@ fun WindowsFileDropdownMenu(
                 val isAlreadyInQuickAccess = viewModel.isFolderInQuickAccess(fileItem.file.absolutePath)
                 if (!isAlreadyInQuickAccess) {
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.action_add_to_quick_access)) },
+                        text = { Text(stringResource(R.string.action_add_to_quick_access), style = MaterialTheme.typography.bodyMedium) },
                         onClick = {
                             onDismissRequest()
                             viewModel.addQuickAccessFolder(fileItem.file.absolutePath)
                             Toast.makeText(context, context.getString(R.string.toast_added_to_quick_access), Toast.LENGTH_SHORT).show()
                         },
-                        leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+                        leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(19.dp)) },
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                        modifier = Modifier.heightIn(min = 38.dp)
                     )
                 }
             }
 
             if ((fileItem.fileType == FileType.ZIP || isVirtual) && !isVirtual && onExtract != null) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.action_extract)) },
+                    text = { Text(stringResource(R.string.action_extract), style = MaterialTheme.typography.bodyMedium) },
                     onClick = {
                         onDismissRequest()
                         onExtract()
                     },
-                    leadingIcon = { Icon(Icons.Outlined.Unarchive, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+                    leadingIcon = { Icon(Icons.Outlined.Unarchive, contentDescription = null, modifier = Modifier.size(19.dp)) },
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                    modifier = Modifier.heightIn(min = 38.dp)
                 )
             }
         }
 
         HorizontalDivider(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 1.5.dp),
             thickness = 0.5.dp,
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
         )
 
         // Group 3: Properties
         DropdownMenuItem(
-            text = { Text(stringResource(R.string.action_properties)) },
+            text = { Text(stringResource(R.string.action_properties), style = MaterialTheme.typography.bodyMedium) },
             onClick = {
                 onDismissRequest()
                 onProperties()
             },
-            leadingIcon = { Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(20.dp)) },
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+            leadingIcon = { Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(19.dp)) },
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+            modifier = Modifier.heightIn(min = 38.dp)
         )
     }
 }
