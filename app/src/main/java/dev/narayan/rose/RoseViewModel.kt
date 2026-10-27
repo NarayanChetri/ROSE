@@ -277,6 +277,9 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     private val _showListDividers = mutableStateOf(settings.showListDividers)
     val showListDividers: Boolean by _showListDividers
 
+    private val _showFolderSize = mutableStateOf(settings.showFolderSize)
+    val showFolderSize: Boolean by _showFolderSize
+
     private val _useRecycleBin = mutableStateOf(settings.useRecycleBin)
     val useRecycleBin: Boolean by _useRecycleBin
 
@@ -725,6 +728,25 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             }
             return 0L
         }
+        if (useRoot && RootManager.isRootAvailable() && RootManager.isRootPath(path)) {
+            val size = RootManager.getFolderSize(path)
+            if (size > 0L) return size
+        }
+        if (SafManager.isSafUri(path)) {
+            fun scanSaf(p: String): Long {
+                var sum = 0L
+                val items = SafManager.listFiles(getApplication(), p)
+                for (item in items) {
+                    if (item.isDirectory) {
+                        sum += scanSaf(item.file.absolutePath)
+                    } else {
+                        sum += item.size
+                    }
+                }
+                return sum
+            }
+            return try { scanSaf(path) } catch (_: Exception) { 0L }
+        }
         var totalSize = 0L
         try {
             val p = java.nio.file.Paths.get(path)
@@ -809,6 +831,10 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     // path -> (lastModified at time of scan, computed recursive size). Lets
     // repeated sorts/re-visits skip re-walking a folder that hasn't changed.
     private val folderSizeCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, Long>>()
+
+    fun clearFolderSizeCache() {
+        folderSizeCache.clear()
+    }
 
     /** Fills in real recursive folder sizes (computed in parallel, cached by
      * path+mtime) so "sort by size" places folders where their actual
@@ -1089,7 +1115,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
 
-                val sizedFileList = if (sortBy == SortBy.SIZE) withFolderSizes(fileList) else fileList
+                val sizedFileList = if (sortBy == SortBy.SIZE || showFolderSize) withFolderSizes(fileList) else fileList
                 val sorted = sortFileList(sizedFileList)
 
                 withContext(Dispatchers.Main) {
@@ -1498,6 +1524,15 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         settings.showListDividers = enabled
     }
 
+    fun setShowFolderSize(enabled: Boolean) {
+        _showFolderSize.value = enabled
+        settings.showFolderSize = enabled
+        invalidateDirectoryCache()
+        if (currentPath.isNotEmpty()) {
+            loadFiles(currentPath, showLoading = false, isManualRefresh = true)
+        }
+    }
+
     fun setUseRecycleBin(enabled: Boolean) {
         _useRecycleBin.value = enabled
         settings.useRecycleBin = enabled
@@ -1691,6 +1726,9 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
         loadJob?.cancel()
         val requestGeneration = ++filesGeneration
+        if (isManualRefresh) {
+            folderSizeCache.clear()
+        }
         loadJob = viewModelScope.launch {
             try {
                 currentZipFile = null
@@ -1708,7 +1746,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                         val safResults = SafManager.listFiles(getApplication(), normalizedPath).let { list ->
                             if (!showHiddenFiles) list.filter { !it.name.startsWith(".") } else list
                         }
-                        val sizedFileList = if (sortBy == SortBy.SIZE) {
+                        val sizedFileList = if (sortBy == SortBy.SIZE || showFolderSize) {
                             withFolderSizes(safResults)
                         } else {
                             safResults
@@ -1746,7 +1784,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                                 }.awaitAll()
                             }
 
-                            val sizedFileList = if (sortBy == SortBy.SIZE) {
+                            val sizedFileList = if (sortBy == SortBy.SIZE || showFolderSize) {
                                 withFolderSizes(fileList)
                             } else {
                                 fileList
@@ -1805,7 +1843,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                                 emptyList()
                             }
 
-                            val sizedFileList = if (sortBy == SortBy.SIZE) {
+                            val sizedFileList = if (sortBy == SortBy.SIZE || showFolderSize) {
                                 withFolderSizes(restrictedList)
                             } else {
                                 restrictedList
@@ -1815,7 +1853,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                             // Normal folder where File.listFiles() failed (e.g. root or OS protected folder)
                             if (useRoot && RootManager.isRootAvailable()) {
                                 val rootFiles = RootManager.listFiles(normalizedPath, showHiddenFiles)
-                                val sizedFileList = if (sortBy == SortBy.SIZE) {
+                                val sizedFileList = if (sortBy == SortBy.SIZE || showFolderSize) {
                                     withFolderSizes(rootFiles)
                                 } else {
                                     rootFiles
@@ -2199,6 +2237,7 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
         // (FileItem.itemCount defaults to null/0, since the entries below
         // were never populating it at all) no matter what was really inside.
         val directChildNames = HashMap<String, MutableSet<String>>()
+        val directChildSizes = HashMap<String, Long>()
 
         for (entry in entries) {
             val name = entry.name.trimStart('/')
@@ -2234,6 +2273,10 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
 
+                if (!entry.isDirectory && entry.size > 0L) {
+                    directChildSizes[childName] = (directChildSizes[childName] ?: 0L) + entry.size
+                }
+
                 // Everything after childName's own slash, up to its next
                 // slash (or the end), is one direct child of childName.
                 val grandRemainder = remainder.substring(slashIndex + 1)
@@ -2247,7 +2290,10 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
 
         return children.values.map { item ->
             if (item.isDirectory) {
-                item.copy(itemCount = directChildNames[item.name]?.size ?: 0)
+                item.copy(
+                    itemCount = directChildNames[item.name]?.size ?: 0,
+                    size = if (showFolderSize || sortBy == SortBy.SIZE) directChildSizes[item.name] ?: 0L else 0L
+                )
             } else {
                 item
             }

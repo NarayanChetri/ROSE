@@ -71,6 +71,10 @@ class SettingsManager(context: Context) {
         get() = prefs.getBoolean(KEY_SHOW_LIST_DIVIDERS, true)
         set(value) = prefs.edit { putBoolean(KEY_SHOW_LIST_DIVIDERS, value) }
 
+    var showFolderSize: Boolean
+        get() = prefs.getBoolean(KEY_SHOW_FOLDER_SIZE, false)
+        set(value) = prefs.edit { putBoolean(KEY_SHOW_FOLDER_SIZE, value) }
+
     var gridItemSize: String
         get() = prefs.getString(KEY_GRID_ITEM_SIZE, "MEDIUM") ?: "MEDIUM"
         set(value) = prefs.edit { putString(KEY_GRID_ITEM_SIZE, value) }
@@ -290,6 +294,7 @@ class SettingsManager(context: Context) {
         private const val KEY_CONFIRM_DELETE = "confirm_delete"
         private const val KEY_SHOW_EXTENSIONS = "show_extensions"
         private const val KEY_SHOW_LIST_DIVIDERS = "show_list_dividers"
+        private const val KEY_SHOW_FOLDER_SIZE = "show_folder_size"
         private const val KEY_GRID_ITEM_SIZE = "grid_item_size"
         private const val KEY_SORT_BY = "sort_by"
         private const val KEY_SORT_ORDER = "sort_order"

@@ -179,7 +179,9 @@
     <string name="total_items_in_total">%1$d items in total</string>
     <string name="total_items_count">%1$d items total</string>
     <string name="items_count">%1$d items</string>
+    <string name="items_count_and_size">%1$d items | %2$s</string>
     <string name="item_count_and_date">%1$d items | %2$s</string>
+    <string name="item_folder_size_count_and_date">%1$d items | %2$s | %3$s</string>
     <string name="item_size_and_date">%1$s | %2$s</string>
     <string name="action_extract_here">Extract Here</string>
     <string name="action_paste_here">Paste Here</string>
@@ -313,6 +315,8 @@
     <string name="settings_show_list_dividers_subtitle">Thin lines between items in Recent files, Quick access, and folder lists</string>
     <string name="settings_folders_first">Keep folders on top</string>
     <string name="settings_folders_first_subtitle">Show folders ahead of files when sorting</string>
+    <string name="settings_show_folder_size">Show folder size</string>
+    <string name="settings_show_folder_size_subtitle">Calculate and display folder size in All files</string>
     <string name="settings_excluded_folders">Excluded folders</string>
     <string name="settings_excluded_folders_subtitle">Select folders to hide from recents and categories</string>
     <string name="settings_section_navigation">Navigation</string>

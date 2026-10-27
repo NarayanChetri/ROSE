@@ -2473,43 +2473,6 @@ fun DeleteConfirmationDialog(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AboutFeaturePill(
-    icon: ImageVector,
-    label: String,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier.height(34.dp),
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.7f),
-        border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-    ) {
-        Row(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(modifier = Modifier.width(5.dp))
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
 fun AboutScreen(
     viewModel: RoseViewModel,
     onBack: () -> Unit
@@ -2532,43 +2495,54 @@ fun AboutScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.action_about), fontWeight = FontWeight.Bold) },
+                title = {},
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.content_desc_back)) }
-                }
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.content_desc_back))
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
             )
-        }
+        },
+        containerColor = MaterialTheme.colorScheme.surface
     ) { padding ->
         Column(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Section 1: Hero Branding & Big Logo
+            // ── Hero ──────────────────────────────────────────────────────
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp, bottom = 8.dp)
             ) {
-                // Elevated Big App Logo with Aura
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
-                ) {
+                // Layered glow rings behind the icon
+                Box(contentAlignment = Alignment.Center) {
                     Surface(
-                        modifier = Modifier.size(108.dp),
-                        shape = RoundedCornerShape(32.dp),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                        modifier = Modifier.size(112.dp),
+                        shape = RoundedCornerShape(34.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.06f)
                     ) {}
                     Surface(
-                        modifier = Modifier.size(94.dp),
-                        shape = RoundedCornerShape(26.dp),
-                        shadowElevation = 6.dp,
+                        modifier = Modifier.size(96.dp),
+                        shape = RoundedCornerShape(28.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                    ) {}
+                    Surface(
+                        modifier = Modifier.size(82.dp),
+                        shape = RoundedCornerShape(24.dp),
+                        shadowElevation = 10.dp,
                         border = androidx.compose.foundation.BorderStroke(
                             1.5.dp,
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.26f)
                         ),
                         color = MaterialTheme.colorScheme.surfaceContainerHighest
                     ) {
@@ -2581,37 +2555,41 @@ fun AboutScreen(
                     }
                 }
 
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // App name + version badge
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
                     Text(
                         stringResource(R.string.app_name),
-                        style = MaterialTheme.typography.headlineMedium,
+                        style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.ExtraBold,
                         color = MaterialTheme.colorScheme.onSurface,
                         letterSpacing = (-0.5).sp
                     )
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(8.dp),
                         color = MaterialTheme.colorScheme.primaryContainer,
                         border = androidx.compose.foundation.BorderStroke(
                             0.5.dp,
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
                         )
                     ) {
                         Text(
                             "v${BuildConfig.VERSION_NAME}",
-                            style = MaterialTheme.typography.labelMedium,
+                            style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(3.dp))
+                Spacer(modifier = Modifier.height(4.dp))
+
                 Text(
                     stringResource(R.string.app_description),
                     style = MaterialTheme.typography.titleSmall,
@@ -2619,164 +2597,93 @@ fun AboutScreen(
                     fontWeight = FontWeight.SemiBold
                 )
 
-                Spacer(modifier = Modifier.height(3.dp))
+                Spacer(modifier = Modifier.height(8.dp))
+
                 Text(
                     stringResource(R.string.about_app_description),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 10.dp)
+                    lineHeight = 18.sp,
+                    modifier = Modifier.padding(horizontal = 12.dp)
                 )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Core Feature Highlights Row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    AboutFeaturePill(
-                        icon = Icons.Default.Speed,
-                        label = "Fast & Smooth",
-                        modifier = Modifier.weight(1f)
-                    )
-                    AboutFeaturePill(
-                        icon = Icons.Default.Shield,
-                        label = "Zero Tracking",
-                        modifier = Modifier.weight(1f)
-                    )
-                    AboutFeaturePill(
-                        icon = Icons.Default.CloudSync,
-                        label = "Cloud Ready",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
             }
 
-            // Section 2: Prominent GitHub Star Invitation Card
+            // ── Info card with comfortable breathing room ─────────────────
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .clickable { uriHandler.openUri("https://github.com/NarayanChetri/ROSE") },
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                ),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.45f))
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = Color(0xFFF59E0B).copy(alpha = 0.18f),
-                        modifier = Modifier.size(44.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                Icons.Default.Star,
-                                contentDescription = null,
-                                tint = Color(0xFFF59E0B),
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            stringResource(R.string.about_star_github),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            stringResource(R.string.about_star_github_desc),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFFF59E0B).copy(alpha = 0.18f)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "Star",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFF59E0B)
-                            )
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Icon(
-                                Icons.AutoMirrored.Filled.OpenInNew,
-                                contentDescription = null,
-                                tint = Color(0xFFF59E0B),
-                                modifier = Modifier.size(13.dp)
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Section 3: Project & Developer Information Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer
-                ),
+                    .padding(vertical = 4.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
                 border = androidx.compose.foundation.BorderStroke(
                     0.5.dp,
-                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)
                 )
             ) {
-                Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                    AboutItem(Icons.Default.Person, stringResource(R.string.about_author_name), stringResource(R.string.about_author_role))
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        thickness = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                Column(modifier = Modifier.padding(vertical = 6.dp)) {
+                    AboutItem(
+                        icon = Icons.Default.Person,
+                        title = stringResource(R.string.about_author_name),
+                        subtitle = stringResource(R.string.about_author_role)
                     )
-                    AboutItem(Icons.Default.Code, "Source Code", "github.com/NarayanChetri/ROSE") {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 20.dp),
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)
+                    )
+                    AboutItem(
+                        icon = Icons.Default.Star,
+                        title = stringResource(R.string.about_star_github),
+                        subtitle = "Starring my repo will help me a lot!"
+                    ) {
                         uriHandler.openUri("https://github.com/NarayanChetri/ROSE")
                     }
                     HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp),
+                        modifier = Modifier.padding(horizontal = 20.dp),
                         thickness = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)
                     )
-                    AboutItem(Icons.Default.Email, stringResource(R.string.about_contact), stringResource(R.string.about_contact_email)) {
+                    AboutItem(
+                        icon = Icons.Default.Email,
+                        title = stringResource(R.string.about_contact),
+                        subtitle = stringResource(R.string.about_contact_email)
+                    ) {
                         uriHandler.openUri("mailto:Narayanchetri.dev@gmail.com")
+                    }
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 20.dp),
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)
+                    )
+                    AboutItem(
+                        icon = Icons.Default.BugReport,
+                        title = "Report an Issue",
+                        subtitle = "Open a GitHub issue"
+                    ) {
+                        uriHandler.openUri("https://github.com/NarayanChetri/ROSE/issues")
                     }
                 }
             }
 
-            // Section 4: Action Button & Footer
+            // ── Check for updates + footer ────────────────────────────────
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Button(
                     onClick = { viewModel.checkForUpdates() },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp),
+                        .height(52.dp),
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary
-                    )
+                    ),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 1.dp)
                 ) {
                     if (updateResult is UpdateCheckResult.Checking) {
                         CircularProgressIndicator(
@@ -2785,24 +2692,23 @@ fun AboutScreen(
                             color = MaterialTheme.colorScheme.onPrimary
                         )
                         Spacer(modifier = Modifier.width(10.dp))
-                        Text(stringResource(R.string.about_checking_for_updates), style = MaterialTheme.typography.labelLarge)
+                        Text(stringResource(R.string.about_checking_for_updates), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     } else {
-                        Icon(Icons.Default.Update, null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Update, null, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(10.dp))
-                        Text(stringResource(R.string.about_check_for_updates), style = MaterialTheme.typography.labelLarge)
+                        Text(stringResource(R.string.about_check_for_updates), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     }
                 }
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 Text(
-                    text = "Free & Open Source Software • GPL v3",
+                    "Free & Open Source \u2022 GPL v3",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
                 )
             }
         }
     }
 }
-
 
 @Composable
 fun AboutItem(icon: ImageVector, title: String, subtitle: String? = null, onClick: (() -> Unit)? = null) {
@@ -2810,13 +2716,13 @@ fun AboutItem(icon: ImageVector, title: String, subtitle: String? = null, onClic
         modifier = Modifier
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Surface(
-            modifier = Modifier.size(36.dp),
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-            shape = RoundedCornerShape(10.dp)
+            modifier = Modifier.size(40.dp),
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+            shape = RoundedCornerShape(12.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
@@ -2827,24 +2733,29 @@ fun AboutItem(icon: ImageVector, title: String, subtitle: String? = null, onClic
                 )
             }
         }
-        Spacer(modifier = Modifier.width(16.dp))
-        Column {
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             if (subtitle != null) {
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
         if (onClick != null) {
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.width(8.dp))
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
@@ -2854,6 +2765,7 @@ fun AboutItem(icon: ImageVector, title: String, subtitle: String? = null, onClic
         }
     }
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
@@ -3959,10 +3871,18 @@ fun FileGridItem(
         )
         if (showDetails) {
             if (fileItem.isDirectory) {
+                val count = fileItem.itemCount ?: 0
+                val text = if (vm?.showFolderSize == true) {
+                    stringResource(R.string.items_count_and_size, count, formatFileSize(fileItem.size))
+                } else {
+                    stringResource(R.string.items_count, count)
+                }
                 Text(
-                    stringResource(R.string.items_count, fileItem.itemCount ?: 0),
+                    text,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             } else {
                 Text(
@@ -4414,7 +4334,11 @@ fun FileListItem(
                 val dateStr = formatItemDate(fileItem.lastModified)
                 if (fileItem.isDirectory) {
                     val count = fileItem.itemCount ?: 0
-                    Text(stringResource(R.string.item_count_and_date, count, dateStr))
+                    if (viewModel.showFolderSize) {
+                        Text(stringResource(R.string.item_folder_size_count_and_date, count, formatFileSize(fileItem.size), dateStr))
+                    } else {
+                        Text(stringResource(R.string.item_count_and_date, count, dateStr))
+                    }
                 } else if (showDetails) {
                     Text(stringResource(R.string.item_size_and_date, formatFileSize(fileItem.size), dateStr))
                 }
