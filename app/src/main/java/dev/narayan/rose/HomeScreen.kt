@@ -125,6 +125,8 @@ fun HomeScreen(
     onSearchActiveChange: (Boolean) -> Unit = {},
     canSwipeToRecent: Boolean = true
 ) {
+    val coroutineScope = rememberCoroutineScope()
+
     LaunchedEffect(Unit) {
         // Refresh everything when coming back to home screen
         viewModel.loadStorageInfo()
@@ -343,7 +345,10 @@ fun HomeScreen(
         floatingActionButton = {
             Column(
                 horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .padding(bottom = 12.dp, end = 4.dp)
             ) {
                 // Extract Here FAB
                 AnimatedVisibility(
@@ -511,10 +516,11 @@ fun HomeScreen(
                             },
                             onOpenLocation = { onOpenPath(item.file.parent ?: item.file.absolutePath, item) },
                             onCopy = {
-                                viewModel.toggleSelection(item)
-                                viewModel.copySelected()
-                                // Navigate to file explorer to allow pasting
-                                onOpenPath(Environment.getExternalStorageDirectory().absolutePath, null)
+                                viewModel.copySingle(item)
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.yield()
+                                    onOpenPath(Environment.getExternalStorageDirectory().absolutePath, null)
+                                }
                                 isSearching = false
                                 searchQuery = ""
                                 viewModel.searchFiles("")
@@ -522,10 +528,11 @@ fun HomeScreen(
                                 viewModel.activeSearchFilter = SearchFilter.ALL
                             },
                             onCut = {
-                                viewModel.toggleSelection(item)
-                                viewModel.moveSelected()
-                                // Navigate to file explorer to allow pasting
-                                onOpenPath(Environment.getExternalStorageDirectory().absolutePath, null)
+                                viewModel.moveSingle(item)
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.yield()
+                                    onOpenPath(Environment.getExternalStorageDirectory().absolutePath, null)
+                                }
                                 isSearching = false
                                 searchQuery = ""
                                 viewModel.searchFiles("")
@@ -1439,6 +1446,7 @@ private fun RecentFilesSection(
     if (recents.isEmpty()) return
 
     val context = androidx.compose.ui.platform.LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     Column {
         Row(
@@ -1554,16 +1562,18 @@ private fun RecentFilesSection(
                                     viewModel = viewModel,
                                     isVirtual = false,
                                     onCopy = {
-                                        viewModel.selectedFiles.clear()
-                                        viewModel.toggleSelection(item)
-                                        viewModel.copySelected()
-                                        onOpenPath(Environment.getExternalStorageDirectory().absolutePath, null)
+                                        viewModel.copySingle(item)
+                                        coroutineScope.launch {
+                                            kotlinx.coroutines.yield()
+                                            onOpenPath(Environment.getExternalStorageDirectory().absolutePath, null)
+                                        }
                                     },
                                     onCut = {
-                                        viewModel.selectedFiles.clear()
-                                        viewModel.toggleSelection(item)
-                                        viewModel.moveSelected()
-                                        onOpenPath(Environment.getExternalStorageDirectory().absolutePath, null)
+                                        viewModel.moveSingle(item)
+                                        coroutineScope.launch {
+                                            kotlinx.coroutines.yield()
+                                            onOpenPath(Environment.getExternalStorageDirectory().absolutePath, null)
+                                        }
                                     },
                                     onDelete = { onDeleteClick(item) },
                                     onShare = { onShareClick(item) },

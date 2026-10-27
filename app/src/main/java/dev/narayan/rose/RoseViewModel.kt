@@ -1649,9 +1649,11 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
             val ext = normalizedPath.substringAfterLast('.', "").lowercase()
             ext in archiveExtensions && !normalizedPath.endsWith("/")
         } else {
-            val file = File(normalizedPath)
-            file.exists() && file.isFile && (file.extension.lowercase() in archiveExtensions ||
-                    file.name.lowercase().let { name -> archiveExtensions.any { name.endsWith(".$it") } })
+            val ext = normalizedPath.substringAfterLast('.', "").lowercase()
+            if (ext in archiveExtensions || archiveExtensions.any { normalizedPath.lowercase().endsWith(".$it") }) {
+                val file = File(normalizedPath)
+                file.exists() && file.isFile
+            } else false
         }
 
         if (isArchive) {
@@ -2567,6 +2569,23 @@ class RoseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Clipboard logic
+    fun copySingle(fileItem: FileItem) {
+        clipboardFiles.clear()
+        clipboardFiles.add(fileItem)
+        clipboardSourceZip = currentZipFile
+        isCopyOperation = true
+        exitSelectionMode()
+    }
+
+    fun moveSingle(fileItem: FileItem) {
+        if (currentZipFile != null) return
+        clipboardFiles.clear()
+        clipboardFiles.add(fileItem)
+        clipboardSourceZip = null
+        isCopyOperation = false
+        exitSelectionMode()
+    }
+
     fun copySelected() {
         clipboardFiles.clear()
         clipboardFiles.addAll(selectedFiles)

@@ -1125,7 +1125,10 @@ fun FileExplorerScreen(
                     floatingActionButton = {
                         Column(
                             horizontalAlignment = Alignment.End,
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            modifier = Modifier
+                                .navigationBarsPadding()
+                                .padding(bottom = 12.dp, end = 4.dp)
                         ) {
                             // Extract Here FAB
                             AnimatedVisibility(
@@ -1661,17 +1664,21 @@ fun FileExplorerScreen(
                                                                 onOpenWith = { onOpenWithClick(fileItem) },
                                                                 onShare = { onShareClick(listOf(fileItem)) },
                                                                 onCopy = {
-                                                                    viewModel.toggleSelection(fileItem)
-                                                                    viewModel.copySelected()
+                                                                    viewModel.copySingle(fileItem)
                                                                     if (currentView == "Category" || currentView == "Recent" || currentView == "Favourites") {
-                                                                        onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                                                                        coroutineScope.launch {
+                                                                            kotlinx.coroutines.yield()
+                                                                            onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                                                                        }
                                                                     }
                                                                 },
                                                                 onCut = {
-                                                                    viewModel.toggleSelection(fileItem)
-                                                                    viewModel.moveSelected()
+                                                                    viewModel.moveSingle(fileItem)
                                                                     if (currentView == "Category" || currentView == "Recent" || currentView == "Favourites") {
-                                                                        onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                                                                        coroutineScope.launch {
+                                                                            kotlinx.coroutines.yield()
+                                                                            onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                                                                        }
                                                                     }
                                                                 },
                                                                 onOpenLocation = null,
@@ -1953,17 +1960,21 @@ fun FileExplorerScreen(
                                                                     onOpenWith = { onOpenWithClick(fileItem) },
                                                                     onShare = { onShareClick(listOf(fileItem)) },
                                                                     onCopy = {
-                                                                        viewModel.toggleSelection(fileItem)
-                                                                        viewModel.copySelected()
+                                                                        viewModel.copySingle(fileItem)
                                                                         if (currentView == "Category" || currentView == "Recent" || currentView == "Favourites") {
-                                                                            onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                                                                            coroutineScope.launch {
+                                                                                kotlinx.coroutines.yield()
+                                                                                onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                                                                            }
                                                                         }
                                                                     },
                                                                     onCut = {
-                                                                        viewModel.toggleSelection(fileItem)
-                                                                        viewModel.moveSelected()
+                                                                        viewModel.moveSingle(fileItem)
                                                                         if (currentView == "Category" || currentView == "Recent" || currentView == "Favourites") {
-                                                                            onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                                                                            coroutineScope.launch {
+                                                                                kotlinx.coroutines.yield()
+                                                                                onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                                                                            }
                                                                         }
                                                                     },
                                                                     onOpenLocation = if (searchQuery.isNotEmpty() || currentView == "Recent" || currentView == "Favourites") {
@@ -2095,17 +2106,21 @@ fun FileExplorerScreen(
                                                             onOpenWith = { onOpenWithClick(fileItem) },
                                                             onShare = { onShareClick(listOf(fileItem)) },
                                                             onCopy = {
-                                                                viewModel.toggleSelection(fileItem)
-                                                                viewModel.copySelected()
+                                                                viewModel.copySingle(fileItem)
                                                                 if (currentView == "Category" || currentView == "Recent" || currentView == "Favourites") {
-                                                                    onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                                                                    coroutineScope.launch {
+                                                                        kotlinx.coroutines.yield()
+                                                                        onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                                                                    }
                                                                 }
                                                             },
                                                             onCut = {
-                                                                viewModel.toggleSelection(fileItem)
-                                                                viewModel.moveSelected()
+                                                                viewModel.moveSingle(fileItem)
                                                                 if (currentView == "Category" || currentView == "Recent" || currentView == "Favourites") {
-                                                                    onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                                                                    coroutineScope.launch {
+                                                                        kotlinx.coroutines.yield()
+                                                                        onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                                                                    }
                                                                 }
                                                             },
                                                             onOpenLocation = if (searchQuery.isNotEmpty() || currentView == "Recent" || currentView == "Favourites") {
@@ -3295,6 +3310,7 @@ fun SelectionBottomBar(
     onOpenPath: ((String, FileItem?) -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     Surface(
         shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
@@ -3331,7 +3347,10 @@ fun SelectionBottomBar(
                         val isVirtual = currentView == "Category" || currentView == "Recent" || currentView == "Favourites"
                         viewModel.moveSelected()
                         if (isVirtual) {
-                            onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                            coroutineScope.launch {
+                                kotlinx.coroutines.yield()
+                                onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                            }
                         }
                     },
                     modifier = Modifier.weight(1f),
@@ -3351,7 +3370,10 @@ fun SelectionBottomBar(
                         val isVirtual = currentView == "Category" || currentView == "Recent" || currentView == "Favourites"
                         viewModel.copySelected()
                         if (isVirtual) {
-                            onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                            coroutineScope.launch {
+                                kotlinx.coroutines.yield()
+                                onOpenPath?.invoke(Environment.getExternalStorageDirectory().absolutePath, null)
+                            }
                         }
                     },
                     modifier = Modifier.weight(1f)
@@ -3911,9 +3933,9 @@ fun WindowsFileDropdownMenu(
         tonalElevation = 6.dp,
         shadowElevation = 10.dp,
         offset = offset,
-        modifier = Modifier.widthIn(min = 280.dp, max = 315.dp)
+        modifier = Modifier.widthIn(min = 230.dp, max = 260.dp)
     ) {
-        // Windows 11-style Quick Actions Top Row: Cut, Copy, Rename, Share, Delete with vertical dividers
+        // Windows 11-style Quick Actions Top Row: Cut, Copy, Share, Delete with vertical dividers
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -3942,20 +3964,6 @@ fun WindowsFileDropdownMenu(
                 onClick = {
                     onDismissRequest()
                     onCopy()
-                }
-            )
-            VerticalDivider(
-                modifier = Modifier.height(26.dp),
-                thickness = 0.5.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
-            )
-            WindowsMenuHeaderAction(
-                icon = Icons.Default.DriveFileRenameOutline,
-                label = stringResource(R.string.action_rename),
-                enabled = !isVirtual && onRenameRequest != null,
-                onClick = {
-                    onDismissRequest()
-                    onRenameRequest?.invoke()
                 }
             )
             VerticalDivider(
@@ -4029,6 +4037,23 @@ fun WindowsFileDropdownMenu(
                     onOpenLocation()
                 },
                 leadingIcon = { Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+            )
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+            )
+        }
+
+        if (!isVirtual && onRenameRequest != null) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.action_rename)) },
+                onClick = {
+                    onDismissRequest()
+                    onRenameRequest.invoke()
+                },
+                leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, contentDescription = null, modifier = Modifier.size(20.dp)) },
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
             )
             HorizontalDivider(
