@@ -19,7 +19,7 @@ A fast, modern, beautiful, and privacy-first Android file manager built with **K
 ### 📥 Download ROSE
 
 <a href="https://github.com/NarayanChetri/ROSE/releases/latest">
-  <img src="https://img.shields.io/badge/⚡_DOWNLOAD_LATEST_APK-v2.0_(FREE)-00C853?style=for-the-badge&logo=android&logoColor=white&labelColor=1a1f2c" alt="Download Latest APK" height="50">
+  <img src="https://img.shields.io/badge/⚡_DOWNLOAD_LATEST_APK-v2.1_(FREE)-00C853?style=for-the-badge&logo=android&logoColor=white&labelColor=1a1f2c" alt="Download Latest APK" height="50">
 </a>
 
   
